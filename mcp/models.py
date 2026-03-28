@@ -109,6 +109,9 @@ class MetaData(BaseModel):
     template_used: Optional[str] = Field(None, description="Template ID used for extraction (set by auto_extract or explicit template)")
     template_version: Optional[int] = Field(None, description="Version of the template used")
 
+    # Request-Level-Cache (T-DAI-019)
+    cached: Optional[bool] = Field(None, description="True wenn die Antwort aus dem Cache zurückgegeben wurde")
+
 
 class ErrorDetail(BaseModel):
     """Fehlerdetails für einheitliche Fehlerantworten."""

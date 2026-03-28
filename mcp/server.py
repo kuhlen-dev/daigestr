@@ -180,6 +180,9 @@ from templates_db import (  # noqa: F401
     upsert_prompt,
     list_prompts,
     get_prompt_by_id,
+    cache_get,
+    cache_set,
+    cache_clear,
 )
 
 # Re-export routing functions for backwards-compatibility

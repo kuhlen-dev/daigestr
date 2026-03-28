@@ -64,7 +64,7 @@ from intelligence import (
     get_db_connection,
     get_template_by_id,
 )
-from templates_db import get_all_template_ids, search_templates
+from templates_db import get_all_template_ids, search_templates, cache_clear
 from routing import (
     convert_auto,
     convert_url,
@@ -722,6 +722,14 @@ async def api_formats() -> dict:
         "video": sorted(VIDEO_EXTENSIONS),
         "all": sorted(MARKITDOWN_EXTENSIONS | IMAGE_EXTENSIONS | AUDIO_EXTENSIONS | VIDEO_EXTENSIONS),
     }
+
+
+@app.delete("/v1/cache")
+async def api_cache_clear() -> dict:
+    """Löscht alle Einträge aus dem Request-Level-Cache (T-DAI-019)."""
+    _cache_clear = _get("cache_clear", cache_clear)
+    _cache_clear()
+    return {"cleared": True}
 
 
 @app.get("/v1/tips")

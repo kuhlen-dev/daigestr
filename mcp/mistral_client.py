@@ -7,6 +7,7 @@ Enthält alle Funktionen für Mistral API-Calls:
 - analyze_with_mistral_vision (async, High-Level Wrapper)
 """
 
+import asyncio
 import base64
 from typing import Any
 
@@ -23,10 +24,31 @@ from settings import (
     MISTRAL_TIMEOUT,
     VISION_MAX_TOKENS,
     MAX_RETRIES,
+    RATE_LIMIT_MAX_WAIT_SECONDS,
 )
 from utils import _get, _LOADED_BY_SERVER  # noqa: F401
 
 log = structlog.get_logger()
+
+
+async def _handle_rate_limit(response: "httpx.Response") -> None:
+    """
+    Wertet den Retry-After Header bei HTTP 429 aus und wartet entsprechend.
+    Wenn kein Retry-After vorhanden, wird tenacity's exponentielles Backoff genutzt.
+    Wirft immer HTTPStatusError damit tenacity den Retry auslöst.
+    """
+    retry_after_raw = response.headers.get("retry-after") or response.headers.get("Retry-After")
+    if retry_after_raw is not None:
+        try:
+            wait_seconds = int(retry_after_raw)
+        except ValueError:
+            wait_seconds = 5
+        wait_seconds = min(wait_seconds, RATE_LIMIT_MAX_WAIT_SECONDS)
+        log.warning("rate_limited", retry_after=wait_seconds)
+        await asyncio.sleep(wait_seconds)
+    else:
+        log.warning("rate_limited", retry_after=None)
+    response.raise_for_status()
 
 
 @retry(
@@ -46,6 +68,8 @@ async def call_mistral_vision_api(payload: dict) -> dict:
             },
             json=payload
         )
+        if response.status_code == 429:
+            await _handle_rate_limit(response)
         response.raise_for_status()
         return response.json()
 
@@ -75,6 +99,8 @@ async def call_mistral_ocr_api(file_data: bytes, filename: str) -> dict:
             },
             json=payload,
         )
+        if response.status_code == 429:
+            await _handle_rate_limit(response)
         response.raise_for_status()
         return response.json()
 
@@ -159,10 +185,18 @@ async def analyze_with_mistral_vision(
         }
     except httpx.HTTPStatusError as e:
         error_detail = str(e)
+        status_code = getattr(getattr(e, "response", None), "status_code", None)
         try:
             error_detail = e.response.json().get("error", {}).get("message", str(e))
         except Exception:
             pass
+        if status_code == 429:
+            log.error("vision_api_rate_limit_exhausted", retries=MAX_RETRIES)
+            return {
+                "success": False,
+                "error_code": ErrorCode.API_ERROR,
+                "error": f"Mistral Vision API unavailable after {MAX_RETRIES} retries (rate limited)"
+            }
         log.error("vision_api_error", error=error_detail)
         return {
             "success": False,

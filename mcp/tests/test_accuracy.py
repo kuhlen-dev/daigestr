@@ -1,15 +1,21 @@
 """
 Tests für T-MKIT-020: High-Accuracy Pipeline (OCR → Correction → Schema-Extraktion).
+Enthält auch Tests für T-DAI-020: 429 Rate-Limit Handling in mistral_client.
 
 Alle Tests laufen ohne Docker-Container und ohne echte API-Calls.
 Alle externen Abhängigkeiten werden per unittest.mock gemockt.
 """
 
+import asyncio
+import importlib
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, call
 
 import pytest
+
+# httpx VOR load_server_module importieren — danach wird httpx durch MagicMock ersetzt!
+import httpx as _real_httpx
 
 from conftest import load_server_module, run_async, PNG_100x100
 
@@ -450,3 +456,137 @@ class TestAccuracyMetaFields:
 
         assert result.meta.accuracy_mode is not None
         assert result.meta.pipeline_steps is not None
+
+
+# ---------------------------------------------------------------------------
+# Tests: T-DAI-020 — 429 Rate Limit Handling in mistral_client
+# ---------------------------------------------------------------------------
+
+
+def _load_mistral_client_module():
+    """Lädt mistral_client frisch mit gemockten Abhängigkeiten."""
+    server_path = str(Path(__file__).parent.parent)
+    if server_path not in sys.path:
+        sys.path.insert(0, server_path)
+
+    for mod in ("mistral_client", "settings", "models", "utils", "templates_db"):
+        if mod in sys.modules:
+            del sys.modules[mod]
+
+    import mistral_client as mc
+    return mc
+
+
+class TestRateLimitHandling:
+    """T-DAI-020: 429 Rate-Limit Retry-After und exponentielles Backoff."""
+
+    def _make_429_response(self, retry_after: str | None = None) -> MagicMock:
+        """Erzeugt eine Mock-Response mit Status 429."""
+        response = MagicMock()
+        response.status_code = 429
+        if retry_after is not None:
+            response.headers = {"retry-after": retry_after}
+        else:
+            response.headers = {}
+        return response
+
+    def test_rate_limit_with_retry_after_waits(self):
+        """
+        _handle_rate_limit mit Retry-After Header: asyncio.sleep wird mit dem
+        angegebenen Wert aufgerufen, dann raise_for_status geworfen.
+        """
+        mc = _load_mistral_client_module()
+
+        response_429 = self._make_429_response(retry_after="5")
+        response_429.raise_for_status.side_effect = _real_httpx.HTTPStatusError(
+            "429", request=MagicMock(), response=response_429
+        )
+
+        sleep_calls = []
+
+        async def mock_sleep(seconds):
+            sleep_calls.append(seconds)
+
+        with patch("asyncio.sleep", new=mock_sleep):
+            with pytest.raises(_real_httpx.HTTPStatusError):
+                run_async(mc._handle_rate_limit(response_429))
+
+        assert len(sleep_calls) == 1
+        assert sleep_calls[0] == 5
+
+    def test_rate_limit_without_retry_after_no_sleep(self):
+        """
+        Bei HTTP 429 ohne Retry-After: asyncio.sleep wird NICHT aufgerufen
+        (tenacity's exponentielles Backoff übernimmt). HTTPStatusError wird geworfen.
+        """
+        mc = _load_mistral_client_module()
+
+        response_429 = self._make_429_response(retry_after=None)
+        response_429.raise_for_status.side_effect = _real_httpx.HTTPStatusError(
+            "429", request=MagicMock(), response=response_429
+        )
+
+        sleep_calls = []
+
+        async def mock_sleep(seconds):
+            sleep_calls.append(seconds)
+
+        with patch("asyncio.sleep", new=mock_sleep):
+            with pytest.raises(_real_httpx.HTTPStatusError):
+                run_async(mc._handle_rate_limit(response_429))
+
+        # Ohne Retry-After: kein asyncio.sleep (tenacity handelt das)
+        assert len(sleep_calls) == 0
+
+    def test_rate_limit_retry_after_capped_at_max_wait(self):
+        """
+        Retry-After > RATE_LIMIT_MAX_WAIT_SECONDS wird auf das Maximum gecappt.
+        Standard-Default: 60s.
+        """
+        mc = _load_mistral_client_module()
+
+        # Retry-After mit extremem Wert
+        response_429 = self._make_429_response(retry_after="9999")
+        response_429.raise_for_status.side_effect = _real_httpx.HTTPStatusError(
+            "429", request=MagicMock(), response=response_429
+        )
+
+        sleep_calls = []
+
+        async def mock_sleep(seconds):
+            sleep_calls.append(seconds)
+
+        with patch("asyncio.sleep", new=mock_sleep):
+            with pytest.raises(_real_httpx.HTTPStatusError):
+                run_async(mc._handle_rate_limit(response_429))
+
+        assert len(sleep_calls) == 1
+        # Muss auf RATE_LIMIT_MAX_WAIT_SECONDS (60) gecappt sein
+        assert sleep_calls[0] <= 60
+
+    def test_all_retries_exhausted_returns_clear_error(self):
+        """
+        Wenn alle Retries fehlschlagen (429): analyze_with_mistral_vision gibt
+        klaren Error zurück mit 'unavailable after' und 'retries' im Text.
+        """
+        request_mock = MagicMock()
+        response_mock = MagicMock()
+        response_mock.status_code = 429
+        error = _real_httpx.HTTPStatusError(
+            "429 Too Many Requests",
+            request=request_mock,
+            response=response_mock,
+        )
+
+        with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
+             patch.object(_server, "call_mistral_vision_api", new=AsyncMock(side_effect=error)):
+            result = run_async(_server.analyze_with_mistral_vision(
+                image_data=PNG_100x100,
+                mimetype="image/png",
+                prompt="Beschreibe das Bild",
+                language="de",
+            ))
+
+        assert result["success"] is False
+        assert "unavailable after" in result["error"]
+        assert "retries" in result["error"]

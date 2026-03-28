@@ -42,6 +42,8 @@ from settings import (
     DATA_DIR,
     WHISPER_MODEL_SIZE,
     VERSION,
+    CACHE_ENABLED,
+    CACHE_TTL_SECONDS,
 )
 from utils import (
     _get,
@@ -80,7 +82,7 @@ from intelligence import (
     dual_pass_validate,
     _apply_auto_extract,
 )
-from templates_db import get_all_template_ids
+from templates_db import get_all_template_ids, cache_get, cache_set
 
 log = structlog.get_logger()
 
@@ -180,6 +182,57 @@ async def convert_auto(
         ocr_correct = True
         auto_extract = True
         chunk = True
+
+    # T-DAI-019: Request-Level-Cache — Cache-Key aus file_data + relevanten Parametern
+    _cache_enabled = _get("CACHE_ENABLED", CACHE_ENABLED)
+    _cache_ttl = _get("CACHE_TTL_SECONDS", CACHE_TTL_SECONDS)
+    _cache_get = _get("cache_get", cache_get)
+    _cache_set = _get("cache_set", cache_set)
+
+    if _cache_enabled:
+        _cache_key_data = (
+            hashlib.sha256(file_data).hexdigest()
+            + str(sorted({
+                "filename": filename,
+                "language": language,
+                "describe_images": describe_images,
+                "classify": classify,
+                "extract_schema": str(sorted(extract_schema.items()) if extract_schema else None),
+                "ocr_correct": ocr_correct,
+                "show_formulas": show_formulas,
+                "chunk": chunk,
+                "chunk_size": chunk_size,
+                "accuracy": accuracy,
+                "ocr_embed": ocr_embed,
+                "auto_extract": auto_extract,
+                "min_confidence": min_confidence,
+                "mode": mode,
+                "output_format": output_format,
+            }.items()))
+        )
+        _cache_key = hashlib.sha256(_cache_key_data.encode()).hexdigest()
+        _cached_json = _cache_get(_cache_key, _cache_ttl)
+        if _cached_json is not None:
+            try:
+                _cr = ConvertResponse.model_validate_json(_cached_json)
+                # Set meta.cached=True
+                _cm = _cr.meta.model_dump(exclude_none=True)
+                _cm["cached"] = True
+                _cr.meta = MetaData(**_cm)
+                return _cr
+            except Exception as _cache_err:
+                log.warning("cache_deserialize_error", error=str(_cache_err))
+    else:
+        _cache_key = None
+
+    def _cache_and_return(resp: ConvertResponse) -> ConvertResponse:
+        """Speichert erfolgreiche Responses im Cache und gibt sie zurück."""
+        if _cache_enabled and _cache_key is not None and resp.success:
+            try:
+                _cache_set(_cache_key, resp.model_dump_json())
+            except Exception as _ce:
+                log.warning("cache_set_error", error=str(_ce))
+        return resp
 
     # All patchable symbols read via _get() for test-patchability
     _get_file_extension = _get("get_file_extension", get_file_extension)
@@ -368,7 +421,7 @@ async def convert_auto(
             # FR-MKIT-011: Smart Chunking für RAG
             if chunk:
                 response.chunks = _chunk_md(markdown, chunk_size=chunk_size, source=source)
-            return _apply_output_format(response, output_format)
+            return _cache_and_return(_apply_output_format(response, output_format))
         else:
             return create_error_response(
                 result.get("error_code", ErrorCode.VISION_FAILED),
@@ -473,7 +526,7 @@ async def convert_auto(
             # FR-MKIT-011: Smart Chunking für RAG
             if chunk:
                 response.chunks = _chunk_md(markdown, chunk_size=chunk_size, source=source)
-            return _apply_output_format(response, output_format)
+            return _cache_and_return(_apply_output_format(response, output_format))
 
         finally:
             temp_media_path.unlink(missing_ok=True)
@@ -594,7 +647,7 @@ async def convert_auto(
                     # FR-MKIT-011: Smart Chunking für RAG
                     if chunk:
                         response.chunks = _chunk_md(scanned_markdown, chunk_size=chunk_size, source=source)
-                    return _apply_output_format(response, output_format)
+                    return _cache_and_return(_apply_output_format(response, output_format))
                 else:
                     return create_error_response(
                         result.get("error_code", ErrorCode.CONVERSION_FAILED),
@@ -754,7 +807,7 @@ async def convert_auto(
                 # FR-MKIT-011: Smart Chunking für RAG
                 if chunk:
                     response.chunks = _chunk_md(markdown, chunk_size=chunk_size, source=source)
-                return _apply_output_format(response, output_format)
+                return _cache_and_return(_apply_output_format(response, output_format))
             else:
                 return create_error_response(
                     result.get("error_code", ErrorCode.CONVERSION_FAILED),

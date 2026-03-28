@@ -52,6 +52,7 @@ IMAGE_MAX_WIDTH = int(os.getenv("IMAGE_MAX_WIDTH", "2048"))
 
 # Retry
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
+RATE_LIMIT_MAX_WAIT_SECONDS = int(os.getenv("RATE_LIMIT_MAX_WAIT_SECONDS", "60"))
 
 # Scanned PDF Detection
 SCAN_THRESHOLD_CHARS = int(os.getenv("SCAN_THRESHOLD_CHARS", "50"))
@@ -144,6 +145,13 @@ _whisper_model_cache: dict[str, Any] = {}  # key: model_size → WhisperModel in
 # =============================================================================
 # Version & Start
 # =============================================================================
+
+# =============================================================================
+# Request-Level-Cache — T-DAI-019
+# =============================================================================
+
+CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "3600"))
+CACHE_ENABLED = os.getenv("CACHE_ENABLED", "true").lower() == "true"
 
 VERSION = "3.0.0"
 START_TIME = time.time()

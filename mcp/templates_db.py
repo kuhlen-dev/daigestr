@@ -82,6 +82,15 @@ def init_templates_db() -> None:
         )
     """)
 
+    # Request-Level-Cache (T-DAI-019)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS cache (
+            key TEXT PRIMARY KEY,
+            response_json TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
     # Seed aus seed.sql wenn DB leer (template-Tabelle prüfen)
     cursor = conn.execute("SELECT COUNT(*) FROM template")
     if cursor.fetchone()[0] == 0:
@@ -227,6 +236,66 @@ def upsert_prompt(
 # =============================================================================
 # Scoring Weights — T-DAI-008
 # =============================================================================
+
+# =============================================================================
+# Request-Level-Cache — T-DAI-019
+# =============================================================================
+
+def cache_get(key: str, ttl: int) -> Optional[str]:
+    """Gibt gecachte Response zurück wenn vorhanden und nicht abgelaufen, sonst None.
+
+    Args:
+        key: Cache-Key (SHA256-Hash).
+        ttl: Time-to-live in Sekunden.
+
+    Returns:
+        response_json als String oder None bei Cache-Miss / abgelaufenen Einträgen.
+    """
+    _get_db_conn = _get("get_db_connection", get_db_connection)
+    conn = _get_db_conn()
+    try:
+        row = conn.execute(
+            "SELECT response_json FROM cache WHERE key = ? "
+            "AND created_at > datetime('now', '-' || ? || ' seconds')",
+            (key, str(ttl))
+        ).fetchone()
+    except sqlite3.OperationalError:
+        conn.close()
+        return None  # Tabelle existiert nicht → kein Cache-Hit
+    conn.close()
+    if row:
+        return row["response_json"]
+    return None
+
+
+def cache_set(key: str, response_json: str) -> None:
+    """Speichert eine Response im Cache (INSERT OR REPLACE).
+
+    Args:
+        key: Cache-Key (SHA256-Hash).
+        response_json: Serialisierte JSON-Response als String.
+    """
+    _get_db_conn = _get("get_db_connection", get_db_connection)
+    conn = _get_db_conn()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO cache (key, response_json) VALUES (?, ?)",
+            (key, response_json)
+        )
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # Tabelle existiert nicht → silently skip
+    conn.close()
+
+
+def cache_clear() -> None:
+    """Löscht alle Einträge aus dem Cache."""
+    _get_db_conn = _get("get_db_connection", get_db_connection)
+    conn = _get_db_conn()
+    conn.execute("DELETE FROM cache")
+    conn.commit()
+    conn.close()
+
 
 def get_scoring_weight(name: str) -> float:
     """Lädt eine Scoring-Gewichtung aus der DB. Wirft ValueError wenn nicht gefunden — KEIN Fallback!
