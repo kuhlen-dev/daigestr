@@ -2434,3 +2434,447 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     'mistral_batch',
     'Häufige Verwechslung mit anderen Sozialleistungsbescheiden wie Bürgergeld oder Grundsicherung. Wohngeldbescheide beziehen sich explizit auf Wohnkosten (Miete oder Lasten) und enthalten immer einen Bewilligungszeitraum sowie einen monatlichen Zuschussbetrag. Tipp: Achten auf den Absender (Wohngeldstelle) und die Nennung des Wohngeldgesetzes (WoGG). Bei Ablehnungen ist der Bescheid oft kürzer, enthält aber dieselben Felder (außer ''monatlicher_zuschuss'').'
 );
+
+-- =============================================================================
+-- Prompts (T-DAI-008) — hardcodierte LLM-Prompts in DB migriert
+-- =============================================================================
+
+-- vision.system — System-Prompt für Mistral Vision (aus mistral_client.py)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'vision.system',
+    'vision',
+    'system',
+    'Du bist ein präziser Assistent für Bild- und Dokumentenanalyse. Befolge ausschließlich die Anweisungen im User-Prompt. Antworte NICHT mit Einleitungssätzen, Erklärungen oder Code-Block-Wrapping — nur mit dem angeforderten Ergebnis.',
+    'You are a precise assistant for image and document analysis. Follow only the instructions in the user prompt. Do NOT reply with introductions, explanations, or code-block wrapping — only the requested result.'
+);
+
+-- vision.default — Default-Vision-Prompt für Bilder (aus routing.py convert_auto)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'vision.default',
+    'vision',
+    'default',
+    'Analysiere dieses Bild und gib den Inhalt als Markdown zurück.
+
+- Wenn Text sichtbar ist: extrahiere ihn vollständig und strukturiert (Überschriften, Listen, Tabellen in Markdown-Syntax)
+- Wenn es ein Diagramm, Chart oder Grafik ist: beschreibe die dargestellten Daten präzise
+- Wenn es ein Foto ohne Text ist: beschreibe den Bildinhalt in einem kurzen Absatz
+- Wenn die Bildqualität zu schlecht ist: schreibe [UNLESERLICH]
+
+Antworte ausschließlich mit dem Markdown-Ergebnis.',
+    NULL
+);
+
+-- vision.scanned_pdf — Scanned-PDF-Vision-Prompt (aus converters/pdf.py)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'vision.scanned_pdf',
+    'vision',
+    'scanned_pdf',
+    'Extrahiere den gesamten Text aus diesem Scan einer PDF-Seite und gib ihn als Markdown zurück.
+
+Regeln:
+- Behalte die Dokumentsprache bei — übersetze NICHT
+- Überschriften → # ## ### Markdown-Syntax
+- Tabellen → immer als Markdown-Tabelle mit | Spalte | Spalte | und Trennzeile
+- Listen → - oder 1. Markdown-Syntax
+- Fußnoten, Seitenzahlen und Kopfzeilen → kursiv in eckigen Klammern, z.B. *[Seite 3]*
+- Wenn eine Passage unleserlich ist → schreibe [UNLESERLICH]
+- Wenn die Seite keine Textinhalte enthält → antworte nur mit: [LEERE SEITE]
+
+Antworte ausschließlich mit dem Markdown-Text.',
+    NULL
+);
+
+-- image.classify — Image-Classify-Prompt (aus converters/images.py)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'image.classify',
+    'image',
+    'classify',
+    NULL,
+    'Classify this image into EXACTLY one category. Reply with ONE word only:
+
+photo      = photograph of real-world objects, people, places
+chart      = bar chart, line chart, pie chart, data visualization with axes/values
+diagram    = flowchart, org chart, mind map, network diagram, UML, architecture diagram
+text_scan  = image of a document, form, invoice, letter, or any image where text is the primary content
+decorative = logo, icon, background image, decorative graphic with no information value
+
+Reply with exactly one of: photo, chart, diagram, text_scan, decorative'
+);
+
+-- image.mermaid — Mermaid-Konvertierung-Prompt (aus converters/images.py)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'image.mermaid',
+    'image',
+    'mermaid',
+    NULL,
+    'Convert this diagram image into valid Mermaid syntax.
+
+Choose the appropriate diagram type:
+- Flowchart/decision tree → graph TD
+- Sequence diagram → sequenceDiagram
+- Class diagram → classDiagram
+- Org chart → graph TD with descriptive node labels
+
+Rules:
+- Output ONLY the Mermaid code inside ```mermaid ... ``` fences
+- Use exact labels from the image — do not invent labels
+- If the image cannot be represented as Mermaid: output ```mermaid
+graph TD
+    A[Nicht darstellbar]
+```
+- No explanations, no text outside the code block'
+);
+
+-- image.chart — Chart-Daten-Prompt (aus converters/images.py)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'image.chart',
+    'image',
+    'chart',
+    NULL,
+    'Extract all data from this chart as a Markdown table.
+
+Instructions:
+- For bar/line charts: columns = X-axis label + one column per data series; rows = data points
+- For pie/donut charts: columns = Category | Value | Percentage
+- Use exact axis labels and legend entries as column headers
+- If exact values are not readable, use estimates with ~ prefix (e.g. ~42)
+- If no chart data found: output only [No chart data found]
+
+Output ONLY the Markdown table. No explanations, no introductions.'
+);
+
+-- image.photo_de — Foto-Beschreibung Deutsch (aus converters/images.py)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'image.photo_de',
+    'image',
+    'photo_de',
+    'Beschreibe dieses Bild präzise: was ist zu sehen, relevante Beschriftungen, erkennbare Objekte und der Gesamtkontext. Format: kurzer Absatz.',
+    NULL
+);
+
+-- image.photo_en — Foto-Beschreibung Englisch (aus converters/images.py)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'image.photo_en',
+    'image',
+    'photo_en',
+    NULL,
+    'Describe this image precisely: what is shown, relevant labels, recognizable objects and overall context. Format: short paragraph.'
+);
+
+-- image.text_scan_de — Text-Scan-Prompt Deutsch (aus converters/images.py)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'image.text_scan_de',
+    'image',
+    'text_scan_de',
+    'Extrahiere den gesamten sichtbaren Text aus diesem Bild. Gib ihn strukturiert als Markdown wieder. Übersetze nicht.',
+    NULL
+);
+
+-- image.text_scan_en — Text-Scan-Prompt Englisch (aus converters/images.py)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'image.text_scan_en',
+    'image',
+    'text_scan_en',
+    NULL,
+    'Extract all visible text from this image. Return it as structured Markdown. Do not translate.'
+);
+
+-- classify.system_de — Klassifizierungs-System-Prompt Deutsch (aus intelligence.py)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'classify.system_de',
+    'classify',
+    'system_de',
+    'Du bist ein Experte für Dokumentenklassifizierung. Antworte ausschließlich mit validem JSON.',
+    NULL
+);
+
+-- classify.system_en — Klassifizierungs-System-Prompt Englisch (aus intelligence.py)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'classify.system_en',
+    'classify',
+    'system_en',
+    NULL,
+    'You are an expert document classifier. Respond exclusively with valid JSON.'
+);
+
+-- classify.user_de — Klassifizierungs-User-Prompt Deutsch (aus intelligence.py)
+-- Hinweis: {categories_lines} und {truncated_markdown} sind Platzhalter die zur Laufzeit ersetzt werden
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'classify.user_de',
+    'classify',
+    'user_de',
+    'Klassifiziere dieses Dokument. Wähle den spezifischsten Typ.
+Antworte AUSSCHLIESSLICH mit JSON: {"type": "template_id", "confidence": 0.95}
+
+Verfügbare Typen (ID: Beschreibung):
+{categories_lines}
+
+"confidence": Zahl zwischen 0.0 (sehr unsicher) und 1.0 (sehr sicher)
+Verwende GENAU eine der Typ-IDs. Bevorzuge den spezifischsten Typ.
+
+Dokument:
+{truncated_markdown}',
+    NULL
+);
+
+-- classify.user_en — Klassifizierungs-User-Prompt Englisch (aus intelligence.py)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'classify.user_en',
+    'classify',
+    'user_en',
+    NULL,
+    'Classify this document. Choose the most specific type.
+Respond EXCLUSIVELY with JSON: {"type": "template_id", "confidence": 0.95}
+
+Available types (ID: description):
+{categories_lines}
+
+"confidence": number between 0.0 (very uncertain) and 1.0 (very certain)
+Use EXACTLY one of the type IDs. Prefer the most specific type.
+
+Document:
+{truncated_markdown}'
+);
+
+-- ocr_correct.de — OCR-Korrektur-System-Prompt Deutsch (aus intelligence.py)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'ocr_correct.system_de',
+    'ocr_correct',
+    'system_de',
+    'Du bist ein Experte für OCR-Fehlerkorrektur. Korrigiere ausschließlich offensichtliche OCR-Artefakte, verändere KEINE inhaltlichen Fakten.',
+    NULL
+);
+
+-- ocr_correct.system_en — OCR-Korrektur-System-Prompt Englisch (aus intelligence.py)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'ocr_correct.system_en',
+    'ocr_correct',
+    'system_en',
+    NULL,
+    'You are an expert in OCR error correction. Correct only obvious OCR artifacts, do NOT change any factual content.'
+);
+
+-- ocr_correct.user_de — OCR-Korrektur-User-Prompt Deutsch (aus intelligence.py)
+-- Hinweis: {text} ist Platzhalter der zur Laufzeit ersetzt wird
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'ocr_correct.user_de',
+    'ocr_correct',
+    'user_de',
+    'Korrigiere OCR-Fehler in diesem Markdown-Text.
+
+Erlaubte Korrekturen (NUR diese):
+- Zeichen-Verwechslungen: rn→m, 0→O, l→1, fi-Ligaturen, Ü→U etc.
+- Zusammengeklebte Wörter: ''dasHaus'' → ''das Haus''
+- Falsche Worttrennungen: ''Doku-\nment'' → ''Dokument''
+
+VERBOTEN:
+- Inhaltliche Korrekturen (Fakten, Zahlen, Namen)
+- Änderungen an Markdown-Formatierung (#, *, |, ```)
+- Umformulierungen
+
+Antworte mit dem korrigierten Text, dann genau eine abschließende Zeile:
+<<<CORRECTIONS:N>>>
+(wobei N die Anzahl der Korrekturen ist)
+
+Text:
+{text}',
+    NULL
+);
+
+-- ocr_correct.user_en — OCR-Korrektur-User-Prompt Englisch (aus intelligence.py)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'ocr_correct.user_en',
+    'ocr_correct',
+    'user_en',
+    NULL,
+    'Correct OCR errors in this Markdown text.
+
+Allowed corrections (ONLY these):
+- Character confusions: rn→m, 0→O, l→1, fi-ligatures, etc.
+- Glued-together words: ''theHouse'' → ''the House''
+- Wrong hyphenation: ''docu-\nment'' → ''document''
+
+FORBIDDEN:
+- Content corrections (facts, numbers, names)
+- Changes to Markdown formatting (#, *, |, ```)
+- Rephrasing
+
+Reply with the corrected text, then exactly one closing line:
+<<<CORRECTIONS:N>>>
+(where N is the number of corrections)
+
+Text:
+{text}'
+);
+
+-- extract.system_de — Extraktions-System-Prompt Deutsch (aus intelligence.py)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'extract.system_de',
+    'extract',
+    'system_de',
+    'Du bist ein Experte für Dokumentenanalyse und Datenextraktion. Antworte ausschließlich mit validem JSON.',
+    NULL
+);
+
+-- extract.system_en — Extraktions-System-Prompt Englisch (aus intelligence.py)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'extract.system_en',
+    'extract',
+    'system_en',
+    NULL,
+    'You are an expert in document analysis and data extraction. Respond exclusively with valid JSON.'
+);
+
+-- extract.user_de — Extraktions-User-Prompt Deutsch (aus intelligence.py)
+-- Hinweis: {schema_str}, {template_hints}, {meta_instruction}, {markdown} sind Platzhalter
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'extract.user_de',
+    'extract',
+    'user_de',
+    'Extrahiere strukturierte Daten aus diesem Dokument gemäß dem JSON-Schema.
+
+Regeln:
+- Extrahiere NUR Werte die explizit im Dokument stehen — erfinde KEINE Werte
+- Fehlende Felder: null (niemals raten oder interpolieren)
+- Arrays: leeres Array [] wenn keine Einträge vorhanden
+- Zahlen: exakt wie im Dokument (keine Umrechnung, keine Rundung)
+
+Antworte AUSSCHLIESSLICH mit dem JSON-Objekt. Kein Markdown, keine Erklärungen.
+
+Schema:
+{schema_str}{template_hints}{meta_instruction}
+
+Dokument:
+{markdown}',
+    NULL
+);
+
+-- extract.user_en — Extraktions-User-Prompt Englisch (aus intelligence.py)
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'extract.user_en',
+    'extract',
+    'user_en',
+    NULL,
+    'Extract structured data from this document according to the JSON schema.
+
+Rules:
+- Extract ONLY values explicitly stated in the document — do NOT invent values
+- Missing fields: null (never guess or interpolate)
+- Arrays: empty array [] if no entries present
+- Numbers: exactly as in the document (no conversion, no rounding)
+
+Respond EXCLUSIVELY with the JSON object. No Markdown, no explanations.
+
+Schema:
+{schema_str}{template_hints}{meta_instruction}
+
+Document:
+{markdown}'
+);
+
+-- validate.dual_pass — Dual-Pass-Validation-Prompt (aus intelligence.py)
+-- Hinweis: {markdown} ist Platzhalter der zur Laufzeit ersetzt wird
+INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'validate.dual_pass',
+    'validate',
+    'dual_pass',
+    'Hier ist ein per OCR extrahierter Text und das Originalbild. Vergleiche beides und korrigiere Fehler in Struktur, Tabellen-Spalten und Inhalt. Gib den korrigierten Markdown zurück. Antworte NUR mit dem korrigierten Text.
+
+OCR-Text:
+{markdown}',
+    NULL
+);
+
+-- =============================================================================
+-- Scoring Weights (T-DAI-008) — aus calculate_quality_score in intelligence.py
+-- =============================================================================
+
+-- Zeichendichte-Schwellenwerte (Komponente 1: 0-0.3)
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'density_low_threshold', 'density_low_threshold', 0.1,
+    'Unterhalb dieser Zeichendichte → score 0.0 (Komponente: density, max 0.3)'
+);
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'density_mid_threshold', 'density_mid_threshold', 0.2,
+    'Oberhalb: linear bis 0.2; unterhalb: lineare Interpolation (Komponente: density)'
+);
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'density_high_threshold', 'density_high_threshold', 0.8,
+    'Optimaler Bereich: 0.2-0.8 → score 0.3 (Komponente: density)'
+);
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'density_optimal', 'density_optimal', 0.3,
+    'Maximaler Score für Zeichendichte-Komponente (0.3)'
+);
+
+-- Wort-Qualitäts-Gewichtungen (Komponente 2: 0-0.3)
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'word_quality_max', 'word_quality_max', 0.3,
+    'Maximaler Score für Wort-Qualität-Komponente'
+);
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'word_min_chars_threshold', 'word_min_chars_threshold', 50,
+    'Mindestlänge in Zeichen — unter diesem Wert wird word_score halbiert'
+);
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'word_short_text_penalty', 'word_short_text_penalty', 0.5,
+    'Multiplikator für word_score bei zu kurzem Text (< word_min_chars_threshold)'
+);
+
+-- Struktur-Elemente-Gewichtungen (Komponente 3: 0-0.2)
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'structure_element_score', 'structure_element_score', 0.05,
+    'Score pro Struktur-Element (Headings, Listen, Tabellen, Code-Blöcke)'
+);
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'structure_max', 'structure_max', 0.2,
+    'Maximaler Score für Struktur-Elemente-Komponente'
+);
+
+-- Vision/OCR Confidence-Gewichtungen (Komponente 4: 0-0.2)
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'vision_efficiency_high', 'vision_efficiency_high', 0.5,
+    'Token-Effizienz >= 0.5 → vision_score 0.2'
+);
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'vision_efficiency_mid', 'vision_efficiency_mid', 0.2,
+    'Token-Effizienz >= 0.2 → vision_score 0.15'
+);
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'vision_efficiency_low', 'vision_efficiency_low', 0.05,
+    'Token-Effizienz >= 0.05 → vision_score 0.1'
+);
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'vision_score_high', 'vision_score_high', 0.2,
+    'Vision-Score bei hoher Token-Effizienz (>= 0.5)'
+);
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'vision_score_mid', 'vision_score_mid', 0.15,
+    'Vision-Score bei mittlerer Token-Effizienz (>= 0.2)'
+);
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'vision_score_low', 'vision_score_low', 0.1,
+    'Vision-Score bei niedriger Token-Effizienz (>= 0.05) oder nur Completion bekannt'
+);
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'vision_score_min', 'vision_score_min', 0.05,
+    'Minimum Vision-Score wenn Token-Effizienz < 0.05'
+);
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'vision_baseline', 'vision_baseline', 0.2,
+    'Baseline-Score wenn kein Vision verwendet (kein OCR-Unsicherheitsabzug)'
+);
+
+-- Grade-Schwellenwerte
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'grade_poor', 'grade_poor', 0.3,
+    'Unterhalb: quality_grade = poor'
+);
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'grade_fair', 'grade_fair', 0.6,
+    'Unterhalb: quality_grade = fair (>= grade_poor)'
+);
+INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+    'grade_good', 'grade_good', 0.8,
+    'Unterhalb: quality_grade = good (>= grade_fair); ab diesem Wert: excellent'
+);

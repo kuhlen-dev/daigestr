@@ -103,15 +103,19 @@ async def analyze_with_mistral_vision(
     b64_image = base64.b64encode(image_data).decode("utf-8")
     data_url = f"data:{mimetype};base64,{b64_image}"
 
-    system_prompt = (
-        "Du bist ein präziser Assistent für Bild- und Dokumentenanalyse. "
-        "Befolge ausschließlich die Anweisungen im User-Prompt. "
-        "Antworte NICHT mit Einleitungssätzen, Erklärungen oder Code-Block-Wrapping — nur mit dem angeforderten Ergebnis."
-        if language == "de"
-        else "You are a precise assistant for image and document analysis. "
-        "Follow only the instructions in the user prompt. "
-        "Do NOT reply with introductions, explanations, or code-block wrapping — only the requested result."
-    )
+    try:
+        from templates_db import get_prompt as _get_prompt  # noqa: PLC0415
+        system_prompt = _get("get_prompt", _get_prompt)("vision", "system", language=language)
+    except Exception:
+        system_prompt = (
+            "Du bist ein präziser Assistent für Bild- und Dokumentenanalyse. "
+            "Befolge ausschließlich die Anweisungen im User-Prompt. "
+            "Antworte NICHT mit Einleitungssätzen, Erklärungen oder Code-Block-Wrapping — nur mit dem angeforderten Ergebnis."
+            if language == "de"
+            else "You are a precise assistant for image and document analysis. "
+            "Follow only the instructions in the user prompt. "
+            "Do NOT reply with introductions, explanations, or code-block wrapping — only the requested result."
+        )
 
     payload = {
         "model": vision_model,

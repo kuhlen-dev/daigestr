@@ -4,6 +4,9 @@ Template Registry — SQLite DB Helpers (T-MKIT-035).
 Enthält die SQLite-Logik für das Template-Registry:
 init_templates_db, get_all_template_ids, search_templates.
 
+Zusätzlich (T-DAI-008): Prompts und Scoring-Gewichtungen:
+get_prompt, get_scoring_weight, upsert_prompt, list_prompts, get_prompt_by_id.
+
 get_db_connection und get_template_by_id werden aus intelligence.py importiert
 (sie sind dort definiert um zirkuläre Imports zu vermeiden).
 
@@ -13,6 +16,7 @@ Patchbare Symbole werden über _get() aus dem server-Namespace gelesen.
 import json
 import sqlite3
 from pathlib import Path
+from typing import Optional
 
 import structlog
 
@@ -52,7 +56,33 @@ def init_templates_db() -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_templates_category ON template(category)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_templates_enabled ON template(enabled)")
 
-    # Seed aus seed.sql wenn DB leer
+    # Prompts-Tabelle (T-DAI-008)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS prompt (
+            id TEXT PRIMARY KEY,
+            category TEXT NOT NULL,
+            name TEXT NOT NULL,
+            content_de TEXT,
+            content_en TEXT,
+            version INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_prompts_category ON prompt(category)")
+
+    # Scoring-Gewichtungen-Tabelle (T-DAI-008)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS scoring_weight (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            value REAL NOT NULL,
+            description TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
+    # Seed aus seed.sql wenn DB leer (template-Tabelle prüfen)
     cursor = conn.execute("SELECT COUNT(*) FROM template")
     if cursor.fetchone()[0] == 0:
         seed_path = Path(__file__).parent / "seed.sql"
@@ -84,3 +114,136 @@ def search_templates(query: str) -> list[dict]:
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# =============================================================================
+# Prompts — T-DAI-008
+# =============================================================================
+
+def get_prompt(category: str, name: str, language: str = "de") -> str:
+    """Lädt einen Prompt aus der DB. Wirft ValueError wenn nicht gefunden — KEIN Fallback!
+
+    Args:
+        category: Prompt-Kategorie (z.B. 'vision.system', 'classify.system_de').
+        name: Prompt-Name (z.B. 'system', 'user').
+        language: 'de' oder 'en' — bestimmt welche content_* Spalte genutzt wird.
+
+    Returns:
+        Prompt-Text als String.
+
+    Raises:
+        ValueError: Wenn der Prompt nicht gefunden oder der Inhalt leer ist.
+    """
+    _get_db_conn = _get("get_db_connection", get_db_connection)
+    conn = _get_db_conn()
+    row = conn.execute(
+        "SELECT content_de, content_en FROM prompt WHERE category = ? AND name = ?",
+        (category, name)
+    ).fetchone()
+    conn.close()
+
+    if not row:
+        raise ValueError(f"Prompt nicht gefunden: category='{category}' name='{name}'")
+
+    content = row["content_de"] if language == "de" else row["content_en"]
+    # Fallback auf die andere Sprache wenn gewünschte leer
+    if not content:
+        content = row["content_en"] if language == "de" else row["content_de"]
+    if not content:
+        raise ValueError(
+            f"Prompt-Inhalt leer: category='{category}' name='{name}' language='{language}'"
+        )
+    return content
+
+
+def get_prompt_by_id(prompt_id: str) -> dict:
+    """Lädt einen Prompt per ID. Wirft ValueError wenn nicht gefunden.
+
+    Returns:
+        Dict mit id, category, name, content_de, content_en, version.
+    """
+    _get_db_conn = _get("get_db_connection", get_db_connection)
+    conn = _get_db_conn()
+    row = conn.execute("SELECT * FROM prompt WHERE id = ?", (prompt_id,)).fetchone()
+    conn.close()
+    if not row:
+        raise ValueError(f"Prompt nicht gefunden: id='{prompt_id}'")
+    return dict(row)
+
+
+def list_prompts(category: Optional[str] = None) -> list[dict]:
+    """Gibt alle Prompts zurück, optional gefiltert nach Kategorie."""
+    _get_db_conn = _get("get_db_connection", get_db_connection)
+    conn = _get_db_conn()
+    if category:
+        rows = conn.execute(
+            "SELECT id, category, name, version FROM prompt WHERE category = ? ORDER BY category, name",
+            (category,)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, category, name, version FROM prompt ORDER BY category, name"
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def upsert_prompt(
+    prompt_id: str,
+    category: str,
+    name: str,
+    content_de: Optional[str] = None,
+    content_en: Optional[str] = None,
+) -> dict:
+    """Erstellt oder aktualisiert einen Prompt (inkrementiert Version bei Update).
+
+    Returns:
+        Dict mit id, category, name, version.
+    """
+    _get_db_conn = _get("get_db_connection", get_db_connection)
+    conn = _get_db_conn()
+    existing = conn.execute("SELECT version FROM prompt WHERE id = ?", (prompt_id,)).fetchone()
+
+    if existing:
+        new_version = existing["version"] + 1
+        conn.execute(
+            "UPDATE prompt SET category=?, name=?, content_de=?, content_en=?, "
+            "version=?, updated_at=datetime('now') WHERE id=?",
+            (category, name, content_de, content_en, new_version, prompt_id)
+        )
+    else:
+        new_version = 1
+        conn.execute(
+            "INSERT INTO prompt (id, category, name, content_de, content_en, version) "
+            "VALUES (?, ?, ?, ?, ?, 1)",
+            (prompt_id, category, name, content_de, content_en)
+        )
+
+    conn.commit()
+    conn.close()
+    return {"id": prompt_id, "category": category, "name": name, "version": new_version}
+
+
+# =============================================================================
+# Scoring Weights — T-DAI-008
+# =============================================================================
+
+def get_scoring_weight(name: str) -> float:
+    """Lädt eine Scoring-Gewichtung aus der DB. Wirft ValueError wenn nicht gefunden — KEIN Fallback!
+
+    Args:
+        name: Name der Gewichtung (z.B. 'density_low_threshold').
+
+    Returns:
+        Gewichtungs-Wert als float.
+
+    Raises:
+        ValueError: Wenn die Gewichtung nicht gefunden wird.
+    """
+    _get_db_conn = _get("get_db_connection", get_db_connection)
+    conn = _get_db_conn()
+    row = conn.execute("SELECT value FROM scoring_weight WHERE id = ?", (name,)).fetchone()
+    conn.close()
+    if not row:
+        raise ValueError(f"Scoring-Gewichtung nicht gefunden: '{name}'")
+    return float(row["value"])

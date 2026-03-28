@@ -209,12 +209,17 @@ async def dual_pass_validate(
         log.warning("dual_pass_validate_skipped_no_api_key")
         return markdown
 
-    prompt = (
-        f"Hier ist ein per OCR extrahierter Text und das Originalbild. "
-        f"Vergleiche beides und korrigiere Fehler in Struktur, Tabellen-Spalten und Inhalt. "
-        f"Gib den korrigierten Markdown zurück. Antworte NUR mit dem korrigierten Text.\n\n"
-        f"OCR-Text:\n{markdown}"
-    )
+    from templates_db import get_prompt as _get_prompt  # noqa: PLC0415 — lazy import (avoid circular)
+    try:
+        _tmpl = _get("get_prompt", _get_prompt)("validate", "dual_pass", language="de")
+        prompt = _tmpl.format(markdown=markdown)
+    except Exception:
+        prompt = (
+            f"Hier ist ein per OCR extrahierter Text und das Originalbild. "
+            f"Vergleiche beides und korrigiere Fehler in Struktur, Tabellen-Spalten und Inhalt. "
+            f"Gib den korrigierten Markdown zurück. Antworte NUR mit dem korrigierten Text.\n\n"
+            f"OCR-Text:\n{markdown}"
+        )
 
     log.info("dual_pass_validate_start", mimetype=mimetype, markdown_len=len(markdown))
 
@@ -292,26 +297,48 @@ async def classify_document(
     # Markdown auf maximal _classify_max_chars Zeichen kürzen, um Token-Kosten zu begrenzen
     truncated_markdown = markdown[:_classify_max_chars] if len(markdown) > _classify_max_chars else markdown
 
+    from templates_db import get_prompt as _get_prompt  # noqa: PLC0415 — lazy import (avoid circular)
+    _gp = _get("get_prompt", _get_prompt)
     if language == "de":
-        system_prompt = "Du bist ein Experte für Dokumentenklassifizierung. Antworte ausschließlich mit validem JSON."
-        user_prompt = (
-            f"Klassifiziere dieses Dokument. Wähle den spezifischsten Typ.\n"
-            f"Antworte AUSSCHLIESSLICH mit JSON: {{\"type\": \"template_id\", \"confidence\": 0.95}}\n\n"
-            f"Verfügbare Typen (ID: Beschreibung):\n{categories_lines}\n\n"
-            f"\"confidence\": Zahl zwischen 0.0 (sehr unsicher) und 1.0 (sehr sicher)\n"
-            f"Verwende GENAU eine der Typ-IDs. Bevorzuge den spezifischsten Typ.\n\n"
-            f"Dokument:\n{truncated_markdown}"
-        )
+        try:
+            system_prompt = _gp("classify", "system_de", language="de")
+        except Exception:
+            system_prompt = "Du bist ein Experte für Dokumentenklassifizierung. Antworte ausschließlich mit validem JSON."
+        try:
+            user_tmpl = _gp("classify", "user_de", language="de")
+            user_prompt = user_tmpl.format(
+                categories_lines=categories_lines,
+                truncated_markdown=truncated_markdown,
+            )
+        except Exception:
+            user_prompt = (
+                f"Klassifiziere dieses Dokument. Wähle den spezifischsten Typ.\n"
+                f"Antworte AUSSCHLIESSLICH mit JSON: {{\"type\": \"template_id\", \"confidence\": 0.95}}\n\n"
+                f"Verfügbare Typen (ID: Beschreibung):\n{categories_lines}\n\n"
+                f"\"confidence\": Zahl zwischen 0.0 (sehr unsicher) und 1.0 (sehr sicher)\n"
+                f"Verwende GENAU eine der Typ-IDs. Bevorzuge den spezifischsten Typ.\n\n"
+                f"Dokument:\n{truncated_markdown}"
+            )
     else:
-        system_prompt = "You are an expert document classifier. Respond exclusively with valid JSON."
-        user_prompt = (
-            f"Classify this document. Choose the most specific type.\n"
-            f"Respond EXCLUSIVELY with JSON: {{\"type\": \"template_id\", \"confidence\": 0.95}}\n\n"
-            f"Available types (ID: description):\n{categories_lines}\n\n"
-            f"\"confidence\": number between 0.0 (very uncertain) and 1.0 (very certain)\n"
-            f"Use EXACTLY one of the type IDs. Prefer the most specific type.\n\n"
-            f"Document:\n{truncated_markdown}"
-        )
+        try:
+            system_prompt = _gp("classify", "system_en", language="en")
+        except Exception:
+            system_prompt = "You are an expert document classifier. Respond exclusively with valid JSON."
+        try:
+            user_tmpl = _gp("classify", "user_en", language="en")
+            user_prompt = user_tmpl.format(
+                categories_lines=categories_lines,
+                truncated_markdown=truncated_markdown,
+            )
+        except Exception:
+            user_prompt = (
+                f"Classify this document. Choose the most specific type.\n"
+                f"Respond EXCLUSIVELY with JSON: {{\"type\": \"template_id\", \"confidence\": 0.95}}\n\n"
+                f"Available types (ID: description):\n{categories_lines}\n\n"
+                f"\"confidence\": number between 0.0 (very uncertain) and 1.0 (very certain)\n"
+                f"Use EXACTLY one of the type IDs. Prefer the most specific type.\n\n"
+                f"Document:\n{truncated_markdown}"
+            )
 
     payload = {
         "model": _text_model,
@@ -397,46 +424,62 @@ async def correct_ocr_text(text: str, language: str = "de") -> dict[str, Any]:
             "tokens": 0,
         }
 
+    from templates_db import get_prompt as _get_prompt  # noqa: PLC0415 — lazy import (avoid circular)
+    _gp = _get("get_prompt", _get_prompt)
     if language == "de":
-        system_prompt = (
-            "Du bist ein Experte für OCR-Fehlerkorrektur. "
-            "Korrigiere ausschließlich offensichtliche OCR-Artefakte, verändere KEINE inhaltlichen Fakten."
-        )
-        user_prompt = (
-            "Korrigiere OCR-Fehler in diesem Markdown-Text.\n\n"
-            "Erlaubte Korrekturen (NUR diese):\n"
-            "- Zeichen-Verwechslungen: rn→m, 0→O, l→1, fi-Ligaturen, Ü→U etc.\n"
-            "- Zusammengeklebte Wörter: 'dasHaus' → 'das Haus'\n"
-            "- Falsche Worttrennungen: 'Doku-\\nment' → 'Dokument'\n\n"
-            "VERBOTEN:\n"
-            "- Inhaltliche Korrekturen (Fakten, Zahlen, Namen)\n"
-            "- Änderungen an Markdown-Formatierung (#, *, |, ```)\n"
-            "- Umformulierungen\n\n"
-            "Antworte mit dem korrigierten Text, dann genau eine abschließende Zeile:\n"
-            "<<<CORRECTIONS:N>>>\n"
-            "(wobei N die Anzahl der Korrekturen ist)\n\n"
-            f"Text:\n{text}"
-        )
+        try:
+            system_prompt = _gp("ocr_correct", "system_de", language="de")
+        except Exception:
+            system_prompt = (
+                "Du bist ein Experte für OCR-Fehlerkorrektur. "
+                "Korrigiere ausschließlich offensichtliche OCR-Artefakte, verändere KEINE inhaltlichen Fakten."
+            )
+        try:
+            user_tmpl = _gp("ocr_correct", "user_de", language="de")
+            user_prompt = user_tmpl.format(text=text)
+        except Exception:
+            user_prompt = (
+                "Korrigiere OCR-Fehler in diesem Markdown-Text.\n\n"
+                "Erlaubte Korrekturen (NUR diese):\n"
+                "- Zeichen-Verwechslungen: rn→m, 0→O, l→1, fi-Ligaturen, Ü→U etc.\n"
+                "- Zusammengeklebte Wörter: 'dasHaus' → 'das Haus'\n"
+                "- Falsche Worttrennungen: 'Doku-\\nment' → 'Dokument'\n\n"
+                "VERBOTEN:\n"
+                "- Inhaltliche Korrekturen (Fakten, Zahlen, Namen)\n"
+                "- Änderungen an Markdown-Formatierung (#, *, |, ```)\n"
+                "- Umformulierungen\n\n"
+                "Antworte mit dem korrigierten Text, dann genau eine abschließende Zeile:\n"
+                "<<<CORRECTIONS:N>>>\n"
+                "(wobei N die Anzahl der Korrekturen ist)\n\n"
+                f"Text:\n{text}"
+            )
     else:
-        system_prompt = (
-            "You are an expert in OCR error correction. "
-            "Correct only obvious OCR artifacts, do NOT change any factual content."
-        )
-        user_prompt = (
-            "Correct OCR errors in this Markdown text.\n\n"
-            "Allowed corrections (ONLY these):\n"
-            "- Character confusions: rn→m, 0→O, l→1, fi-ligatures, etc.\n"
-            "- Glued-together words: 'theHouse' → 'the House'\n"
-            "- Wrong hyphenation: 'docu-\\nment' → 'document'\n\n"
-            "FORBIDDEN:\n"
-            "- Content corrections (facts, numbers, names)\n"
-            "- Changes to Markdown formatting (#, *, |, ```)\n"
-            "- Rephrasing\n\n"
-            "Reply with the corrected text, then exactly one closing line:\n"
-            "<<<CORRECTIONS:N>>>\n"
-            "(where N is the number of corrections)\n\n"
-            f"Text:\n{text}"
-        )
+        try:
+            system_prompt = _gp("ocr_correct", "system_en", language="en")
+        except Exception:
+            system_prompt = (
+                "You are an expert in OCR error correction. "
+                "Correct only obvious OCR artifacts, do NOT change any factual content."
+            )
+        try:
+            user_tmpl = _gp("ocr_correct", "user_en", language="en")
+            user_prompt = user_tmpl.format(text=text)
+        except Exception:
+            user_prompt = (
+                "Correct OCR errors in this Markdown text.\n\n"
+                "Allowed corrections (ONLY these):\n"
+                "- Character confusions: rn→m, 0→O, l→1, fi-ligatures, etc.\n"
+                "- Glued-together words: 'theHouse' → 'the House'\n"
+                "- Wrong hyphenation: 'docu-\\nment' → 'document'\n\n"
+                "FORBIDDEN:\n"
+                "- Content corrections (facts, numbers, names)\n"
+                "- Changes to Markdown formatting (#, *, |, ```)\n"
+                "- Rephrasing\n\n"
+                "Reply with the corrected text, then exactly one closing line:\n"
+                "<<<CORRECTIONS:N>>>\n"
+                "(where N is the number of corrections)\n\n"
+                f"Text:\n{text}"
+            )
 
     payload = {
         "model": _text_model,
@@ -601,42 +644,70 @@ async def extract_structured_data(
         + "\n" + _DATENTYP_KONVENTIONEN
     )
 
+    from templates_db import get_prompt as _get_prompt  # noqa: PLC0415 — lazy import (avoid circular)
+    _gp = _get("get_prompt", _get_prompt)
+    _schema_str = json.dumps(schema, indent=2, ensure_ascii=False)
+    _doc_truncated = markdown[:_extract_max_chars]
     if language == "de":
-        system_prompt = (
-            "Du bist ein Experte für Dokumentenanalyse und Datenextraktion. "
-            "Antworte ausschließlich mit validem JSON."
-        )
-        user_prompt = (
-            "Extrahiere strukturierte Daten aus diesem Dokument gemäß dem JSON-Schema.\n\n"
-            "Regeln:\n"
-            "- Extrahiere NUR Werte die explizit im Dokument stehen — erfinde KEINE Werte\n"
-            "- Fehlende Felder: null (niemals raten oder interpolieren)\n"
-            "- Arrays: leeres Array [] wenn keine Einträge vorhanden\n"
-            "- Zahlen: exakt wie im Dokument (keine Umrechnung, keine Rundung)\n\n"
-            "Antworte AUSSCHLIESSLICH mit dem JSON-Objekt. Kein Markdown, keine Erklärungen.\n\n"
-            f"Schema:\n{json.dumps(schema, indent=2, ensure_ascii=False)}"
-            f"{template_hints}"
-            f"{meta_instruction}\n\n"
-            f"Dokument:\n{markdown[:_extract_max_chars]}"
-        )
+        try:
+            system_prompt = _gp("extract", "system_de", language="de")
+        except Exception:
+            system_prompt = (
+                "Du bist ein Experte für Dokumentenanalyse und Datenextraktion. "
+                "Antworte ausschließlich mit validem JSON."
+            )
+        try:
+            user_tmpl = _gp("extract", "user_de", language="de")
+            user_prompt = user_tmpl.format(
+                schema_str=_schema_str,
+                template_hints=template_hints,
+                meta_instruction=meta_instruction,
+                markdown=_doc_truncated,
+            )
+        except Exception:
+            user_prompt = (
+                "Extrahiere strukturierte Daten aus diesem Dokument gemäß dem JSON-Schema.\n\n"
+                "Regeln:\n"
+                "- Extrahiere NUR Werte die explizit im Dokument stehen — erfinde KEINE Werte\n"
+                "- Fehlende Felder: null (niemals raten oder interpolieren)\n"
+                "- Arrays: leeres Array [] wenn keine Einträge vorhanden\n"
+                "- Zahlen: exakt wie im Dokument (keine Umrechnung, keine Rundung)\n\n"
+                "Antworte AUSSCHLIESSLICH mit dem JSON-Objekt. Kein Markdown, keine Erklärungen.\n\n"
+                f"Schema:\n{_schema_str}"
+                f"{template_hints}"
+                f"{meta_instruction}\n\n"
+                f"Dokument:\n{_doc_truncated}"
+            )
     else:
-        system_prompt = (
-            "You are an expert in document analysis and data extraction. "
-            "Respond exclusively with valid JSON."
-        )
-        user_prompt = (
-            "Extract structured data from this document according to the JSON schema.\n\n"
-            "Rules:\n"
-            "- Extract ONLY values explicitly stated in the document — do NOT invent values\n"
-            "- Missing fields: null (never guess or interpolate)\n"
-            "- Arrays: empty array [] if no entries present\n"
-            "- Numbers: exactly as in the document (no conversion, no rounding)\n\n"
-            "Respond EXCLUSIVELY with the JSON object. No Markdown, no explanations.\n\n"
-            f"Schema:\n{json.dumps(schema, indent=2, ensure_ascii=False)}"
-            f"{template_hints}"
-            f"{meta_instruction}\n\n"
-            f"Document:\n{markdown[:_extract_max_chars]}"
-        )
+        try:
+            system_prompt = _gp("extract", "system_en", language="en")
+        except Exception:
+            system_prompt = (
+                "You are an expert in document analysis and data extraction. "
+                "Respond exclusively with valid JSON."
+            )
+        try:
+            user_tmpl = _gp("extract", "user_en", language="en")
+            user_prompt = user_tmpl.format(
+                schema_str=_schema_str,
+                template_hints=template_hints,
+                meta_instruction=meta_instruction,
+                markdown=_doc_truncated,
+            )
+        except Exception:
+            user_prompt = (
+                "Extract structured data from this document according to the JSON schema.\n\n"
+                "Rules:\n"
+                "- Extract ONLY values explicitly stated in the document — do NOT invent values\n"
+                "- Missing fields: null (never guess or interpolate)\n"
+                "- Arrays: empty array [] if no entries present\n"
+                "- Numbers: exactly as in the document (no conversion, no rounding)\n\n"
+                "Respond EXCLUSIVELY with the JSON object. No Markdown, no explanations.\n\n"
+                f"Schema:\n{_schema_str}"
+                f"{template_hints}"
+                f"{meta_instruction}\n\n"
+                f"Document:\n{_doc_truncated}"
+            )
 
     payload = {
         "model": _text_model,
@@ -738,6 +809,37 @@ def calculate_quality_score(markdown: str, meta: dict) -> dict:
     if not markdown or not markdown.strip():
         return {"quality_score": 0.0, "quality_grade": "poor"}
 
+    # Scoring-Gewichtungen aus DB laden (mit Fallback auf Hardcode)
+    from templates_db import get_scoring_weight as _get_sw  # noqa: PLC0415 — lazy import
+    _gsw = _get("get_scoring_weight", _get_sw)
+
+    def _sw(name: str, default: float) -> float:
+        try:
+            return _gsw(name)
+        except Exception:
+            return default
+
+    _density_low = _sw("density_low_threshold", 0.1)
+    _density_mid = _sw("density_mid_threshold", 0.2)
+    _density_high = _sw("density_high_threshold", 0.8)
+    _density_optimal = _sw("density_optimal", 0.3)
+    _word_max = _sw("word_quality_max", 0.3)
+    _word_min_chars = int(_sw("word_min_chars_threshold", 50))
+    _word_short_penalty = _sw("word_short_text_penalty", 0.5)
+    _struct_elem_score = _sw("structure_element_score", 0.05)
+    _struct_max = _sw("structure_max", 0.2)
+    _vision_eff_high = _sw("vision_efficiency_high", 0.5)
+    _vision_eff_mid = _sw("vision_efficiency_mid", 0.2)
+    _vision_eff_low = _sw("vision_efficiency_low", 0.05)
+    _vision_sc_high = _sw("vision_score_high", 0.2)
+    _vision_sc_mid = _sw("vision_score_mid", 0.15)
+    _vision_sc_low = _sw("vision_score_low", 0.1)
+    _vision_sc_min = _sw("vision_score_min", 0.05)
+    _vision_baseline = _sw("vision_baseline", 0.2)
+    _grade_poor = _sw("grade_poor", 0.3)
+    _grade_fair = _sw("grade_fair", 0.6)
+    _grade_good = _sw("grade_good", 0.8)
+
     text = markdown.strip()
     total_chars = len(text)
 
@@ -747,14 +849,14 @@ def calculate_quality_score(markdown: str, meta: dict) -> dict:
     if total_chars > 0:
         density_ratio = non_ws_chars / total_chars
         # Gute Dichte ist 0.4-0.8; sehr niedrig (<0.2) oder sehr hoch (>0.9) ist suspicious
-        if density_ratio < 0.1:
+        if density_ratio < _density_low:
             density_score = 0.0
-        elif density_ratio < 0.2:
-            density_score = density_ratio * 1.0  # linear bis 0.2
-        elif density_ratio <= 0.8:
-            density_score = 0.3  # Optimal
+        elif density_ratio < _density_mid:
+            density_score = density_ratio * 1.0  # linear bis _density_mid
+        elif density_ratio <= _density_high:
+            density_score = _density_optimal  # Optimal
         else:
-            density_score = max(0.1, 0.3 * (1.0 - density_ratio))
+            density_score = max(0.1, _density_optimal * (1.0 - density_ratio))
     else:
         density_score = 0.0
 
@@ -765,13 +867,13 @@ def calculate_quality_score(markdown: str, meta: dict) -> dict:
 
     if total_word_tokens:
         word_ratio = len(words) / len(total_word_tokens)
-        word_score = min(0.3, word_ratio * 0.3)
+        word_score = min(_word_max, word_ratio * _word_max)
     else:
         word_score = 0.0
 
     # Bonus: Mindestlänge — sehr kurzer Text bekommt Abzug
-    if total_chars < 50:
-        word_score *= 0.5
+    if total_chars < _word_min_chars:
+        word_score *= _word_short_penalty
 
     # --- Komponente 3: Struktur-Elemente (0-0.2) ---
     structure_score = 0.0
@@ -783,7 +885,7 @@ def calculate_quality_score(markdown: str, meta: dict) -> dict:
     has_codeblocks = '```' in text
 
     structure_elements = sum([has_headings, has_lists, has_tables, has_codeblocks])
-    structure_score = min(0.2, structure_elements * 0.05)
+    structure_score = min(_struct_max, structure_elements * _struct_elem_score)
 
     # --- Komponente 4: OCR/Vision Confidence (0-0.2) ---
     vision_score = 0.0
@@ -797,34 +899,34 @@ def calculate_quality_score(markdown: str, meta: dict) -> dict:
         if tokens_prompt > 0 and tokens_completion > 0:
             # Token-Effizienz: mehr Output-Tokens relativ zu Input → guter Inhalt extrahiert
             efficiency = tokens_completion / tokens_prompt
-            if efficiency >= 0.5:
-                vision_score = 0.2
-            elif efficiency >= 0.2:
-                vision_score = 0.15
-            elif efficiency >= 0.05:
-                vision_score = 0.1
+            if efficiency >= _vision_eff_high:
+                vision_score = _vision_sc_high
+            elif efficiency >= _vision_eff_mid:
+                vision_score = _vision_sc_mid
+            elif efficiency >= _vision_eff_low:
+                vision_score = _vision_sc_low
             else:
-                vision_score = 0.05
+                vision_score = _vision_sc_min
         elif tokens_completion > 0:
             # Nur Completion bekannt → Mindest-Score
-            vision_score = 0.1
+            vision_score = _vision_sc_low
         else:
             # Vision wurde verwendet, aber keine Token-Daten → neutraler Wert
-            vision_score = 0.1
+            vision_score = _vision_sc_low
     else:
-        # Kein Vision → volle 0.2 als Baseline (keine Unsicherheit durch OCR)
-        vision_score = 0.2
+        # Kein Vision → volle _vision_baseline als Baseline (keine Unsicherheit durch OCR)
+        vision_score = _vision_baseline
 
     # --- Gesamt-Score ---
     raw_score = density_score + word_score + structure_score + vision_score
     quality_score = round(min(1.0, max(0.0, raw_score)), 4)
 
     # --- Grade Mapping ---
-    if quality_score < 0.3:
+    if quality_score < _grade_poor:
         quality_grade = "poor"
-    elif quality_score < 0.6:
+    elif quality_score < _grade_fair:
         quality_grade = "fair"
-    elif quality_score < 0.8:
+    elif quality_score < _grade_good:
         quality_grade = "good"
     else:
         quality_grade = "excellent"

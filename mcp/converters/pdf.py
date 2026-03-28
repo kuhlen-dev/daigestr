@@ -554,18 +554,23 @@ async def convert_scanned_pdf(file_path: Path, language: str = "de") -> dict[str
             "error": f"PDF-Rendering fehlgeschlagen: {str(e)}",
         }
 
-    vision_prompt = (
-        "Extrahiere den gesamten Text aus diesem Scan einer PDF-Seite und gib ihn als Markdown zurück.\n\n"
-        "Regeln:\n"
-        "- Behalte die Dokumentsprache bei — übersetze NICHT\n"
-        "- Überschriften → # ## ### Markdown-Syntax\n"
-        "- Tabellen → immer als Markdown-Tabelle mit | Spalte | Spalte | und Trennzeile\n"
-        "- Listen → - oder 1. Markdown-Syntax\n"
-        "- Fußnoten, Seitenzahlen und Kopfzeilen → kursiv in eckigen Klammern, z.B. *[Seite 3]*\n"
-        "- Wenn eine Passage unleserlich ist → schreibe [UNLESERLICH]\n"
-        "- Wenn die Seite keine Textinhalte enthält → antworte nur mit: [LEERE SEITE]\n\n"
-        "Antworte ausschließlich mit dem Markdown-Text."
-    )
+    try:
+        from templates_db import get_prompt as _get_prompt  # noqa: PLC0415
+        from utils import _get as _utils_get  # noqa: PLC0415
+        vision_prompt = _utils_get("get_prompt", _get_prompt)("vision", "scanned_pdf", language=language)
+    except Exception:
+        vision_prompt = (
+            "Extrahiere den gesamten Text aus diesem Scan einer PDF-Seite und gib ihn als Markdown zurück.\n\n"
+            "Regeln:\n"
+            "- Behalte die Dokumentsprache bei — übersetze NICHT\n"
+            "- Überschriften → # ## ### Markdown-Syntax\n"
+            "- Tabellen → immer als Markdown-Tabelle mit | Spalte | Spalte | und Trennzeile\n"
+            "- Listen → - oder 1. Markdown-Syntax\n"
+            "- Fußnoten, Seitenzahlen und Kopfzeilen → kursiv in eckigen Klammern, z.B. *[Seite 3]*\n"
+            "- Wenn eine Passage unleserlich ist → schreibe [UNLESERLICH]\n"
+            "- Wenn die Seite keine Textinhalte enthält → antworte nur mit: [LEERE SEITE]\n\n"
+            "Antworte ausschließlich mit dem Markdown-Text."
+        )
 
     markdown_parts: list[str] = []
     tokens_per_page: list[dict] = []

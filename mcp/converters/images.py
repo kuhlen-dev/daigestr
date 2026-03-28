@@ -311,15 +311,19 @@ async def classify_image_type(image_data: bytes, mimetype: str) -> str:
         Einer der Werte: 'photo', 'chart', 'diagram', 'text_scan', 'decorative'.
         Fallback: 'photo' bei Fehler oder unbekannter Antwort.
     """
-    prompt = (
-        "Classify this image into EXACTLY one category. Reply with ONE word only:\n\n"
-        "photo      = photograph of real-world objects, people, places\n"
-        "chart      = bar chart, line chart, pie chart, data visualization with axes/values\n"
-        "diagram    = flowchart, org chart, mind map, network diagram, UML, architecture diagram\n"
-        "text_scan  = image of a document, form, invoice, letter, or any image where text is the primary content\n"
-        "decorative = logo, icon, background image, decorative graphic with no information value\n\n"
-        "Reply with exactly one of: photo, chart, diagram, text_scan, decorative"
-    )
+    try:
+        from templates_db import get_prompt as _get_prompt  # noqa: PLC0415
+        prompt = _get("get_prompt", _get_prompt)("image", "classify", language="en")
+    except Exception:
+        prompt = (
+            "Classify this image into EXACTLY one category. Reply with ONE word only:\n\n"
+            "photo      = photograph of real-world objects, people, places\n"
+            "chart      = bar chart, line chart, pie chart, data visualization with axes/values\n"
+            "diagram    = flowchart, org chart, mind map, network diagram, UML, architecture diagram\n"
+            "text_scan  = image of a document, form, invoice, letter, or any image where text is the primary content\n"
+            "decorative = logo, icon, background image, decorative graphic with no information value\n\n"
+            "Reply with exactly one of: photo, chart, diagram, text_scan, decorative"
+        )
     valid_types = {"photo", "chart", "diagram", "text_scan", "decorative"}
 
     log.info("classify_image_type_start", size=len(image_data), mimetype=mimetype)
@@ -361,19 +365,23 @@ async def convert_diagram_to_mermaid(
     Returns:
         Mermaid-Code-Block (```mermaid ... ```) oder Fallback-Text bei Fehler.
     """
-    prompt = (
-        "Convert this diagram image into valid Mermaid syntax.\n\n"
-        "Choose the appropriate diagram type:\n"
-        "- Flowchart/decision tree → graph TD\n"
-        "- Sequence diagram → sequenceDiagram\n"
-        "- Class diagram → classDiagram\n"
-        "- Org chart → graph TD with descriptive node labels\n\n"
-        "Rules:\n"
-        "- Output ONLY the Mermaid code inside ```mermaid ... ``` fences\n"
-        "- Use exact labels from the image — do not invent labels\n"
-        "- If the image cannot be represented as Mermaid: output ```mermaid\\ngraph TD\\n    A[Nicht darstellbar]\\n```\n"
-        "- No explanations, no text outside the code block"
-    )
+    try:
+        from templates_db import get_prompt as _get_prompt  # noqa: PLC0415
+        prompt = _get("get_prompt", _get_prompt)("image", "mermaid", language="en")
+    except Exception:
+        prompt = (
+            "Convert this diagram image into valid Mermaid syntax.\n\n"
+            "Choose the appropriate diagram type:\n"
+            "- Flowchart/decision tree → graph TD\n"
+            "- Sequence diagram → sequenceDiagram\n"
+            "- Class diagram → classDiagram\n"
+            "- Org chart → graph TD with descriptive node labels\n\n"
+            "Rules:\n"
+            "- Output ONLY the Mermaid code inside ```mermaid ... ``` fences\n"
+            "- Use exact labels from the image — do not invent labels\n"
+            "- If the image cannot be represented as Mermaid: output ```mermaid\\ngraph TD\\n    A[Nicht darstellbar]\\n```\n"
+            "- No explanations, no text outside the code block"
+        )
 
     log.info("convert_diagram_to_mermaid_start", size=len(image_data), mimetype=mimetype)
 
@@ -409,16 +417,20 @@ async def extract_chart_data(
     Returns:
         Markdown-Tabelle mit den extrahierten Daten oder Fallback-Text bei Fehler.
     """
-    prompt = (
-        "Extract all data from this chart as a Markdown table.\n\n"
-        "Instructions:\n"
-        "- For bar/line charts: columns = X-axis label + one column per data series; rows = data points\n"
-        "- For pie/donut charts: columns = Category | Value | Percentage\n"
-        "- Use exact axis labels and legend entries as column headers\n"
-        "- If exact values are not readable, use estimates with ~ prefix (e.g. ~42)\n"
-        "- If no chart data found: output only [No chart data found]\n\n"
-        "Output ONLY the Markdown table. No explanations, no introductions."
-    )
+    try:
+        from templates_db import get_prompt as _get_prompt  # noqa: PLC0415
+        prompt = _get("get_prompt", _get_prompt)("image", "chart", language="en")
+    except Exception:
+        prompt = (
+            "Extract all data from this chart as a Markdown table.\n\n"
+            "Instructions:\n"
+            "- For bar/line charts: columns = X-axis label + one column per data series; rows = data points\n"
+            "- For pie/donut charts: columns = Category | Value | Percentage\n"
+            "- Use exact axis labels and legend entries as column headers\n"
+            "- If exact values are not readable, use estimates with ~ prefix (e.g. ~42)\n"
+            "- If no chart data found: output only [No chart data found]\n\n"
+            "Output ONLY the Markdown table. No explanations, no introductions."
+        )
 
     log.info("extract_chart_data_start", size=len(image_data), mimetype=mimetype)
 
@@ -495,22 +507,53 @@ async def describe_embedded_images(
             continue
 
         # 'photo' und 'text_scan': differenzierte Vision-Beschreibung
+        try:
+            from templates_db import get_prompt as _get_prompt  # noqa: PLC0415
+        except Exception:
+            _get_prompt = None  # type: ignore[assignment]
+
         if image_type == "text_scan":
-            generic_prompt = (
-                "Extrahiere den gesamten sichtbaren Text aus diesem Bild. "
-                "Gib ihn strukturiert als Markdown wieder. Übersetze nicht."
-                if language == "de"
-                else "Extract all visible text from this image. "
-                     "Return it as structured Markdown. Do not translate."
-            )
+            _prompt_name = "text_scan_de" if language == "de" else "text_scan_en"
+            if _get_prompt:
+                try:
+                    generic_prompt = _get("get_prompt", _get_prompt)("image", _prompt_name, language=language)
+                except Exception:
+                    generic_prompt = (
+                        "Extrahiere den gesamten sichtbaren Text aus diesem Bild. "
+                        "Gib ihn strukturiert als Markdown wieder. Übersetze nicht."
+                        if language == "de"
+                        else "Extract all visible text from this image. "
+                             "Return it as structured Markdown. Do not translate."
+                    )
+            else:
+                generic_prompt = (
+                    "Extrahiere den gesamten sichtbaren Text aus diesem Bild. "
+                    "Gib ihn strukturiert als Markdown wieder. Übersetze nicht."
+                    if language == "de"
+                    else "Extract all visible text from this image. "
+                         "Return it as structured Markdown. Do not translate."
+                )
         else:  # photo oder unbekannt
-            generic_prompt = (
-                "Beschreibe dieses Bild präzise: was ist zu sehen, relevante Beschriftungen, "
-                "erkennbare Objekte und der Gesamtkontext. Format: kurzer Absatz."
-                if language == "de"
-                else "Describe this image precisely: what is shown, relevant labels, "
-                     "recognizable objects and overall context. Format: short paragraph."
-            )
+            _prompt_name = "photo_de" if language == "de" else "photo_en"
+            if _get_prompt:
+                try:
+                    generic_prompt = _get("get_prompt", _get_prompt)("image", _prompt_name, language=language)
+                except Exception:
+                    generic_prompt = (
+                        "Beschreibe dieses Bild präzise: was ist zu sehen, relevante Beschriftungen, "
+                        "erkennbare Objekte und der Gesamtkontext. Format: kurzer Absatz."
+                        if language == "de"
+                        else "Describe this image precisely: what is shown, relevant labels, "
+                             "recognizable objects and overall context. Format: short paragraph."
+                    )
+            else:
+                generic_prompt = (
+                    "Beschreibe dieses Bild präzise: was ist zu sehen, relevante Beschriftungen, "
+                    "erkennbare Objekte und der Gesamtkontext. Format: kurzer Absatz."
+                    if language == "de"
+                    else "Describe this image precisely: what is shown, relevant labels, "
+                         "recognizable objects and overall context. Format: short paragraph."
+                )
 
         result = await _get("analyze_with_mistral_vision", analyze_with_mistral_vision)(data, mimetype, generic_prompt, language)
         if result["success"]:
