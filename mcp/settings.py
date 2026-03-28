@@ -38,7 +38,9 @@ MISTRAL_OCR_ENABLED = os.getenv("MISTRAL_OCR_ENABLED", "true").lower() == "true"
 # =============================================================================
 
 MCP_PORT = int(os.getenv("MCP_PORT", "8080"))
+MCP_TRANSPORT = os.getenv("MCP_TRANSPORT", "sse")
 REST_PORT = int(os.getenv("REST_PORT", "8081"))
+BIND_HOST = os.getenv("BIND_HOST", "0.0.0.0")
 
 # =============================================================================
 # Limits
@@ -62,10 +64,12 @@ DEFAULT_CLASSIFY_CATEGORIES = os.getenv(
     "CLASSIFY_CATEGORIES",
     "invoice,contract,cv,protocol,letter,technical_doc,report,presentation,spreadsheet,other"
 ).split(",")
+CLASSIFY_CATEGORIES = DEFAULT_CLASSIFY_CATEGORIES  # alias matching env var name
 
 # Cache für classify-Kategorien aus der Template-Registry
 _classify_categories_cache: dict = {"categories": None, "timestamp": 0}
-_CLASSIFY_CACHE_TTL = 300  # 5 Minuten
+CLASSIFY_CACHE_TTL = int(os.getenv("CLASSIFY_CACHE_TTL", "300"))  # seconds
+_CLASSIFY_CACHE_TTL = CLASSIFY_CACHE_TTL  # backward-compat alias
 
 # =============================================================================
 # Logging
