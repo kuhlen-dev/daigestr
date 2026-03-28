@@ -24,6 +24,7 @@ Features:
 
 import os
 import threading
+import time as _time
 
 import httpx  # noqa: F401 — re-exported for test patchability (tests patch _server.httpx)
 import structlog
@@ -269,7 +270,16 @@ if __name__ == "__main__":
     print(f"Max Retries: {MAX_RETRIES}")
     print("-" * 50)
 
-    rest_thread = threading.Thread(target=run_rest_server, daemon=True)
+    def _rest_thread_with_watchdog():
+        while True:
+            try:
+                run_rest_server()
+            except Exception as _e:
+                log.error("rest_server_crashed", error=str(_e))
+                log.info("rest_server_restarting_in_5s")
+                _time.sleep(5)
+
+    rest_thread = threading.Thread(target=_rest_thread_with_watchdog, daemon=True)
     rest_thread.start()
     print(f"REST-API gestartet auf Port {REST_PORT}")
 

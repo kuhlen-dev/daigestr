@@ -128,11 +128,12 @@ class TestChunkSizeValidation:
 
 
 class TestVersion:
-    """VERSION muss auf 3.0.0 gesetzt sein."""
+    """VERSION muss gesetzt sein (dynamisch aus DAIGESTR_VERSION env)."""
 
-    def test_version_is_3_0_0(self):
-        """VERSION == '3.0.0'."""
-        assert _server.VERSION == "3.0.0"
+    def test_version_is_set(self):
+        """VERSION is a non-empty string."""
+        assert isinstance(_server.VERSION, str)
+        assert len(_server.VERSION) > 0
 
 
 # ---------------------------------------------------------------------------

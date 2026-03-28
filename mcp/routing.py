@@ -44,6 +44,8 @@ from settings import (
     VERSION,
     CACHE_ENABLED,
     CACHE_TTL_SECONDS,
+    MAX_DESCRIBE_IMAGES,
+    CONVERT_TIMEOUT_SECONDS,
 )
 from utils import (
     _get,
@@ -150,6 +152,73 @@ async def convert_auto(
 ) -> ConvertResponse:
     """
     Intelligente Konvertierung basierend auf Dateityp.
+
+    FIX 4 (T-DAI-024): Wrapper mit asyncio.wait_for Timeout-Schutz.
+    Bei Timeout gibt eine saubere Error-Response zurück statt endlosem Warten.
+    """
+    _timeout = _get("CONVERT_TIMEOUT_SECONDS", CONVERT_TIMEOUT_SECONDS)
+    try:
+        return await asyncio.wait_for(
+            _convert_auto_impl(
+                file_data=file_data,
+                filename=filename,
+                source=source,
+                source_type=source_type,
+                input_meta=input_meta,
+                prompt=prompt,
+                language=language,
+                describe_images=describe_images,
+                classify=classify,
+                classify_categories=classify_categories,
+                extract_schema=extract_schema,
+                ocr_correct=ocr_correct,
+                show_formulas=show_formulas,
+                chunk=chunk,
+                chunk_size=chunk_size,
+                accuracy=accuracy,
+                ocr_embed=ocr_embed,
+                auto_extract=auto_extract,
+                min_confidence=min_confidence,
+                mode=mode,
+                output_format=output_format,
+            ),
+            timeout=float(_timeout),
+        )
+    except asyncio.TimeoutError:
+        log.error("convert_auto_timeout", filename=filename, timeout_seconds=_timeout)
+        return create_error_response(
+            ErrorCode.CONVERSION_FAILED,
+            f"Konvertierung abgebrochen: Timeout nach {_timeout}s überschritten. "
+            f"Erhöhe CONVERT_TIMEOUT_SECONDS env für größere Dokumente.",
+            meta={**input_meta, "source": source, "source_type": source_type, "timeout_seconds": _timeout},
+        )
+
+
+async def _convert_auto_impl(
+    file_data: bytes,
+    filename: str,
+    source: str,
+    source_type: str,
+    input_meta: dict[str, Any],
+    prompt: Optional[str] = None,
+    language: str = "de",
+    describe_images: bool = False,
+    classify: bool = False,
+    classify_categories: list[str] | None = None,
+    extract_schema: Optional[dict] = None,
+    ocr_correct: bool = False,
+    show_formulas: bool = False,
+    chunk: bool = False,
+    chunk_size: int = 512,
+    accuracy: str = "standard",
+    ocr_embed: bool = False,
+    auto_extract: bool = False,
+    min_confidence: float = 0.7,
+    mode: str = "default",
+    output_format: str = "markdown",
+) -> ConvertResponse:
+    """
+    Eigentliche Konvertierungslogik — wird von convert_auto() via asyncio.wait_for aufgerufen.
 
     Args:
         file_data: Rohe Datei-Bytes
@@ -273,6 +342,7 @@ async def convert_auto(
     _convert_markitdown = _get("convert_with_markitdown", convert_with_markitdown)
     _extract_audio = _get("extract_audio_from_video", extract_audio_from_video)
     _transcribe = _get("transcribe_audio", transcribe_audio)
+    _max_describe_images = _get("MAX_DESCRIBE_IMAGES", MAX_DESCRIBE_IMAGES)
 
     ext = _get_file_extension(filename)
     mimetype = _detect_mimetype(file_data) or _get_mimetype(Path(filename))
@@ -727,9 +797,27 @@ async def convert_auto(
                         images = _extract_imgs_html(temp_path)
 
                     if images:
+                        # FIX 3 (T-DAI-024): Limit auf MAX_DESCRIBE_IMAGES — verhindert OOM/Timeout bei großen PDFs
+                        total_images = len(images)
+                        if total_images > _max_describe_images:
+                            log.warning(
+                                "images_truncated",
+                                file=filename,
+                                total=total_images,
+                                limit=_max_describe_images,
+                            )
+                            images = images[:_max_describe_images]
+                            meta["images_truncated"] = True
                         descriptions = await _describe_imgs(images, language=language)
                         markdown = _insert_img_desc(markdown, descriptions)
                         meta["images_described"] = len(descriptions)
+                        if meta.get("images_truncated"):
+                            hint_msg = (
+                                f"Document has {total_images} images, only first {_max_describe_images} were described. "
+                                f"Increase MAX_DESCRIBE_IMAGES env to process more."
+                            )
+                            existing_hints = meta.get("hints", [])
+                            meta["hints"] = existing_hints + [hint_msg]
                         log.info(
                             "embedded_images_described",
                             file=filename,

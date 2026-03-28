@@ -56,3 +56,5 @@ pandas>=2.0.0
 lxml>=4.9.0
 icalendar>=5.0.0
 markdown>=3.5.0
+# Starlette (transitive dep of FastAPI, explicit for test imports)
+starlette>=0.27.0

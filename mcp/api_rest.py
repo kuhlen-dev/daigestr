@@ -98,6 +98,16 @@ def _safe_encode(obj: Any) -> Any:
     return obj
 
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all handler für unerwartete Exceptions — verhindert Worker-Crash."""
+    log.error("unhandled_exception", error=str(exc), type=type(exc).__name__, path=str(request.url))
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "error": str(exc), "error_code": "INTERNAL_ERROR"},
+    )
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     """
