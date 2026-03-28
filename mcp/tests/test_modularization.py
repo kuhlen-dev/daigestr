@@ -103,6 +103,47 @@ INTELLIGENCE_FUNCTIONS = [
     "_apply_auto_extract",
 ]
 
+TEMPLATES_DB_FUNCTIONS = [
+    "init_templates_db",
+    "get_all_template_ids",
+    "search_templates",
+]
+
+ROUTING_FUNCTIONS = [
+    "convert_auto",
+    "convert_folder_contents",
+    "convert_url",
+    "_build_tips_dict",
+]
+
+API_REST_FUNCTIONS = [
+    "api_convert",
+    "api_convert_folder",
+    "api_extract",
+    "api_template_categories",
+    "api_search_templates",
+    "api_templates",
+    "api_get_template",
+    "api_bulk_templates",
+    "api_create_template",
+    "api_update_template",
+    "api_delete_template",
+    "api_analyze",
+    "api_health",
+    "api_formats",
+    "api_tips",
+    "run_rest_server",
+]
+
+API_MCP_FUNCTIONS = [
+    "mcp_convert",
+    "mcp_extract",
+    "mcp_convert_folder",
+    "mcp_health",
+    "mcp_list_files",
+    "mcp_get_tips",
+]
+
 ALL_EXTRACTED = {
     "utils": UTILS_FUNCTIONS,
     "mistral_client": MISTRAL_CLIENT_FUNCTIONS,
@@ -112,12 +153,18 @@ ALL_EXTRACTED = {
     "converters.audio": AUDIO_FUNCTIONS,
     "converters.email": EMAIL_FUNCTIONS,
     "intelligence": INTELLIGENCE_FUNCTIONS,
+    "templates_db": TEMPLATES_DB_FUNCTIONS,
+    "routing": ROUTING_FUNCTIONS,
+    "api_rest": API_REST_FUNCTIONS,
+    "api_mcp": API_MCP_FUNCTIONS,
 }
 
 ALL_FUNCTION_NAMES = (
     UTILS_FUNCTIONS + MISTRAL_CLIENT_FUNCTIONS + IMAGES_FUNCTIONS
     + PDF_FUNCTIONS + OFFICE_FUNCTIONS + AUDIO_FUNCTIONS
     + EMAIL_FUNCTIONS + INTELLIGENCE_FUNCTIONS
+    + TEMPLATES_DB_FUNCTIONS + ROUTING_FUNCTIONS
+    + API_REST_FUNCTIONS + API_MCP_FUNCTIONS
 )
 
 
@@ -136,10 +183,25 @@ def setup_path():
 # Test 1: Jede Funktion ist im erwarteten Modul vorhanden
 # ---------------------------------------------------------------------------
 
+# Modules that require heavy mocking (FastAPI/FastMCP) — loaded via conftest
+_MOCK_REQUIRED_MODULES = {"api_rest", "api_mcp"}
+
+
 class TestFunctionsInModules:
     @pytest.mark.parametrize("module_name,functions", list(ALL_EXTRACTED.items()))
     def test_module_has_all_functions(self, module_name, functions):
         """Jedes Modul enthält alle erwarteten Funktionen."""
+        # api_rest/api_mcp require FastAPI/FastMCP mocks — load via server namespace
+        if module_name in _MOCK_REQUIRED_MODULES:
+            from conftest import load_server_module
+            server = load_server_module()
+            # The functions should be re-exported via server
+            for fn_name in functions:
+                assert hasattr(server, fn_name), (
+                    f"Funktion '{fn_name}' fehlt im server-Namespace (re-export von '{module_name}')"
+                )
+            return
+
         # Lade Modul frisch (ohne server.py Side-Effects)
         if module_name in sys.modules:
             del sys.modules[module_name]
@@ -210,7 +272,8 @@ class TestNoCircularImports:
         """Jedes Modul muss unabhängig importierbar sein (kein circular import)."""
         # Frischer Import ohne Cache
         for key in list(sys.modules.keys()):
-            if key.startswith(("converters", "utils", "mistral_client", "server", "intelligence")):
+            if key.startswith(("converters", "utils", "mistral_client", "server", "intelligence",
+                                "templates_db", "routing", "api_rest", "api_mcp")):
                 del sys.modules[key]
 
         try:

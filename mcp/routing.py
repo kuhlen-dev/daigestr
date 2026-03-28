@@ -1,0 +1,859 @@
+"""
+Core Routing-Logik für Daigestr.
+
+Enthält:
+- convert_auto: Intelligente Konvertierung basierend auf Dateityp
+- convert_folder_contents: Konvertiert alle Dateien in einem Ordner
+- convert_url: Konvertiert eine URL zu Markdown
+- _build_tips_dict: Erstellt das Tips-Dictionary für /v1/tips und get_tips
+
+Alle patchbaren Symbole werden über _get() aus dem server-Namespace gelesen,
+damit Test-Patches auf _server.X korrekt funktionieren (gleiche Semantik wie
+alle anderen extrahierten Module).
+"""
+
+import asyncio
+import base64
+import hashlib
+import time
+from pathlib import Path
+from typing import Optional, Any
+
+import structlog
+from markitdown import MarkItDown as _MarkItDown
+
+from models import (
+    ConvertResponse,
+    MetaData,
+    ErrorCode,
+    create_error_response,
+    create_success_response,
+)
+from settings import (
+    MAX_FILE_SIZE_BYTES,
+    MAX_FILE_SIZE_MB,
+    IMAGE_EXTENSIONS,
+    MARKITDOWN_EXTENSIONS,
+    AUDIO_EXTENSIONS,
+    VIDEO_EXTENSIONS,
+    MISTRAL_API_KEY,
+    MISTRAL_TIMEOUT,
+    TEMP_DIR,
+    DATA_DIR,
+    WHISPER_MODEL_SIZE,
+    VERSION,
+)
+from utils import (
+    _get,
+    get_file_extension,
+    get_mimetype,
+    detect_mimetype_from_bytes,
+    should_skip_file,
+)
+from mistral_client import analyze_with_mistral_vision
+from converters.images import (
+    resize_image_if_needed,
+    extract_image_metadata,
+    extract_images_from_docx,
+    extract_images_from_pptx,
+    describe_embedded_images,
+    insert_image_descriptions,
+    render_first_page_as_image,
+)
+from converters.pdf import (
+    is_scanned_pdf,
+    convert_scanned_pdf,
+    embed_ocr_in_pdf,
+)
+from converters.office import convert_with_markitdown
+from converters.audio import extract_audio_from_video, transcribe_audio
+from intelligence import (
+    classify_document,
+    correct_ocr_text,
+    extract_structured_data,
+    calculate_quality_score,
+    chunk_markdown,
+    dual_pass_validate,
+    _apply_auto_extract,
+)
+from templates_db import get_all_template_ids
+
+log = structlog.get_logger()
+
+# MarkItDown Instanz (für URL-Konvertierung)
+_md = _MarkItDown()
+
+_EXAMPLE_URL = "https://example.com"  # Example URL for documentation purposes only
+
+
+async def convert_url(url: str) -> dict[str, Any]:
+    """Konvertiert eine URL zu Markdown (non-blocking via asyncio.to_thread)."""
+    _md_inst = _get("md", _md)
+    try:
+        log.info("url_convert", url=url)
+        result = await asyncio.to_thread(_md_inst.convert_url, url)
+        return {
+            "success": True,
+            "markdown": result.text_content,
+            "title": getattr(result, "title", None),
+        }
+    except Exception as e:
+        log.error("url_convert_error", url=url, error=str(e))
+        return {
+            "success": False,
+            "error_code": ErrorCode.CONVERSION_FAILED,
+            "error": f"URL-Konvertierung fehlgeschlagen: {str(e)}"
+        }
+
+
+async def convert_auto(
+    file_data: bytes,
+    filename: str,
+    source: str,
+    source_type: str,
+    input_meta: dict[str, Any],
+    prompt: Optional[str] = None,
+    language: str = "de",
+    describe_images: bool = False,
+    classify: bool = False,
+    classify_categories: list[str] | None = None,
+    extract_schema: Optional[dict] = None,
+    ocr_correct: bool = False,
+    show_formulas: bool = False,
+    chunk: bool = False,
+    chunk_size: int = 512,
+    accuracy: str = "standard",
+    ocr_embed: bool = False,
+    auto_extract: bool = False,
+    min_confidence: float = 0.7,
+) -> ConvertResponse:
+    """
+    Intelligente Konvertierung basierend auf Dateityp.
+
+    Args:
+        file_data: Rohe Datei-Bytes
+        filename: Dateiname (wird für Extension-Erkennung genutzt)
+        source: Quell-Pfad oder -Bezeichnung (für Metadaten)
+        source_type: 'file', 'base64' oder 'url'
+        input_meta: Beliebige Pass-through-Metadaten
+        prompt: Optionaler Custom-Prompt für Vision
+        language: Antwortsprache ('de' oder 'en')
+        describe_images: Eingebettete Bilder in DOCX/PPTX durch Pixtral beschreiben
+        classify: Dokumenttyp nach Konvertierung via LLM klassifizieren
+        classify_categories: Erlaubte Dokumenttypen (überschreibt DEFAULT_CLASSIFY_CATEGORIES)
+        extract_schema: JSON-Schema für strukturierte Daten-Extraktion (AC-014-1)
+        ocr_correct: OCR-Nachkorrektur via LLM aktivieren (AC-015-5)
+        show_formulas: Excel-Formeln im Output annotieren (FR-MKIT-007)
+        chunk: Smart Chunking für RAG aktivieren (FR-MKIT-011)
+        chunk_size: Maximale Chunk-Größe in Tokens (Default: 512)
+        accuracy: Accuracy-Modus: 'standard' (Default) oder 'high'. High aktiviert
+                  automatische OCR-Correction und Dual-Pass Vision-Validierung (T-MKIT-020).
+        ocr_embed: Wenn True und das Dokument ein gescanntes PDF ist, wird der OCR-Text
+                   als unsichtbare Textschicht eingebettet (T-MKIT-033).
+    """
+    start_time = time.time()
+
+    # All patchable symbols read via _get() for test-patchability
+    _get_file_extension = _get("get_file_extension", get_file_extension)
+    _detect_mimetype = _get("detect_mimetype_from_bytes", detect_mimetype_from_bytes)
+    _get_mimetype = _get("get_mimetype", get_mimetype)
+    _max_file_size_bytes = _get("MAX_FILE_SIZE_BYTES", MAX_FILE_SIZE_BYTES)
+    _max_file_size_mb = _get("MAX_FILE_SIZE_MB", MAX_FILE_SIZE_MB)
+    _mistral_api_key = _get("MISTRAL_API_KEY", MISTRAL_API_KEY)
+    _image_extensions = _get("IMAGE_EXTENSIONS", IMAGE_EXTENSIONS)
+    _markitdown_extensions = _get("MARKITDOWN_EXTENSIONS", MARKITDOWN_EXTENSIONS)
+    _audio_extensions = _get("AUDIO_EXTENSIONS", AUDIO_EXTENSIONS)
+    _video_extensions = _get("VIDEO_EXTENSIONS", VIDEO_EXTENSIONS)
+    _temp_dir = _get("TEMP_DIR", TEMP_DIR)
+    _whisper_model_size = _get("WHISPER_MODEL_SIZE", WHISPER_MODEL_SIZE)
+
+    _resize_image = _get("resize_image_if_needed", resize_image_if_needed)
+    _extract_img_meta = _get("extract_image_metadata", extract_image_metadata)
+    _analyze_vision = _get("analyze_with_mistral_vision", analyze_with_mistral_vision)
+    _correct_ocr = _get("correct_ocr_text", correct_ocr_text)
+    _dual_pass = _get("dual_pass_validate", dual_pass_validate)
+    _classify_doc = _get("classify_document", classify_document)
+    _calc_quality = _get("calculate_quality_score", calculate_quality_score)
+    _apply_auto = _get("_apply_auto_extract", _apply_auto_extract)
+    _extract_struct = _get("extract_structured_data", extract_structured_data)
+    _chunk_md = _get("chunk_markdown", chunk_markdown)
+    _extract_imgs_docx = _get("extract_images_from_docx", extract_images_from_docx)
+    _extract_imgs_pptx = _get("extract_images_from_pptx", extract_images_from_pptx)
+    _describe_imgs = _get("describe_embedded_images", describe_embedded_images)
+    _insert_img_desc = _get("insert_image_descriptions", insert_image_descriptions)
+    _render_page = _get("render_first_page_as_image", render_first_page_as_image)
+    _is_scanned = _get("is_scanned_pdf", is_scanned_pdf)
+    _convert_scanned = _get("convert_scanned_pdf", convert_scanned_pdf)
+    _embed_ocr = _get("embed_ocr_in_pdf", embed_ocr_in_pdf)
+    _convert_markitdown = _get("convert_with_markitdown", convert_with_markitdown)
+    _extract_audio = _get("extract_audio_from_video", extract_audio_from_video)
+    _transcribe = _get("transcribe_audio", transcribe_audio)
+
+    ext = _get_file_extension(filename)
+    mimetype = _detect_mimetype(file_data) or _get_mimetype(Path(filename))
+
+    meta = {
+        **input_meta,
+        "source": source,
+        "source_type": source_type,
+        "format": ext.lstrip("."),
+        "size_bytes": len(file_data),
+    }
+
+    # Größenprüfung
+    if len(file_data) > _max_file_size_bytes:
+        meta["duration_ms"] = int((time.time() - start_time) * 1000)
+        return create_error_response(
+            ErrorCode.FILE_TOO_LARGE,
+            f"Datei zu groß: {len(file_data) / 1024 / 1024:.1f}MB (Max: {_max_file_size_mb}MB)",
+            meta=meta
+        )
+
+    # T-MKIT-020: Accuracy-Modus immer in Meta dokumentieren
+    meta["accuracy_mode"] = accuracy
+
+    # T-MKIT-023: High-Accuracy ohne API-Key → Warning + Degradierung auf Standard
+    # Nur für Dateitypen die Mistral API nutzen (Bilder, PDFs) — nicht für Audio/Video (Whisper)
+    _needs_mistral_api = ext in _image_extensions or ext in _markitdown_extensions
+    if accuracy == "high" and not _mistral_api_key and _needs_mistral_api:
+        log.warning("high_accuracy_degraded_no_api_key")
+        meta["accuracy_warning"] = "High accuracy requested but MISTRAL_API_KEY not set — running in standard mode"
+        accuracy = "standard"
+        meta["accuracy_mode"] = accuracy
+
+    # Bild → Vision
+    if ext in _image_extensions or (mimetype and mimetype.startswith("image/")):
+        processed_data, resize_meta = _resize_image(file_data)
+        meta.update(resize_meta)
+        meta["vision_used"] = True
+
+        vision_prompt = prompt or (
+            "Analysiere dieses Bild und gib den Inhalt als Markdown zurück.\n\n"
+            "- Wenn Text sichtbar ist: extrahiere ihn vollständig und strukturiert "
+            "(Überschriften, Listen, Tabellen in Markdown-Syntax)\n"
+            "- Wenn es ein Diagramm, Chart oder Grafik ist: beschreibe die dargestellten Daten präzise\n"
+            "- Wenn es ein Foto ohne Text ist: beschreibe den Bildinhalt in einem kurzen Absatz\n"
+            "- Wenn die Bildqualität zu schlecht ist: schreibe [UNLESERLICH]\n\n"
+            "Antworte ausschließlich mit dem Markdown-Ergebnis."
+        )
+
+        result = await _analyze_vision(
+            processed_data,
+            mimetype or "image/jpeg",
+            vision_prompt,
+            language
+        )
+
+        meta["duration_ms"] = int((time.time() - start_time) * 1000)
+
+        if result["success"]:
+            meta["vision_model"] = result.get("vision_model")
+            meta["tokens_prompt"] = result.get("tokens_prompt")
+            meta["tokens_completion"] = result.get("tokens_completion")
+            meta["tokens_total"] = result.get("tokens_total")
+
+            # T-MKIT-027: EXIF/GPS/IPTC Metadaten aus Original-Bilddaten extrahieren
+            try:
+                img_metadata = _extract_img_meta(file_data)
+                if img_metadata.get("exif"):
+                    meta["exif"] = img_metadata["exif"]
+                if img_metadata.get("iptc"):
+                    meta["iptc"] = img_metadata["iptc"]
+            except Exception as _exif_err:
+                log.debug("exif_extraction_skipped", error=str(_exif_err))
+
+            markdown = result["markdown"]
+            pipeline_steps: list[str] = ["vision"]
+
+            # AC-015: OCR-Nachkorrektur via LLM (T-MKIT-022: auch bei accuracy="high" automatisch aktiv)
+            if ocr_correct or accuracy == "high":
+                log.info("ocr_correct_start", path="vision", accuracy=accuracy)
+                correction = await _correct_ocr(markdown, language=language)
+                if correction["success"]:
+                    markdown = correction["corrected_text"]
+                    meta["ocr_corrected"] = True
+                    meta["ocr_corrections_count"] = correction["corrections_count"]
+                    log.info("ocr_correct_done_vision", corrections=correction["corrections_count"])
+                else:
+                    log.warning("ocr_correct_failed_vision", error=correction.get("error"))
+                    meta["ocr_corrected"] = False
+
+            # T-MKIT-020: High-Accuracy-Pipeline für Bilder
+            if accuracy == "high":
+                log.info("high_accuracy_image_dual_pass_start", file=filename)
+                effective_mimetype = mimetype or "image/jpeg"
+                markdown = await _dual_pass(
+                    markdown=markdown,
+                    file_data=processed_data,
+                    mimetype=effective_mimetype,
+                    language=language,
+                )
+                pipeline_steps.append("dual_pass_validation")
+
+            meta["pipeline_steps"] = pipeline_steps
+
+            if classify:
+                classify_result = await _classify_doc(markdown, classify_categories, language)
+                meta.update(classify_result)
+            # AC-010: Quality Scoring
+            meta.update(_calc_quality(markdown, meta))
+            # T-MKIT-032: Response hints for LLM consumers
+            hints: list[str] = []
+            if not extract_schema and not auto_extract and meta.get("document_type") == "invoice":
+                hints.append("This document was classified as an invoice. Add template='invoice' to extract structured fields (invoice_number, total, line_items, etc.).")
+            if not extract_schema and not auto_extract and meta.get("document_type") and meta.get("document_type") != "other":
+                hints.append("Add auto_extract=true to automatically extract structured data based on document type.")
+            if meta.get("quality_grade") == "poor" and accuracy != "high":
+                hints.append("Low quality score detected. Try accuracy='high' for better results on scanned or complex documents.")
+            if hints:
+                meta["hints"] = hints
+            response = create_success_response(markdown, meta=meta)
+            # T-MKIT-036: Auto-Extract (classify → template lookup → extraction)
+            if auto_extract and not extract_schema:
+                response = await _apply_auto(response, meta, markdown, language, min_confidence, hints)
+            # AC-014-2/AC-014-3: Strukturierte Extraktion falls Schema gesetzt
+            elif extract_schema:
+                extraction = await _extract_struct(markdown, extract_schema, language)
+                if extraction["success"]:
+                    response.extracted = extraction["extracted"]
+                    if accuracy == "high":
+                        pipeline_steps_updated = list(meta.get("pipeline_steps", pipeline_steps))
+                        if "schema_extraction" not in pipeline_steps_updated:
+                            pipeline_steps_updated.append("schema_extraction")
+                        meta["pipeline_steps"] = pipeline_steps_updated
+                        response.meta = MetaData(**{
+                            k: v for k, v in meta.items()
+                        })
+                else:
+                    log.warning("extract_structured_data_failed_vision", error=extraction.get("error"))
+            # FR-MKIT-011: Smart Chunking für RAG
+            if chunk:
+                response.chunks = _chunk_md(markdown, chunk_size=chunk_size, source=source)
+            return response
+        else:
+            return create_error_response(
+                result.get("error_code", ErrorCode.VISION_FAILED),
+                result["error"],
+                meta=meta
+            )
+
+    # Audio/Video → faster-whisper Transkription (FR-MKIT-006)
+    elif ext in _audio_extensions or ext in _video_extensions:
+        temp_media_path = _temp_dir / f"{hashlib.md5(file_data).hexdigest()}_{filename}"
+        extracted_wav: Optional[Path] = None
+        try:
+            temp_media_path.write_bytes(file_data)
+            audio_path = temp_media_path
+
+            # Video: erst Audio-Track extrahieren
+            if ext in _video_extensions:
+                log.info("video_audio_extract_start", file=filename)
+                try:
+                    extracted_wav = _extract_audio(temp_media_path)
+                    audio_path = extracted_wav
+                except RuntimeError as exc:
+                    meta["duration_ms"] = int((time.time() - start_time) * 1000)
+                    return create_error_response(
+                        ErrorCode.CONVERSION_FAILED,
+                        f"Audio-Extraktion fehlgeschlagen: {str(exc)}",
+                        meta=meta,
+                    )
+
+            # Transkribieren
+            transcription = _transcribe(audio_path)
+            meta["duration_ms"] = int((time.time() - start_time) * 1000)
+
+            if not transcription["success"]:
+                return create_error_response(
+                    ErrorCode.CONVERSION_FAILED,
+                    transcription.get("error", "Transkription fehlgeschlagen"),
+                    meta=meta,
+                )
+
+            # Meta-Daten setzen (AC-006-6)
+            meta["language"] = transcription.get("language", "unknown")
+            meta["duration_seconds"] = transcription.get("duration", 0.0)
+            meta["whisper_model"] = transcription.get("model_size", _whisper_model_size)
+            meta["accuracy_mode"] = accuracy  # T-MKIT-022: accuracy_mode auch bei Audio/Video
+
+            transcript_text = transcription.get("text", "")
+            markdown = f"# Transkription\n\n{transcript_text}"
+
+            log.info(
+                "audio_transcription_done",
+                file=filename,
+                language=meta["language"],
+                duration=meta["duration_seconds"],
+                chars=len(transcript_text),
+            )
+
+            # AC-010: Quality Scoring
+            meta.update(_calc_quality(markdown, meta))
+            response = create_success_response(markdown, meta=meta)
+            # FR-MKIT-011: Smart Chunking für RAG
+            if chunk:
+                response.chunks = _chunk_md(markdown, chunk_size=chunk_size, source=source)
+            return response
+
+        finally:
+            temp_media_path.unlink(missing_ok=True)
+            if extracted_wav is not None:
+                extracted_wav.unlink(missing_ok=True)
+
+    # Dokument → MarkItDown (mit optionalem Scanned-PDF-Routing)
+    elif ext in _markitdown_extensions or ext:
+        temp_path = _temp_dir / f"{hashlib.md5(file_data).hexdigest()}_{filename}"
+        try:
+            temp_path.write_bytes(file_data)
+
+            # Scanned PDF Detection: VOR dem normalen markitdown-Pfad prüfen
+            if ext == ".pdf" and _is_scanned(temp_path):
+                log.info("scanned_pdf_detected", file=filename)
+                result = await _convert_scanned(temp_path, language=language)
+                meta["duration_ms"] = int((time.time() - start_time) * 1000)
+
+                if result["success"]:
+                    meta["scanned"] = True
+                    meta["vision_model"] = result.get("vision_model")
+                    meta["ocr_model"] = result.get("ocr_model")
+                    meta["tokens_prompt"] = result.get("tokens_prompt")
+                    meta["tokens_completion"] = result.get("tokens_completion")
+                    meta["tokens_total"] = result.get("tokens_total")
+                    meta["tokens_per_page"] = result.get("tokens_per_page")
+                    meta["pages_processed"] = result.get("pages_processed") or result.get("pages")
+                    if result.get("ocr_model"):
+                        # OCR3-Pfad: kein Vision
+                        meta["vision_used"] = False
+                    else:
+                        meta["vision_used"] = True
+
+                    scanned_markdown = result["markdown"]
+                    scanned_pipeline_steps: list[str] = ["ocr"]
+
+                    # AC-015: OCR-Nachkorrektur via LLM (nur wenn explizit aktiviert ODER accuracy=high)
+                    if ocr_correct or accuracy == "high":
+                        log.info("ocr_correct_start", path="scanned_pdf", accuracy=accuracy)
+                        correction = await _correct_ocr(scanned_markdown, language=language)
+                        if correction["success"]:
+                            scanned_markdown = correction["corrected_text"]
+                            meta["ocr_corrected"] = True
+                            meta["ocr_corrections_count"] = correction["corrections_count"]
+                            log.info("ocr_correct_done_scanned_pdf", corrections=correction["corrections_count"])
+                            scanned_pipeline_steps.append("ocr_correction")
+                        else:
+                            log.warning("ocr_correct_failed_scanned_pdf", error=correction.get("error"))
+                            meta["ocr_corrected"] = False
+
+                    # T-MKIT-020: High-Accuracy → Dual-Pass Validation für gescannte PDFs
+                    if accuracy == "high":
+                        log.info("high_accuracy_scanned_pdf_dual_pass_start", file=filename)
+                        rendered = _render_page(temp_path)
+                        if rendered is not None:
+                            page_image_bytes, page_mimetype = rendered
+                            scanned_markdown = await _dual_pass(
+                                markdown=scanned_markdown,
+                                file_data=page_image_bytes,
+                                mimetype=page_mimetype,
+                                language=language,
+                            )
+                            scanned_pipeline_steps.append("dual_pass_validation")
+                        else:
+                            log.warning("high_accuracy_scanned_pdf_dual_pass_skipped_no_pdf2image")
+
+                    meta["pipeline_steps"] = scanned_pipeline_steps
+
+                    if classify:
+                        classify_result = await _classify_doc(scanned_markdown, classify_categories, language)
+                        meta.update(classify_result)
+                    # AC-010: Quality Scoring
+                    meta.update(_calc_quality(scanned_markdown, meta))
+                    # T-MKIT-032: Response hints for LLM consumers
+                    scanned_hints: list[str] = []
+                    if not extract_schema and not auto_extract and meta.get("document_type") == "invoice":
+                        scanned_hints.append("This document was classified as an invoice. Add template='invoice' to extract structured fields (invoice_number, total, line_items, etc.).")
+                    if not extract_schema and not auto_extract and meta.get("document_type") and meta.get("document_type") != "other":
+                        scanned_hints.append("Add auto_extract=true to automatically extract structured data based on document type.")
+                    if meta.get("quality_grade") == "poor" and accuracy != "high":
+                        scanned_hints.append("Low quality score detected. Try accuracy='high' for better results on scanned or complex documents.")
+                    if not ocr_correct and accuracy != "high":
+                        scanned_hints.append("This is a scanned document. Enable ocr_correct=true or accuracy='high' to fix common OCR errors.")
+                    if meta.get("scanned") and not ocr_embed:
+                        scanned_hints.append("This scanned PDF has no searchable text layer. Add ocr_embed=true to create a searchable PDF with embedded OCR text.")
+                    if scanned_hints:
+                        meta["hints"] = scanned_hints
+                    response = create_success_response(scanned_markdown, meta=meta)
+                    # T-MKIT-033: OCR Embed — invisible text layer in scanned PDF
+                    if ocr_embed:
+                        pages_text_list: list[str] | None = None
+                        if result.get("pages_text"):
+                            pages_text_list = result["pages_text"]
+                        embedded = _embed_ocr(file_data, scanned_markdown, pages_text_list)
+                        if embedded is not None:
+                            response.enriched_pdf = base64.b64encode(embedded).decode("utf-8")
+                            log.info("ocr_embed_done", size_bytes=len(embedded))
+                        else:
+                            log.warning("ocr_embed_failed_no_output")
+                    # T-MKIT-036: Auto-Extract (classify → template lookup → extraction)
+                    if auto_extract and not extract_schema:
+                        response = await _apply_auto(response, meta, scanned_markdown, language, min_confidence, scanned_hints)
+                    # AC-014-2/AC-014-3: Strukturierte Extraktion falls Schema gesetzt
+                    elif extract_schema:
+                        extraction = await _extract_struct(scanned_markdown, extract_schema, language)
+                        if extraction["success"]:
+                            response.extracted = extraction["extracted"]
+                            if accuracy == "high":
+                                updated_steps = list(meta.get("pipeline_steps", scanned_pipeline_steps))
+                                if "schema_extraction" not in updated_steps:
+                                    updated_steps.append("schema_extraction")
+                                meta["pipeline_steps"] = updated_steps
+                                response.meta = MetaData(**{
+                                    k: v for k, v in meta.items()
+                                })
+                        else:
+                            log.warning("extract_structured_data_failed_scanned_pdf", error=extraction.get("error"))
+                    # FR-MKIT-011: Smart Chunking für RAG
+                    if chunk:
+                        response.chunks = _chunk_md(scanned_markdown, chunk_size=chunk_size, source=source)
+                    return response
+                else:
+                    return create_error_response(
+                        result.get("error_code", ErrorCode.CONVERSION_FAILED),
+                        result["error"],
+                        meta=meta
+                    )
+
+            result = _convert_markitdown(temp_path, show_formulas=show_formulas)
+            meta["duration_ms"] = int((time.time() - start_time) * 1000)
+
+            if result["success"]:
+                if result.get("title"):
+                    meta["title"] = result["title"]
+
+                # FR-MKIT-007: Excel-spezifische Metadaten
+                if ext in {".xlsx", ".xls"}:
+                    if result.get("sheets_count") is not None:
+                        meta["sheets_count"] = result["sheets_count"]
+                    if result.get("charts_count") is not None:
+                        meta["charts_count"] = result["charts_count"]
+                    # T-MKIT-026: Hidden sheets
+                    if result.get("hidden_sheets"):
+                        meta["hidden_sheets"] = result["hidden_sheets"]
+
+                # T-MKIT-024: ZUGFeRD/Factur-X Daten aus convert_with_markitdown übernehmen
+                zugferd_extracted = result.get("zugferd")
+                if zugferd_extracted is not None:
+                    meta["zugferd"] = zugferd_extracted
+
+                # T-MKIT-025: XMP Metadata + Embedded Files übernehmen
+                xmp_extracted = result.get("xmp_metadata")
+                if xmp_extracted is not None:
+                    meta["xmp_metadata"] = xmp_extracted
+
+                embedded_extracted = result.get("embedded_files")
+                if embedded_extracted is not None:
+                    meta["embedded_files"] = embedded_extracted
+
+                # T-MKIT-028: Office Document Properties übernehmen
+                doc_props = result.get("document_properties")
+                if doc_props is not None:
+                    meta["document_properties"] = doc_props
+
+                # T-MKIT-029: Email Metadata übernehmen
+                email_meta = result.get("email_metadata")
+                if email_meta is not None:
+                    meta["email_routing"] = email_meta.get("routing")
+                    meta["email_thread"] = email_meta.get("thread")
+                    meta["calendar_events"] = email_meta.get("calendar_events")
+
+                # T-MKIT-030: PPTX Hidden Slides übernehmen
+                pptx_hidden = result.get("pptx_hidden_info")
+                if pptx_hidden is not None and pptx_hidden.get("hidden_slide_count", 0) > 0:
+                    meta["hidden_slides"] = pptx_hidden["hidden_slide_count"]
+
+                markdown = result["markdown"]
+                markitdown_pipeline_steps: list[str] = ["markitdown"]
+
+                # Eingebettete Bilder beschreiben (nur für DOCX/PPTX, nur wenn aktiviert)
+                if describe_images and ext in {".docx", ".doc", ".pptx", ".ppt"}:
+                    log.info("embedded_images_describe_start", file=filename, ext=ext)
+                    if ext in {".docx", ".doc"}:
+                        images = _extract_imgs_docx(temp_path)
+                    else:
+                        images = _extract_imgs_pptx(temp_path)
+
+                    if images:
+                        descriptions = await _describe_imgs(images, language=language)
+                        markdown = _insert_img_desc(markdown, descriptions)
+                        meta["images_described"] = len(descriptions)
+                        log.info(
+                            "embedded_images_described",
+                            file=filename,
+                            count=len(descriptions),
+                        )
+
+                # T-MKIT-020: High-Accuracy → Dual-Pass Validation für PDFs und Bilder
+                if accuracy == "high" and ext == ".pdf":
+                    log.info("high_accuracy_pdf_dual_pass_start", file=filename)
+                    rendered = _render_page(temp_path)
+                    if rendered is not None:
+                        page_image_bytes, page_mimetype = rendered
+                        markdown = await _dual_pass(
+                            markdown=markdown,
+                            file_data=page_image_bytes,
+                            mimetype=page_mimetype,
+                            language=language,
+                        )
+                        markitdown_pipeline_steps.append("dual_pass_validation")
+                    else:
+                        log.warning("high_accuracy_pdf_dual_pass_skipped_no_pdf2image")
+
+                meta["pipeline_steps"] = markitdown_pipeline_steps
+
+                if classify:
+                    classify_result = await _classify_doc(markdown, classify_categories, language)
+                    meta.update(classify_result)
+
+                # AC-010: Quality Scoring
+                meta.update(_calc_quality(markdown, meta))
+                # T-MKIT-032: Response hints for LLM consumers
+                doc_hints: list[str] = []
+                if not extract_schema and not auto_extract and meta.get("document_type") == "invoice":
+                    doc_hints.append("This document was classified as an invoice. Add template='invoice' to extract structured fields (invoice_number, total, line_items, etc.).")
+                if not extract_schema and not auto_extract and meta.get("document_type") and meta.get("document_type") != "other":
+                    doc_hints.append("Add auto_extract=true to automatically extract structured data based on document type.")
+                if meta.get("quality_grade") == "poor" and accuracy != "high":
+                    doc_hints.append("Low quality score detected. Try accuracy='high' for better results on scanned or complex documents.")
+                if meta.get("scanned") and not ocr_correct and accuracy != "high":
+                    doc_hints.append("This is a scanned document. Enable ocr_correct=true or accuracy='high' to fix common OCR errors.")
+                if not describe_images and ext in (".docx", ".pptx") and source_type == "file":
+                    doc_hints.append("This document may contain embedded images. Add describe_images=true to describe them via Vision AI.")
+                # T-MKIT-024: ZUGFeRD hint wenn erkannt aber kein template/extract_schema
+                if meta.get("zugferd") is not None and not extract_schema and not auto_extract:
+                    doc_hints.append("This PDF contains embedded ZUGFeRD/Factur-X e-invoice data. Add template='invoice' to get the structured data in the extracted field — no LLM needed, 100% accurate.")
+                if doc_hints:
+                    meta["hints"] = doc_hints
+                response = create_success_response(markdown, meta=meta)
+                # T-MKIT-036: Auto-Extract (classify → template lookup → extraction)
+                if auto_extract and not extract_schema:
+                    response = await _apply_auto(response, meta, markdown, language, min_confidence, doc_hints)
+                # T-MKIT-024: ZUGFeRD Daten direkt als extracted verwenden (kein LLM nötig)
+                elif extract_schema and meta.get("zugferd") is not None:
+                    response.extracted = meta["zugferd"]
+                    meta["zugferd_source"] = "embedded_xml"
+                    meta["extraction_method"] = "zugferd"
+                    response.meta = MetaData(**{k: v for k, v in meta.items()})
+                    log.info("zugferd_used_as_extracted", file=filename)
+                elif extract_schema:
+                    # AC-014-2/AC-014-3: Strukturierte Extraktion falls Schema gesetzt (kein ZUGFeRD)
+                    extraction = await _extract_struct(markdown, extract_schema, language)
+                    if extraction["success"]:
+                        response.extracted = extraction["extracted"]
+                        if accuracy == "high":
+                            updated_steps = list(meta.get("pipeline_steps", markitdown_pipeline_steps))
+                            if "schema_extraction" not in updated_steps:
+                                updated_steps.append("schema_extraction")
+                            meta["pipeline_steps"] = updated_steps
+                            response.meta = MetaData(**{
+                                k: v for k, v in meta.items()
+                            })
+                    else:
+                        log.warning("extract_structured_data_failed_markitdown", error=extraction.get("error"))
+                # FR-MKIT-011: Smart Chunking für RAG
+                if chunk:
+                    response.chunks = _chunk_md(markdown, chunk_size=chunk_size, source=source)
+                return response
+            else:
+                return create_error_response(
+                    result.get("error_code", ErrorCode.CONVERSION_FAILED),
+                    result["error"],
+                    meta=meta
+                )
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+    else:
+        meta["duration_ms"] = int((time.time() - start_time) * 1000)
+        return create_error_response(
+            ErrorCode.UNSUPPORTED_FORMAT,
+            f"Nicht unterstütztes Format: {ext}",
+            meta=meta
+        )
+
+
+async def convert_folder_contents(
+    folder_path: Path,
+    input_meta: dict[str, Any],
+    language: str = "de",
+) -> ConvertResponse:
+    """
+    Konvertiert alle Dateien in einem Ordner zu einem zusammengeführten Markdown.
+    """
+    start_time = time.time()
+    log.info("folder_convert_start", folder=str(folder_path))
+
+    _should_skip = _get("should_skip_file", should_skip_file)
+    _convert_auto = _get("convert_auto", convert_auto)
+
+    if not folder_path.exists():
+        return create_error_response(
+            ErrorCode.FILE_NOT_FOUND,
+            f"Ordner nicht gefunden: {folder_path}",
+            meta=input_meta
+        )
+
+    if not folder_path.is_dir():
+        return create_error_response(
+            ErrorCode.INVALID_INPUT,
+            f"Kein Ordner: {folder_path}",
+            meta=input_meta
+        )
+
+    # Dateien sammeln
+    files = sorted([
+        f for f in folder_path.iterdir()
+        if f.is_file() and not _should_skip(f.name)
+    ], key=lambda f: f.name.lower())
+
+    if not files:
+        return create_error_response(
+            ErrorCode.INVALID_INPUT,
+            f"Keine Dateien im Ordner: {folder_path}",
+            meta=input_meta
+        )
+
+    # Ergebnisse sammeln
+    markdown_parts = []
+    file_results = []
+    total_tokens = 0
+    files_processed = 0
+    files_failed = 0
+
+    for file_path in files:
+        file_meta = {"filename": file_path.name}
+
+        try:
+            file_data = file_path.read_bytes()
+            result = await _convert_auto(
+                file_data=file_data,
+                filename=file_path.name,
+                source=str(file_path),
+                source_type="file",
+                input_meta={},
+                language=language,  # T-MKIT-022: language durchgereicht
+            )
+
+            if result.success:
+                files_processed += 1
+                markdown_parts.append(f"\n\n## {file_path.name}\n\n{result.markdown}")
+                file_meta["success"] = True
+                file_meta["size_bytes"] = len(file_data)
+
+                if result.meta:
+                    if hasattr(result.meta, 'tokens_total') and result.meta.tokens_total:
+                        total_tokens += result.meta.tokens_total
+                        file_meta["tokens"] = result.meta.tokens_total
+                    if hasattr(result.meta, 'vision_used') and result.meta.vision_used:
+                        file_meta["vision_used"] = True
+            else:
+                files_failed += 1
+                file_meta["success"] = False
+                file_meta["error"] = result.error.message if result.error else "Unknown error"
+                markdown_parts.append(f"\n\n## {file_path.name}\n\n*Konvertierung fehlgeschlagen*")
+
+        except Exception as e:
+            files_failed += 1
+            file_meta["success"] = False
+            file_meta["error"] = str(e)
+            log.error("folder_file_error", file=file_path.name, error=str(e))
+
+        file_results.append(file_meta)
+
+    # Zusammenführen
+    combined_markdown = f"# {folder_path.name}\n" + "".join(markdown_parts)
+
+    meta = {
+        **input_meta,
+        "source": str(folder_path),
+        "source_type": "folder",
+        "files_processed": files_processed,
+        "files_failed": files_failed,
+        "files_total": len(files),
+        "tokens_total": total_tokens,
+        "files": file_results,
+        "duration_ms": int((time.time() - start_time) * 1000),
+    }
+
+    log.info("folder_convert_complete",
+             folder=str(folder_path),
+             processed=files_processed,
+             failed=files_failed,
+             duration_ms=meta["duration_ms"])
+
+    return create_success_response(combined_markdown, meta=meta)
+
+
+def _build_tips_dict() -> dict:
+    """Builds the tips dictionary used by both MCP get_tips tool and REST /v1/tips endpoint."""
+    data_dir = str(DATA_DIR)
+    return {
+        "service": f"Daigestr — Document Intelligence Service v{VERSION}",
+        "quick_reference": {
+            "convert_file": {"endpoint": "POST /v1/convert", "mcp_tool": "convert", "params": {"path": f"{data_dir}/file.pdf"}},
+            "convert_url": {"endpoint": "POST /v1/convert", "mcp_tool": "convert", "params": {"url": _EXAMPLE_URL}},
+            "convert_base64": {"endpoint": "POST /v1/convert", "mcp_tool": "convert", "params": {"base64_data": "...", "filename": "file.pdf"}},
+            "extract_invoice": {"endpoint": "POST /v1/extract", "mcp_tool": "extract", "params": {"path": f"{data_dir}/invoice.pdf", "template": "invoice"}},
+            "extract_custom": {"endpoint": "POST /v1/convert", "mcp_tool": "convert", "params": {"path": f"{data_dir}/doc.pdf", "extract_schema": {"type": "object", "properties": {"title": {"type": "string"}}}}},
+        },
+        "common_mistakes": [
+            {"problem": "extracted is null", "cause": "Missing extract_schema or template parameter", "fix": "Add template='invoice' or extract_schema={...} to get structured JSON in the extracted field"},
+            {"problem": "extracted is null with auto_extract=true", "cause": "No template registered for this document type", "fix": "Register a template via POST /v1/templates or check meta.document_type and meta.template_used for details"},
+            {"problem": "chunks is null", "cause": "Missing chunk parameter", "fix": "Add chunk=true to get RAG-ready chunks in the chunks field"},
+            {"problem": "Poor quality on scanned PDFs", "cause": "Using standard accuracy", "fix": "Set accuracy='high' for OCR correction + dual-pass validation"},
+            {"problem": "Images in DOCX/PPTX not described", "cause": "describe_images defaults to false", "fix": "Set describe_images=true (costs extra API calls)"},
+            {"problem": "Document type not detected", "cause": "classify defaults to false", "fix": "Set classify=true to get document_type in meta"},
+            {"problem": "OCR errors in output", "cause": "No post-correction", "fix": "Set ocr_correct=true or accuracy='high' (auto-enables correction)"},
+        ],
+        "available_templates": get_all_template_ids(),
+        "available_formats": {
+            "documents": ["pdf", "docx", "doc", "pptx", "ppt", "xlsx", "xls", "odt", "ods", "odp", "html", "csv", "txt", "md", "rtf", "json", "xml"],
+            "images": ["jpg", "jpeg", "png", "gif", "webp", "bmp"],
+            "audio": ["mp3", "wav", "ogg", "flac", "m4a"],
+            "video": ["mp4", "mkv", "webm", "avi", "mov"],
+        },
+        "optional_features": {
+            "accuracy": {"values": ["standard", "high"], "default": "standard", "description": "high activates OCR correction + dual-pass vision validation for scanned documents"},
+            "classify": {"type": "bool", "default": False, "description": "Detect document type (invoice, contract, cv, etc.) with confidence score in meta"},
+            "extract_schema": {"type": "dict", "default": None, "description": "JSON Schema for structured extraction — result in 'extracted' field. Without this, extracted is always null."},
+            "template": {"type": "str", "default": None, "description": "Shortcut for extract_schema. Available: invoice, cv, contract"},
+            "auto_extract": {"type": "bool", "default": False, "description": "Automatically classify document, find matching template, and extract structured data — all in one call. No template or extract_schema needed."},
+            "min_confidence": {"type": "float", "default": 0.7, "description": "Minimum classification confidence for auto_extract to use a template (0.0-1.0)"},
+            "describe_images": {"type": "bool", "default": False, "description": "Extract and describe embedded images in DOCX/PPTX via Vision AI"},
+            "ocr_correct": {"type": "bool", "default": False, "description": "LLM post-correction for OCR errors"},
+            "ocr_embed": {"type": "bool", "default": False, "description": "Embed OCR text layer into PDF — creates searchable PDF output"},
+            "show_formulas": {"type": "bool", "default": False, "description": "Show Excel formulas in output"},
+            "chunk": {"type": "bool", "default": False, "description": "Split output into RAG-ready chunks"},
+            "chunk_size": {"type": "int", "default": 512, "description": "Approximate chunk size in tokens"},
+            "language": {"type": "str", "default": "de", "description": "Language for Vision/OCR responses"},
+            "zugferd": {"type": "bool", "default": "auto", "description": "Extract ZUGFeRD/Factur-X e-invoice data from PDF (auto-detected, 100% accuracy, no LLM required)"},
+        },
+        "response_fields": {
+            "markdown": "Always present — the converted document as Markdown",
+            "extracted": "Only present when extract_schema or template is set — structured JSON",
+            "chunks": "Only present when chunk=true — list of text segments with metadata",
+            "meta": "Always present — processing metadata (quality_score, duration, pipeline_steps, etc.)",
+        },
+        "v3_meta_fields": {
+            "zugferd": "ZUGFeRD/Factur-X structured invoice data (auto-extracted from PDF when present)",
+            "xmp_metadata": "PDF XMP metadata (title, creator, keywords, custom properties)",
+            "embedded_files": "Files embedded inside the PDF (e.g. original XML in ZUGFeRD)",
+            "hidden_sheets": "XLSX sheets with visibility=hidden or xlSheetVeryHidden — extracted regardless",
+            "exif": "Image EXIF data (camera, GPS coordinates, exposure, focal length)",
+            "iptc": "Image IPTC metadata (creator, copyright, keywords, caption)",
+            "document_properties": "Office document core/app/custom properties (author, company, revision, etc.)",
+            "email_routing": "Email routing headers (Received chain, SPF, DKIM, DMARC results)",
+            "email_thread": "Email thread/conversation metadata (In-Reply-To, References)",
+            "calendar_events": "Calendar events extracted from .ics attachments",
+            "hidden_slides": "PPTX hidden slides — extracted with hidden=true marker in meta",
+        },
+        "note_mcp_vs_rest": "MCP tool 'convert' uses 'base64_data' parameter (not 'base64' like REST API)",
+    }

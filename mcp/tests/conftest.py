@@ -140,6 +140,7 @@ def load_server_module(use_real_pil: bool = False, extra_patches: dict | None = 
         "utils", "mistral_client",
         "converters", "converters.images", "converters.pdf", "converters.office",
         "converters.audio", "converters.email", "intelligence",
+        "templates_db", "routing", "api_rest", "api_mcp",
     ):
         if _mod in sys.modules:
             del sys.modules[_mod]
