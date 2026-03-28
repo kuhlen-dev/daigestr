@@ -4,7 +4,7 @@
 
 Most document-to-Markdown tools work fine until you hand them a real-world file: a scanned invoice, a DOCX full of charts, an Excel with merged cells across 12 sheets, or a meeting recording. Then they silently fail, return empty text, or lose all structure. This service fixes that.
 
-Built on Microsoft's [markitdown](https://github.com/microsoft/markitdown), extended with Mistral OCR-3, Vision AI, audio transcription, a Template Registry with auto-extract, and a hybrid routing engine that picks the best tool for each document — automatically. Two interfaces: **MCP server** (for Claude and AI agents) and **REST API** (for n8n, workflows, and custom integrations). 787 unit tests. Self-hosted in a single Docker container.
+Built on Microsoft's [markitdown](https://github.com/microsoft/markitdown), extended with Mistral OCR-3, Vision AI, audio transcription, a Template Registry with auto-extract, and a hybrid routing engine that picks the best tool for each document — automatically. Two interfaces: **MCP server** (for Claude and AI agents) and **REST API** (for n8n, workflows, and custom integrations). Self-hosted in a single Docker container. Current version: **v5.2.0**.
 
 ---
 
@@ -239,18 +239,19 @@ The architecture diagram was converted to Mermaid syntax (renderable in GitHub, 
 |---------|---------------------|-----------------|----------------------|--------------|
 | Scanned PDF / OCR | No | Yes | Yes | Yes (Mistral OCR-3) |
 | Cross-page table merging | No | Partial | Yes | Yes |
-| Embedded image intelligence | No (placeholders) | No | No | Yes (classify + describe + Mermaid) |
-| Audio / Video transcription | No | No | No | Yes (faster-whisper) |
+| Embedded image intelligence (DOCX, PPTX, PDF, ODT, ODP, HTML) | No (placeholders) | No | No | Yes (classify + describe + Mermaid) |
+| Audio / Video transcription | No | No | No | Yes (faster-whisper, CPU-optimized) |
+| Output formats | Markdown only | Multiple | Multiple | Markdown / HTML / plain text |
 | Document classification | No | Partial | Yes | Yes (configurable categories) |
 | Schema extraction | No | No | Partial | Yes (any JSON Schema + Template Registry) |
 | Auto-extract (classify + extract) | No | No | Partial | Yes (one call, zero config) |
 | Template Registry (CRUD API) | No | No | No | Yes (SQLite + bulk import) |
+| Request-level cache | No | No | No | Yes (configurable TTL, clearable via API) |
 | Quality scoring | No | No | No | Yes (per-response score + grade) |
 | MCP interface | No | No | No | Yes (SSE + stdio) |
 | Self-hosted | Yes | Yes | No (cloud only) | Yes (Docker, single container) |
 | Deployment complexity | Minimal | Heavy (PyTorch + models) | Cloud SaaS | Minimal (docker compose up) |
 | Pricing | Free | Open source / paid SaaS | Per-page API cost | API cost only (Mistral) |
-| Test coverage | — | — | — | 787 unit tests |
 
 markitdown alone is a lightweight starting point. Unstructured.io is a heavy dependency tree (PyTorch, multiple model downloads) with no MCP interface. Azure and AWS document services are cloud-only, have per-page pricing, and require data to leave your infrastructure. This service is a single Docker container with a Mistral API key — self-hosted, MCP-native, and covering all the gaps.
 
@@ -425,6 +426,8 @@ See [Mistral Models](#mistral-models-march-2026) for the full comparison.
 | `POST` | `/v1/templates/bulk` | Bulk create/update templates (upsert) |
 | `GET` | `/v1/templates/categories` | List all categories with counts |
 | `GET` | `/v1/templates/search?q=...` | Search templates by id, name, description, keywords |
+| `DELETE` | `/v1/cache` | Clear the request-level cache |
+| `GET` | `/v1/tips` | Full feature reference as JSON (ideal for LLM self-discovery) |
 | `GET` | `/v1/formats` | List supported file formats |
 | `GET` | `/v1/health` | Service health status |
 
@@ -485,7 +488,27 @@ curl -X POST http://localhost:18006/v1/convert \
 
 HTML is converted to Markdown via Microsoft's markitdown library, preserving headings, lists, tables, links, and code blocks. The optional `classify` and `chunk` parameters work with URL input just like with file input.
 
-### Describe embedded images in a DOCX
+### All features in one call
+
+```bash
+curl -X POST http://localhost:18006/v1/convert \
+  -H "Content-Type: application/json" \
+  -d '{"path": "/data/document.pdf", "mode": "full"}'
+```
+
+### Convert and get rendered HTML output
+
+```bash
+curl -X POST http://localhost:18006/v1/convert \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "/data/report.docx",
+    "describe_images": true,
+    "output_format": "html"
+  }'
+```
+
+### Describe embedded images (DOCX, PPTX, PDF, ODT, ODP, HTML)
 
 ```bash
 curl -X POST http://localhost:18006/v1/convert \
@@ -593,6 +616,7 @@ curl -X POST http://localhost:18006/v1/convert/folder \
 | `extract` | Extract structured data using a template or custom schema |
 | `health` | Return service health status |
 | `list_files` | List files available in the data directory |
+| `get_tips` | Full feature reference as structured JSON (ideal for LLM self-discovery) |
 
 Both SSE (`MCP_TRANSPORT=sse`) and stdio (`MCP_TRANSPORT=stdio`) transports are supported.
 
@@ -693,12 +717,15 @@ The `pipeline_steps` field in the response metadata lists every stage that ran.
 | `min_confidence` | `float` | `0.7` | Minimum classification confidence for auto_extract to use a template (0.0–1.0) |
 | `chunk` | `bool` | `false` | Split output into RAG-ready chunks |
 | `chunk_size` | `int` | `512` | Approximate chunk size in tokens |
-| `describe_images` | `bool` | `false` | Extract embedded images from DOCX/PPTX and auto-classify each one: diagrams → Mermaid syntax, charts → data tables, photos → descriptions, text scans → OCR, decorative → skipped |
+| `mode` | `"default"` \| `"full"` | `"default"` | `"full"` enables all features in one flag: `describe_images`, `accuracy="high"`, `classify`, `ocr_correct`, `auto_extract`, `chunk` |
+| `output_format` | `"markdown"` \| `"html"` \| `"text"` | `"markdown"` | Output format: `"markdown"` (default), `"html"` (rendered with Mermaid.js + highlight.js), `"text"` (plain text, no Markdown syntax) |
+| `describe_images` | `bool` | `false` | Extract and describe embedded images from **all** supported formats: DOCX, PPTX, PDF, ODT, ODP, HTML. Auto-classifies each image: `diagram` → Mermaid syntax, `chart` → data table, `photo` → description, `text_scan` → OCR, `decorative` → skipped. Without this flag, all images appear as `[image]` placeholders. |
 | `ocr_correct` | `bool` | `false` | Run LLM OCR post-correction |
+| `ocr_embed` | `bool` | `false` | Embed OCR text as an invisible searchable layer in scanned PDFs. Returns `enriched_pdf` (base64) in the response. |
 | `show_formulas` | `bool` | `false` | Annotate Excel cells with their formulas |
 | `language` | `string` | `"de"` | Language for Vision responses and OCR |
 | `prompt` | `string` | — | Custom prompt for image analysis |
-| `password` | `string` | — | Password for protected PDFs |
+| `password` | `string` | — | Password for protected PDFs (reserved, not yet implemented) |
 | `meta` | `object` | `{}` | Arbitrary pass-through metadata |
 
 ---
@@ -734,13 +761,17 @@ The `/v1/convert/folder` endpoint and the `convert_folder` MCP tool convert all 
 | Option | Adds to response | Markdown still present? |
 |--------|-----------------|------------------------|
 | *(none)* | `markdown` + `meta` | Yes (always) |
+| `mode: "full"` | Activates all features below in one flag | Yes (enriched) |
+| `output_format: "html"` | `html` field (rendered HTML with Mermaid.js + highlight.js) | Yes |
+| `output_format: "text"` | Plain text output (no Markdown syntax, suitable for LLM context) | Yes |
 | `classify: true` | `meta.document_type` + `meta.document_type_confidence` | Yes |
 | `extract_schema` / `template` | `extracted` (structured JSON + `_meta`) | Yes |
 | `auto_extract: true` | `extracted` (auto-classified + template-matched + `_meta`) | Yes |
 | `chunk: true` | `chunks` (list of text segments with metadata) | Yes |
 | `accuracy: "high"` | Better `markdown` + `meta.pipeline_steps` | Yes (improved) |
 | `ocr_correct: true` | Better `markdown` + `meta.ocr_corrected` | Yes (corrected) |
-| `describe_images: true` | Richer `markdown` (diagrams → Mermaid, charts → tables, photos → descriptions) | Yes (enriched) |
+| `ocr_embed: true` | `enriched_pdf` (base64, scanned PDFs only) | Yes |
+| `describe_images: true` | Richer `markdown` (diagrams → Mermaid, charts → tables, photos → descriptions — works for PDF, DOCX, PPTX, ODT, ODP, HTML) | Yes (enriched) |
 | `show_formulas: true` | Richer `markdown` (Excel formulas visible) | Yes (enriched) |
 
 ---
@@ -1016,6 +1047,27 @@ All settings are controlled via environment variables. Copy `.env.example` to `.
 | `DEFAULT_LANGUAGE` | `de` | Default language for Vision and OCR responses |
 | `CLASSIFY_CATEGORIES` | `invoice,contract,cv,...` | Comma-separated document classification categories |
 
+### Cache
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CACHE_ENABLED` | `true` | Enable request-level result cache |
+| `CACHE_TTL_SECONDS` | `3600` | Cache time-to-live in seconds |
+
+### Rate Limiting
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RATE_LIMIT_MAX_WAIT_SECONDS` | `60` | Maximum time to wait when Mistral API returns 429 before aborting |
+
+### HTML Rendering
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MERMAID_CDN_URL` | jsdelivr CDN | CDN URL for Mermaid.js (used in `output_format: "html"`) |
+| `HIGHLIGHTJS_CDN_URL` | cdnjs CDN | CDN URL for highlight.js JS |
+| `HIGHLIGHTJS_CSS_URL` | cdnjs CDN | CDN URL for highlight.js CSS theme |
+
 ### File Handling
 
 | Variable | Default | Description |
@@ -1036,7 +1088,7 @@ All settings are controlled via environment variables. Copy `.env.example` to `.
 
 ### Vision and Image Intelligence
 
-**Embedded Image Pipeline:** Images extracted from DOCX (`word/media/`) and PPTX (`ppt/media/`) are classified into five types before processing:
+**Embedded Image Pipeline:** Images are extracted and classified from all supported document formats: DOCX (`word/media/`), PPTX (`ppt/media/`), PDF (embedded image streams), ODT, ODP, and HTML (`<img>` tags). Five classification types before processing:
 
 - `photo` → narrative description
 - `chart` → Markdown data table with axis labels and values
@@ -1070,9 +1122,43 @@ Images smaller than `MIN_IMAGE_SIZE_PX` in either dimension are skipped.
 
 **Smart Chunking:** With `chunk: true`, the Markdown output is split into chunks of approximately `chunk_size` tokens (heuristic: characters / 4). Headings trigger new chunks. Tables and code blocks are kept atomic and never split mid-structure.
 
+### Output Formats
+
+**HTML Rendering:** With `output_format: "html"`, the Markdown is rendered to a complete HTML document with embedded CSS, [Mermaid.js](https://mermaid.js.org/) for diagram rendering, and [highlight.js](https://highlightjs.org/) for code block syntax highlighting. CDN URLs are configurable via `MERMAID_CDN_URL`, `HIGHLIGHTJS_CDN_URL`, and `HIGHLIGHTJS_CSS_URL`.
+
+**Plain Text:** With `output_format: "text"`, Markdown syntax is stripped and plain text is returned — useful for feeding document content to LLMs where Markdown syntax would consume tokens unnecessarily.
+
+**Mode: Full:** `mode: "full"` is a shorthand that activates all processing features in a single parameter: `describe_images`, `accuracy="high"`, `classify`, `ocr_correct`, `auto_extract`, and `chunk`. Useful for maximum extraction when you don't want to enumerate each option.
+
+### Request Cache
+
+When `CACHE_ENABLED=true` (default), the service caches conversion results keyed by file hash + request parameters. Cached responses are returned immediately without re-processing. Cache TTL is controlled by `CACHE_TTL_SECONDS` (default: 3600). Clear the cache via `DELETE /v1/cache`. The `meta.cached` field in the response indicates whether the result came from cache.
+
 ---
 
 ## Architecture
+
+The service runs as a **single Docker container** (`daigestr`) with a modular Python codebase in `mcp/`. FastMCP (port 8080) and FastAPI (port 8081) run as parallel async interfaces sharing all modules.
+
+### Module Structure
+
+| Module | Purpose |
+|--------|---------|
+| `server.py` | Startup, uvloop, re-exports for backwards compatibility |
+| `settings.py` | All environment variables and constants |
+| `routing.py` | `convert_auto`, `convert_folder_contents`, `convert_url`, hybrid routing logic |
+| `intelligence.py` | `classify`, `extract`, `quality_score`, `chunk`, `dual_pass_validate`, `_apply_auto_extract` |
+| `converters/images.py` | Image resize, EXIF, embedded images from DOCX/PPTX/PDF/ODT/ODP/HTML, `describe_embedded_images` |
+| `converters/pdf.py` | Scan detection, OCR-3 routing, OCR embedding |
+| `converters/office.py` | markitdown wrapper (Excel formulas, DOCX extras) |
+| `converters/audio.py` | ffmpeg extraction + faster-whisper transcription |
+| `converters/email.py` | EML parsing, routing metadata, calendar events |
+| `templates_db.py` | SQLite: templates, prompts, scoring weights, request cache |
+| `api_rest.py` | FastAPI app, all REST endpoints |
+| `api_mcp.py` | FastMCP instance, all MCP tools |
+| `renderers/html.py` | Markdown → full HTML (Mermaid.js, highlight.js, CSS) |
+| `renderers/text.py` | Markdown → plain text (strip Markdown syntax) |
+| `models.py` | Pydantic schemas: request/response models, ErrorCodes, MetaData |
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -1088,6 +1174,7 @@ Images smaller than `MIN_IMAGE_SIZE_PX` in either dimension are skipped.
 │                       ▼                             │
 │           ┌───────────────────────┐                 │
 │           │     Hybrid Router     │                 │
+│           │      (routing.py)     │                 │
 │           └───────────┬───────────┘                 │
 │                       │                             │
 │    ┌──────────────────┼──────────────────┐          │
@@ -1095,8 +1182,8 @@ Images smaller than `MIN_IMAGE_SIZE_PX` in either dimension are skipped.
 │    ▼                  ▼                  ▼          │
 │  markitdown      Mistral Vision    Mistral OCR-3    │
 │  (text/office)   (images, DOCX     (/v1/ocr,        │
-│  pdfplumber      embedded, scans)  scanned PDFs)    │
-│  openpyxl                                           │
+│  pdfplumber      embedded from     scanned PDFs)    │
+│  openpyxl        PDF/ODT/ODP/HTML)                  │
 │    │                  │                  │          │
 │    └──────────────────┼──────────────────┘          │
 │                       │                             │
@@ -1106,7 +1193,7 @@ Images smaller than `MIN_IMAGE_SIZE_PX` in either dimension are skipped.
 │                       │                             │
 │                       ▼                             │
 │          ┌────────────────────────┐                 │
-│          │   Post-Processing      │                 │
+│          │   intelligence.py      │                 │
 │          │  LLM artifact strip    │                 │
 │          │  OCR correction        │                 │
 │          │  Dual-pass validation  │                 │
@@ -1119,10 +1206,18 @@ Images smaller than `MIN_IMAGE_SIZE_PX` in either dimension are skipped.
 │          └────────────┬───────────┘                 │
 │                       │                             │
 │          ┌────────────────────────┐                 │
+│          │  templates_db.py       │                 │
 │          │  Template Registry     │                 │
 │          │  (SQLite + CRUD API)   │                 │
 │          │  seed.sql → 3 default  │                 │
 │          │  + bulk import → 100+  │                 │
+│          │  Request Cache (TTL)   │                 │
+│          └────────────────────────┘                 │
+│                       │                             │
+│          ┌────────────────────────┐                 │
+│          │  renderers/            │                 │
+│          │  html.py  → HTML       │                 │
+│          │  text.py  → plaintext  │                 │
 │          └────────────────────────┘                 │
 └─────────────────────────────────────────────────────┘
 ```
@@ -1190,6 +1285,7 @@ Test modules:
 
 | Version | Date | Highlights |
 |---------|------|-----------|
+| **5.2.0** | March 2026 | Modular architecture refactor — monolithic `server.py` split into 15 focused modules (`routing.py`, `intelligence.py`, `converters/`, `renderers/`, `api_rest.py`, `api_mcp.py`, `templates_db.py`, etc.). New features: `mode: "full"` shorthand for all features, `output_format: html/text` rendering (Mermaid.js, highlight.js, plain text), `describe_images` extended to PDF/ODT/ODP/HTML (previously DOCX/PPTX only), request-level cache with `DELETE /v1/cache`, 429 rate-limit handling with configurable wait, DB-backed prompts via Template Registry, `/v1/tips` LLM self-discovery endpoint. |
 | **3.1** | March 2026 | Template Registry & Auto-Extract — SQLite Template Registry with CRUD API (bulk import, search, categories), auto-extract pipeline (classify → template lookup → extraction in one call), `_meta` block with tax relevance on every extraction (Steuerrelevanz, MwSt, Aktenzeichen), classify uses dynamic Template Registry IDs, seed.sql for default templates, DB as single source of truth. 787 unit tests. |
 | **3.0** | March 2026 | Hidden Data & E-Rechnung — ZUGFeRD/Factur-X e-invoice extraction (structured JSON without LLM, 100% accuracy), PDF XMP metadata + embedded files, XLSX hidden/very-hidden sheets, EXIF/GPS/IPTC from images, Office document properties (core/app/custom), email routing headers + SPF/DKIM/DMARC + calendar ICS, PPTX hidden slides + embedded objects, OCR text layer embedding (ocr_embed), LLM usage hints (get_tips endpoint + context-sensitive response hints). 715+ unit tests. |
 | **2.0** | March 2026 | Document Intelligence Service — 20 features: PDF Intelligence (cross-page tables, scanned PDF detection, OCR-3, img2table, metadata), Vision Intelligence (embedded images, diagrams→Mermaid, charts→tables, OCR correction, artifact stripping), Format extensions (code blocks, audio/video, Excel enhanced, DOCX extras), Document Intelligence (classification, schema extraction, quality scoring, RAG chunking, high-accuracy pipeline). Mistral OCR-3 integration. 37 configurable ENV variables. 501 unit tests. |

@@ -63,6 +63,7 @@ async def mcp_convert(
     auto_extract: bool = False,
     min_confidence: float = 0.7,
     mode: str = "default",
+    output_format: str = "markdown",
 ) -> str:
     """
     Converts a file, URL, or base64 payload to Markdown.
@@ -152,6 +153,7 @@ async def mcp_convert(
             auto_extract=auto_extract,
             min_confidence=min_confidence,
             mode=mode,
+            output_format=output_format,
         )
     elif base64_data and filename:
         try:
@@ -179,6 +181,7 @@ async def mcp_convert(
             auto_extract=auto_extract,
             min_confidence=min_confidence,
             mode=mode,
+            output_format=output_format,
         )
     elif url:
         _convert_url = _get("convert_url", convert_url)
