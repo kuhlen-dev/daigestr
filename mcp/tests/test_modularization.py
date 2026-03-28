@@ -81,17 +81,43 @@ OFFICE_FUNCTIONS = [
     "convert_with_markitdown",
 ]
 
+AUDIO_FUNCTIONS = [
+    "extract_audio_from_video",
+    "transcribe_audio",
+]
+
+EMAIL_FUNCTIONS = [
+    "extract_email_metadata",
+]
+
+INTELLIGENCE_FUNCTIONS = [
+    "classify_document",
+    "correct_ocr_text",
+    "extract_structured_data",
+    "calculate_quality_score",
+    "chunk_markdown",
+    "dual_pass_validate",
+    "get_classify_categories_from_db",
+    "find_matching_template",
+    "_make_null_tolerant",
+    "_apply_auto_extract",
+]
+
 ALL_EXTRACTED = {
     "utils": UTILS_FUNCTIONS,
     "mistral_client": MISTRAL_CLIENT_FUNCTIONS,
     "converters.images": IMAGES_FUNCTIONS,
     "converters.pdf": PDF_FUNCTIONS,
     "converters.office": OFFICE_FUNCTIONS,
+    "converters.audio": AUDIO_FUNCTIONS,
+    "converters.email": EMAIL_FUNCTIONS,
+    "intelligence": INTELLIGENCE_FUNCTIONS,
 }
 
 ALL_FUNCTION_NAMES = (
     UTILS_FUNCTIONS + MISTRAL_CLIENT_FUNCTIONS + IMAGES_FUNCTIONS
-    + PDF_FUNCTIONS + OFFICE_FUNCTIONS
+    + PDF_FUNCTIONS + OFFICE_FUNCTIONS + AUDIO_FUNCTIONS
+    + EMAIL_FUNCTIONS + INTELLIGENCE_FUNCTIONS
 )
 
 
@@ -184,7 +210,7 @@ class TestNoCircularImports:
         """Jedes Modul muss unabhängig importierbar sein (kein circular import)."""
         # Frischer Import ohne Cache
         for key in list(sys.modules.keys()):
-            if key.startswith(("converters", "utils", "mistral_client", "server")):
+            if key.startswith(("converters", "utils", "mistral_client", "server", "intelligence")):
                 del sys.modules[key]
 
         try:

@@ -1,0 +1,1177 @@
+"""
+Daigestr — Document Intelligence
+
+Enthält LLM-gestützte Analyse-Funktionen:
+- classify_document: Dokumenttyp-Klassifizierung
+- correct_ocr_text: OCR-Nachkorrektur
+- extract_structured_data: Schema-basierte Datenextraktion
+- calculate_quality_score: Qualitäts-Score-Berechnung
+- chunk_markdown: Smart Chunking für RAG
+- dual_pass_validate: Dual-Pass Vision-Validierung
+- get_classify_categories_from_db: Template-Registry Kategorien
+- find_matching_template: Template-Matching
+- _make_null_tolerant: JSON-Schema Hilfsfunktion
+- _apply_auto_extract: Auto-Extraktion nach Konvertierung
+"""
+
+import copy
+import json
+import re
+import sqlite3
+import sys
+import time
+from pathlib import Path
+from typing import Any, Optional, TYPE_CHECKING
+
+import structlog
+
+try:
+    import jsonschema
+    JSONSCHEMA_AVAILABLE = True
+except ImportError:
+    JSONSCHEMA_AVAILABLE = False
+
+from settings import (
+    MISTRAL_API_KEY,
+    MISTRAL_TEXT_MODEL,
+    CLASSIFY_MAX_TOKENS,
+    EXTRACT_MAX_TOKENS,
+    OCR_CORRECT_MAX_TOKENS,
+    CLASSIFY_MAX_CHARS,
+    EXTRACT_MAX_CHARS,
+    TEMPLATES_DB_PATH,
+    DEFAULT_CLASSIFY_CATEGORIES,
+    _classify_categories_cache,
+    _CLASSIFY_CACHE_TTL,
+)
+from mistral_client import call_mistral_vision_api, analyze_with_mistral_vision
+from utils import strip_llm_artifacts, _get, _LOADED_BY_SERVER  # noqa: F401
+from models import MetaData, ConvertResponse
+
+log = structlog.get_logger()
+
+
+# =============================================================================
+# _meta Block: Steuerrelevanz + Datentyp-Konventionen (T-MKIT-037)
+# =============================================================================
+
+_META_SCHEMA = {
+    "absender": {
+        "name": "string | null — Persönlicher Name des Absenders (z.B. 'Thomas Weber'). null wenn nur Firma erkennbar.",
+        "firma": "string | null — Firmenname / Organisation (z.B. 'Telekom Deutschland GmbH', 'REWE Sascha Sieger oHG'). null wenn Privatperson.",
+        "slug": "string — geläufigster Kurzname, Kleinbuchstaben, Bindestriche statt Leerzeichen",
+        "adresse": {
+            "strasse": "string | null",
+            "plz": "string | null",
+            "ort": "string | null",
+        },
+    },
+    "empfaenger": {
+        "name": "string | null — Name des Empfängers (z.B. 'Max Mustermann', 'Max und Maria Mustermann'). null wenn nicht erkennbar (z.B. Kassenbon).",
+        "slug": "string — geläufigster Kurzname, Kleinbuchstaben, Bindestriche statt Leerzeichen",
+        "adresse": {
+            "strasse": "string | null",
+            "plz": "string | null",
+            "ort": "string | null",
+        },
+    },
+    "steuerrelevant": "boolean — true wenn das Dokument steuerlich relevant ist",
+    "steuerrelevanz_hinweis": "string | null — wörtliches Zitat aus dem Dokument falls vorhanden",
+    "steuer_kategorie": "string | null — werbungskosten | sonderausgaben | aussergewoehnliche_belastungen | haushaltsnahe_dienstleistungen | handwerkerleistungen | vorsorgeaufwendungen | kapitalertraege | vermietung | kirchensteuer | spenden | kinderbetreuung | null",
+    "steuerjahr": "string | null — YYYY",
+    "mwst_ausgewiesen": "boolean",
+    "mwst_betrag": "string | null — Decimal mit 2 Stellen",
+    "mwst_satz": "string | null — z.B. '19' oder '7'",
+    "aktenzeichen": "string | null — Aktenzeichen, Geschäftszeichen, Vorgangsnummer",
+    "dokumenten_id": "string | null — eindeutige ID (Rechnungsnr, Policennr, Bescheidnr)"
+}
+
+_STEUER_SIGNALWOERTER = [
+    "Finanzamt", "Steuererklärung", "steuerlich absetzbar", "steuerrelevant",
+    "§10 EStG", "§10b EStG", "§35a EStG",
+    "Werbungskosten", "Sonderausgaben", "außergewöhnliche Belastungen",
+    "Vorsorgeaufwendungen", "Altersvorsorge", "Riester", "Rürup",
+    "Spendenquittung", "Zuwendungsbestätigung",
+    "Lohnanteil", "Arbeitskosten",
+    "Arbeitsmittel", "Fortbildung", "Fachliteratur",
+    "Bitte aufbewahren", "zur Vorlage"
+]
+
+_DATENTYP_KONVENTIONEN = """
+Datentyp-Konventionen für die Extraktion:
+- Datum: ISO 8601 YYYY-MM-DD (z.B. "2025-03-26")
+- Betrag: IMMER Punkt als Dezimaltrenner, 2 Nachkommastellen (z.B. "49.99" NICHT "49,99")
+- Währung: ISO 4217 (z.B. "EUR")
+- IBAN: Ohne Leerzeichen (z.B. "DE89370400440532013000")
+- Telefon: E.164 (z.B. "+4921611234567")
+- PLZ: String mit führenden Nullen (z.B. "01234")
+- Fehlende Werte: null (NICHT leerer String "")
+- Boolean: true/false
+- Tabellen/Positionen: JSON Array of Objects
+- Positionsbezeichnungen: Wenn leer, aus Dokumentkontext ableiten (z.B. Seitenüberschrift, vorherige Position)
+"""
+
+
+# =============================================================================
+# DB Helpers (benötigt von classify, find_matching_template, _apply_auto_extract)
+# =============================================================================
+
+def get_db_connection() -> sqlite3.Connection:
+    _db_path = _get("TEMPLATES_DB_PATH", TEMPLATES_DB_PATH)
+    conn = sqlite3.connect(str(_db_path))
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def get_template_by_id(template_id: str) -> Optional[dict]:
+    """Lädt ein Template aus der DB. Gibt None zurück wenn nicht gefunden oder disabled."""
+    conn = _get("get_db_connection", get_db_connection)()
+    row = conn.execute("SELECT * FROM template WHERE id = ? AND enabled = 1", (template_id,)).fetchone()
+    conn.close()
+    if not row:
+        return None
+    result = dict(row)
+    result["schema"] = json.loads(result["schema"])
+    if result.get("field_descriptions"):
+        result["field_descriptions"] = json.loads(result["field_descriptions"])
+    return result
+
+
+# =============================================================================
+# Template Registry — Kategorien
+# =============================================================================
+
+def get_classify_categories_from_db() -> list[str]:
+    """Lädt alle Template-IDs + display_names aus der DB für den Classify-Prompt.
+
+    Returns:
+        Liste von Strings im Format "id: display_name", z.B. ["invoice: Rechnung", ...].
+        Bei Fehler oder leerer DB wird auf DEFAULT_CLASSIFY_CATEGORIES zurückgefallen
+        (im Format "id: id" für Rückwärtskompatibilität).
+    """
+    now = time.time()
+    cache = _get("_classify_categories_cache", _classify_categories_cache)
+    ttl = _get("_CLASSIFY_CACHE_TTL", _CLASSIFY_CACHE_TTL)
+    if cache["categories"] is not None and (now - cache["timestamp"]) < ttl:
+        return cache["categories"]
+
+    try:
+        _get_db_connection = _get("get_db_connection", get_db_connection)
+        conn = _get_db_connection()
+        rows = conn.execute(
+            "SELECT id, display_name FROM template WHERE enabled = 1 ORDER BY priority DESC, id"
+        ).fetchall()
+        conn.close()
+        if rows:
+            categories = [f"{r['id']}: {r['display_name']}" for r in rows]
+            cache["categories"] = categories
+            cache["timestamp"] = now
+            return categories
+    except Exception:
+        pass
+
+    # Fallback auf hardcodierte Liste (Format: "id: id" für einheitliche Verarbeitung)
+    return [f"{c.strip()}: {c.strip()}" for c in DEFAULT_CLASSIFY_CATEGORIES]
+
+
+# =============================================================================
+# Dual-Pass Vision-Validierung
+# =============================================================================
+
+async def dual_pass_validate(
+    markdown: str,
+    file_data: bytes,
+    mimetype: str,
+    language: str = "de",
+) -> str:
+    """
+    Validiert und korrigiert OCR-extrahierten Markdown via Dual-Pass Vision-Vergleich.
+
+    Schickt den OCR-extrahierten Markdown-Text zusammen mit dem Originalbild an die
+    Vision-API. Das Modell vergleicht beides und korrigiert Fehler in Struktur,
+    Tabellen-Spalten und Inhalt.
+
+    Bei fehlender Vision-API oder Fehler wird der Original-Markdown zurückgegeben
+    (graceful degradation).
+
+    Args:
+        markdown: Per OCR extrahierter Markdown-Text.
+        file_data: Rohe Bytes der Originaldatei (Bild oder PDF-Seite als Bild).
+        mimetype: MIME-Type der Datei (z.B. 'image/png', 'image/jpeg').
+        language: Sprache für den Vision-Prompt (Standard: "de").
+
+    Returns:
+        Korrigierter Markdown-Text oder Original bei Fehler.
+    """
+    _api_key = _get("MISTRAL_API_KEY", MISTRAL_API_KEY)
+    _analyze_vision = _get("analyze_with_mistral_vision", analyze_with_mistral_vision)
+    if not _api_key:
+        log.warning("dual_pass_validate_skipped_no_api_key")
+        return markdown
+
+    prompt = (
+        f"Hier ist ein per OCR extrahierter Text und das Originalbild. "
+        f"Vergleiche beides und korrigiere Fehler in Struktur, Tabellen-Spalten und Inhalt. "
+        f"Gib den korrigierten Markdown zurück. Antworte NUR mit dem korrigierten Text.\n\n"
+        f"OCR-Text:\n{markdown}"
+    )
+
+    log.info("dual_pass_validate_start", mimetype=mimetype, markdown_len=len(markdown))
+
+    try:
+        result = await _analyze_vision(
+            image_data=file_data,
+            mimetype=mimetype,
+            prompt=prompt,
+            language=language,
+        )
+
+        if result.get("success"):
+            corrected = result.get("markdown", markdown)
+            log.info("dual_pass_validate_done", original_len=len(markdown), corrected_len=len(corrected))
+            return corrected
+        else:
+            log.warning(
+                "dual_pass_validate_vision_failed",
+                error=result.get("error", "unknown"),
+            )
+            return markdown
+
+    except Exception as exc:
+        log.warning("dual_pass_validate_exception", error=str(exc))
+        return markdown
+
+
+# =============================================================================
+# Dokumenten-Klassifizierung via LLM
+# =============================================================================
+
+async def classify_document(
+    markdown: str,
+    categories: list[str] | None = None,
+    language: str = "de",
+) -> dict[str, Any]:
+    """
+    Klassifiziert ein Dokument anhand seines Markdown-Inhalts via Mistral API.
+
+    Args:
+        markdown: Konvertierter Markdown-Text des Dokuments.
+        categories: Erlaubte Dokumenttypen. Wenn None, werden DEFAULT_CLASSIFY_CATEGORIES
+                    verwendet.
+        language: Sprache des Prompts ('de' oder 'en').
+
+    Returns:
+        Dict mit 'document_type' (str) und 'document_type_confidence' (float 0.0–1.0).
+        Bei Fehlern wird {"document_type": "other", "document_type_confidence": 0.0}
+        zurückgegeben (graceful degradation).
+    """
+    _api_key = _get("MISTRAL_API_KEY", MISTRAL_API_KEY)
+    _text_model = _get("MISTRAL_TEXT_MODEL", MISTRAL_TEXT_MODEL)
+    _classify_max_tokens = _get("CLASSIFY_MAX_TOKENS", CLASSIFY_MAX_TOKENS)
+    _classify_max_chars = _get("CLASSIFY_MAX_CHARS", CLASSIFY_MAX_CHARS)
+    _call_api = _get("call_mistral_vision_api", call_mistral_vision_api)
+    if not _api_key:
+        log.warning("classify_document_no_api_key")
+        return {"document_type": "other", "document_type_confidence": 0.0}
+
+    # Template-Registry Kategorien laden (statt hardcodierte Liste)
+    if categories is not None:
+        # Explizite Kategorien vom Aufrufer → direkt als "id: id" nutzen (Rückwärtskompatibilität)
+        db_categories = [f"{c}: {c}" for c in categories]
+        # Erlaubte IDs für Validierung
+        allowed_ids = list(categories)
+    else:
+        # Aus Template-Registry laden
+        db_categories = get_classify_categories_from_db()
+        # Erlaubte IDs aus "id: display_name" extrahieren
+        allowed_ids = [c.split(":")[0].strip() for c in db_categories]
+
+    # Kategorien-String für den Prompt: "id: Beschreibung" zeilenweise
+    categories_lines = "\n".join(db_categories)
+
+    # Markdown auf maximal _classify_max_chars Zeichen kürzen, um Token-Kosten zu begrenzen
+    truncated_markdown = markdown[:_classify_max_chars] if len(markdown) > _classify_max_chars else markdown
+
+    if language == "de":
+        system_prompt = "Du bist ein Experte für Dokumentenklassifizierung. Antworte ausschließlich mit validem JSON."
+        user_prompt = (
+            f"Klassifiziere dieses Dokument. Wähle den spezifischsten Typ.\n"
+            f"Antworte AUSSCHLIESSLICH mit JSON: {{\"type\": \"template_id\", \"confidence\": 0.95}}\n\n"
+            f"Verfügbare Typen (ID: Beschreibung):\n{categories_lines}\n\n"
+            f"\"confidence\": Zahl zwischen 0.0 (sehr unsicher) und 1.0 (sehr sicher)\n"
+            f"Verwende GENAU eine der Typ-IDs. Bevorzuge den spezifischsten Typ.\n\n"
+            f"Dokument:\n{truncated_markdown}"
+        )
+    else:
+        system_prompt = "You are an expert document classifier. Respond exclusively with valid JSON."
+        user_prompt = (
+            f"Classify this document. Choose the most specific type.\n"
+            f"Respond EXCLUSIVELY with JSON: {{\"type\": \"template_id\", \"confidence\": 0.95}}\n\n"
+            f"Available types (ID: description):\n{categories_lines}\n\n"
+            f"\"confidence\": number between 0.0 (very uncertain) and 1.0 (very certain)\n"
+            f"Use EXACTLY one of the type IDs. Prefer the most specific type.\n\n"
+            f"Document:\n{truncated_markdown}"
+        )
+
+    payload = {
+        "model": _text_model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "max_tokens": _classify_max_tokens,
+        "temperature": 0.0,
+    }
+
+    try:
+        log.info("classify_document_start", categories=allowed_ids, text_length=len(truncated_markdown))
+        result = await _call_api(payload)
+        content = result["choices"][0]["message"]["content"].strip()
+
+        # JSON aus der Antwort extrahieren (Modell könnte Markdown-Code-Blöcke liefern)
+        json_match = re.search(r"\{[^}]+\}", content, re.DOTALL)
+        if not json_match:
+            log.warning("classify_document_no_json", raw_content=content)
+            return {"document_type": "other", "document_type_confidence": 0.0}
+
+        parsed = json.loads(json_match.group(0))
+        doc_type = str(parsed.get("type", "other")).strip()
+        confidence = float(parsed.get("confidence", 0.0))
+
+        # Nur erlaubte Typen (IDs) durchlassen
+        if doc_type not in allowed_ids:
+            log.warning("classify_document_unknown_type", doc_type=doc_type, allowed=allowed_ids)
+            doc_type = "other"
+
+        # Konfidenz auf gültigen Bereich begrenzen
+        confidence = max(0.0, min(1.0, confidence))
+
+        log.info("classify_document_done", document_type=doc_type, confidence=confidence)
+        return {"document_type": doc_type, "document_type_confidence": confidence}
+
+    except json.JSONDecodeError as exc:
+        log.warning("classify_document_json_error", error=str(exc))
+        return {"document_type": "other", "document_type_confidence": 0.0}
+    except Exception as exc:
+        log.warning("classify_document_api_error", error=str(exc))
+        return {"document_type": "other", "document_type_confidence": 0.0}
+
+
+# =============================================================================
+# OCR-Nachkorrektur via LLM
+# =============================================================================
+
+async def correct_ocr_text(text: str, language: str = "de") -> dict[str, Any]:
+    """
+    Korrigiert typische OCR-Fehler in einem Text via Mistral API.
+
+    Sendet den OCR-Text mit einem speziellen Korrektur-Prompt an die Mistral API.
+    Typische OCR-Artefakte wie Zeichenverwechslungen (rn→m, 0→O, l→1, fi→fi),
+    falsche Worttrennungen und fehlende Leerzeichen werden behoben.
+    Inhaltliche Fakten, Zahlen, Namen und Daten werden NICHT verändert.
+
+    Args:
+        text: OCR-extrahierter Text (Markdown).
+        language: Sprache des Textes ('de' oder 'en').
+
+    Returns:
+        Dict mit:
+        - corrected_text (str): Korrigierter Text
+        - corrections_count (int): Anzahl der Korrekturen
+        - tokens (int): Verbrauchte Tokens
+        - success (bool): War die Korrektur erfolgreich?
+        - error (str, optional): Fehlermeldung bei Misserfolg
+    """
+    _api_key = _get("MISTRAL_API_KEY", MISTRAL_API_KEY)
+    _text_model = _get("MISTRAL_TEXT_MODEL", MISTRAL_TEXT_MODEL)
+    _ocr_max_tokens = _get("OCR_CORRECT_MAX_TOKENS", OCR_CORRECT_MAX_TOKENS)
+    _call_api = _get("call_mistral_vision_api", call_mistral_vision_api)
+    _strip = _get("strip_llm_artifacts", strip_llm_artifacts)
+    if not _api_key:
+        log.warning("correct_ocr_text_no_api_key")
+        return {
+            "success": False,
+            "error": "MISTRAL_API_KEY nicht konfiguriert",
+            "corrected_text": text,
+            "corrections_count": 0,
+            "tokens": 0,
+        }
+
+    if language == "de":
+        system_prompt = (
+            "Du bist ein Experte für OCR-Fehlerkorrektur. "
+            "Korrigiere ausschließlich offensichtliche OCR-Artefakte, verändere KEINE inhaltlichen Fakten."
+        )
+        user_prompt = (
+            "Korrigiere OCR-Fehler in diesem Markdown-Text.\n\n"
+            "Erlaubte Korrekturen (NUR diese):\n"
+            "- Zeichen-Verwechslungen: rn→m, 0→O, l→1, fi-Ligaturen, Ü→U etc.\n"
+            "- Zusammengeklebte Wörter: 'dasHaus' → 'das Haus'\n"
+            "- Falsche Worttrennungen: 'Doku-\\nment' → 'Dokument'\n\n"
+            "VERBOTEN:\n"
+            "- Inhaltliche Korrekturen (Fakten, Zahlen, Namen)\n"
+            "- Änderungen an Markdown-Formatierung (#, *, |, ```)\n"
+            "- Umformulierungen\n\n"
+            "Antworte mit dem korrigierten Text, dann genau eine abschließende Zeile:\n"
+            "<<<CORRECTIONS:N>>>\n"
+            "(wobei N die Anzahl der Korrekturen ist)\n\n"
+            f"Text:\n{text}"
+        )
+    else:
+        system_prompt = (
+            "You are an expert in OCR error correction. "
+            "Correct only obvious OCR artifacts, do NOT change any factual content."
+        )
+        user_prompt = (
+            "Correct OCR errors in this Markdown text.\n\n"
+            "Allowed corrections (ONLY these):\n"
+            "- Character confusions: rn→m, 0→O, l→1, fi-ligatures, etc.\n"
+            "- Glued-together words: 'theHouse' → 'the House'\n"
+            "- Wrong hyphenation: 'docu-\\nment' → 'document'\n\n"
+            "FORBIDDEN:\n"
+            "- Content corrections (facts, numbers, names)\n"
+            "- Changes to Markdown formatting (#, *, |, ```)\n"
+            "- Rephrasing\n\n"
+            "Reply with the corrected text, then exactly one closing line:\n"
+            "<<<CORRECTIONS:N>>>\n"
+            "(where N is the number of corrections)\n\n"
+            f"Text:\n{text}"
+        )
+
+    payload = {
+        "model": _text_model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "max_tokens": _ocr_max_tokens,
+        "temperature": 0.0,
+    }
+
+    try:
+        log.info("correct_ocr_text_start", text_length=len(text), language=language)
+        result = await _call_api(payload)
+        content = result["choices"][0]["message"]["content"]
+        usage = result.get("usage", {})
+        tokens_total = usage.get("total_tokens", 0)
+
+        # Korrektur-Anzahl aus dem speziellen Marker parsen
+        corrections_count = 0
+        corrected_text = content
+
+        marker_match = re.search(r"<<<CORRECTIONS:(\d+)>>>\s*$", content.strip(), re.MULTILINE)
+        if not marker_match:
+            # Fallback: altes Marker-Format unterstützen
+            marker_match = re.search(r"---CORRECTIONS:\s*(\d+)\s*$", content.strip(), re.MULTILINE)
+        if marker_match:
+            corrections_count = int(marker_match.group(1))
+            # Marker aus dem Text entfernen
+            corrected_text = _strip(content[: marker_match.start()].rstrip())
+        else:
+            log.warning("correct_ocr_text_no_corrections_marker", content_tail=content[-100:])
+            corrected_text = _strip(content)
+
+        log.info(
+            "correct_ocr_text_done",
+            corrections_count=corrections_count,
+            tokens=tokens_total,
+        )
+        return {
+            "success": True,
+            "corrected_text": corrected_text,
+            "corrections_count": corrections_count,
+            "tokens": tokens_total,
+        }
+
+    except Exception as exc:
+        log.warning("correct_ocr_text_api_error", error=str(exc))
+        return {
+            "success": False,
+            "error": str(exc),
+            "corrected_text": text,
+            "corrections_count": 0,
+            "tokens": 0,
+        }
+
+
+# =============================================================================
+# Schema-basierte strukturierte Extraktion
+# =============================================================================
+
+def _make_null_tolerant(schema: dict) -> dict:
+    """Macht ein JSON-Schema null-tolerant: 'type': 'string' → 'type': ['string', 'null'].
+
+    LLMs geben für fehlende Felder korrekt null zurück. Standard JSON-Schema lehnt das ab
+    wenn der Typ nur 'string' ist. Diese Funktion patcht rekursiv alle primitiven Typ-Deklarationen.
+    """
+    s = copy.deepcopy(schema)
+
+    def _patch(obj: dict) -> None:
+        if not isinstance(obj, dict):
+            return
+        if "type" in obj and isinstance(obj["type"], str) and obj["type"] != "object" and obj["type"] != "array":
+            obj["type"] = [obj["type"], "null"]
+        if "properties" in obj and isinstance(obj["properties"], dict):
+            for prop in obj["properties"].values():
+                _patch(prop)
+        if "items" in obj and isinstance(obj["items"], dict):
+            _patch(obj["items"])
+
+    _patch(s)
+    return s
+
+
+async def extract_structured_data(
+    markdown: str,
+    schema: dict,
+    language: str = "de",
+    field_descriptions: Optional[dict | str] = None,
+    notes: Optional[str] = None,
+) -> dict:
+    """
+    Extrahiert strukturierte Daten aus Markdown gemäß einem JSON-Schema via Mistral API.
+
+    Sendet den Markdown-Inhalt zusammen mit dem Schema an die Mistral API.
+    Die Antwort wird als JSON geparst und optional gegen das Schema validiert.
+
+    Args:
+        markdown: Konvertierter Markdown-Text des Dokuments.
+        schema: JSON-Schema für die gewünschten extrahierten Felder.
+        language: Sprache des Prompts ('de' oder 'en').
+        field_descriptions: Kontext/Beschreibung pro Feld aus der Template-DB (optional).
+        notes: Zusätzliche Hinweise aus der Template-DB (optional).
+
+    Returns:
+        Dict mit:
+        - success (bool)
+        - extracted (dict): Extrahierte Daten passend zum Schema
+        - tokens (int): Verbrauchte Tokens
+        - error (str): Fehlermeldung (nur bei success=False)
+    """
+    _api_key = _get("MISTRAL_API_KEY", MISTRAL_API_KEY)
+    _text_model = _get("MISTRAL_TEXT_MODEL", MISTRAL_TEXT_MODEL)
+    _extract_max_tokens = _get("EXTRACT_MAX_TOKENS", EXTRACT_MAX_TOKENS)
+    _extract_max_chars = _get("EXTRACT_MAX_CHARS", EXTRACT_MAX_CHARS)
+    _call_api = _get("call_mistral_vision_api", call_mistral_vision_api)
+    _jsonschema_available = _get("JSONSCHEMA_AVAILABLE", JSONSCHEMA_AVAILABLE)
+    if not _api_key:
+        log.warning("extract_structured_data_no_api_key")
+        return {
+            "success": False,
+            "error": "MISTRAL_API_KEY nicht konfiguriert",
+            "extracted": None,
+            "tokens": 0,
+        }
+
+    schema_str = json.dumps(schema, ensure_ascii=False)
+
+    # Template-spezifische Hints aus der DB
+    template_hints = ""
+    if field_descriptions:
+        fd = field_descriptions if isinstance(field_descriptions, str) else json.dumps(field_descriptions, indent=2, ensure_ascii=False)
+        template_hints += f"\n\nHinweise zu den Feldern:\n{fd}"
+    if notes:
+        template_hints += f"\n\nZusätzliche Hinweise:\n{notes}"
+
+    # _meta Block Instruktion — wird an beide Sprach-Prompts angehängt
+    meta_instruction = (
+        "\n\nZUSÄTZLICH zu den Schema-Feldern extrahiere IMMER einen '_meta' Block mit folgenden Feldern:\n"
+        + json.dumps(_META_SCHEMA, indent=2, ensure_ascii=False)
+        + "\n\nAbsender/Empfänger-Regeln:"
+        + "\n- absender: Wer hat das Dokument erstellt/verschickt? Bei Firmen: firma='Telekom Deutschland GmbH', name=null. Bei Personen mit Firma: name='Thomas Weber', firma='Schornsteinfeger Weber'."
+        + "\n- empfaenger: An wen ist das Dokument gerichtet? Bei Kassenbons ohne Empfänger: name=null."
+        + "\n- Adresse nur befüllen wenn im Dokument erkennbar."
+        + "\n- slug: Der geläufigste, kürzeste Name unter dem man den Absender/Empfänger kennt. "
+        + "Wie ein Mensch ihn im Alltag nennen würde. Kleinbuchstaben, Bindestriche statt Leerzeichen, "
+        + "keine Rechtsformen (GmbH, AG, e.V.), keine Titel (Dr., Dipl.-Ing.), "
+        + "keine Abteilungen (Amt für...) — nur der Kern. "
+        + "Beispiele: 'Telekom Deutschland GmbH' → 'telekom', "
+        + "'Debeka Krankenversicherungsverein a. G.' → 'debeka', "
+        + "'Landeshauptstadt Düsseldorf, Amt für Zentrale Dienste, CC Beihilfe' → 'beihilfe', "
+        + "'Landesamt für Besoldung und Versorgung NRW' → 'lbv', "
+        + "'Thomas Weber, Bevollmächtigter Bezirksschornsteinfeger' → 'weber', "
+        + "'Dr. med. Anna Schmidt' → 'dr-schmidt', "
+        + "'REWE Sascha Sieger oHG' → 'rewe', "
+        + "'Deutsche Rentenversicherung' → 'rentenversicherung', "
+        + "'Stadtsparkasse Mönchengladbach' → 'sparkasse-mg', "
+        + "'ING-DiBa AG' → 'ing'."
+        + "\n\nSteuerrelevanz-Signalwörter (aktiv suchen): "
+        + ", ".join(_STEUER_SIGNALWOERTER[:10]) + ", ..."
+        + "\nAuch implizit steuerrelevant: Rechnungen mit MwSt, Gehaltsabrechnungen, Versicherungsbeiträge, Handwerkerleistungen."
+        + "\n" + _DATENTYP_KONVENTIONEN
+    )
+
+    if language == "de":
+        system_prompt = (
+            "Du bist ein Experte für Dokumentenanalyse und Datenextraktion. "
+            "Antworte ausschließlich mit validem JSON."
+        )
+        user_prompt = (
+            "Extrahiere strukturierte Daten aus diesem Dokument gemäß dem JSON-Schema.\n\n"
+            "Regeln:\n"
+            "- Extrahiere NUR Werte die explizit im Dokument stehen — erfinde KEINE Werte\n"
+            "- Fehlende Felder: null (niemals raten oder interpolieren)\n"
+            "- Arrays: leeres Array [] wenn keine Einträge vorhanden\n"
+            "- Zahlen: exakt wie im Dokument (keine Umrechnung, keine Rundung)\n\n"
+            "Antworte AUSSCHLIESSLICH mit dem JSON-Objekt. Kein Markdown, keine Erklärungen.\n\n"
+            f"Schema:\n{json.dumps(schema, indent=2, ensure_ascii=False)}"
+            f"{template_hints}"
+            f"{meta_instruction}\n\n"
+            f"Dokument:\n{markdown[:_extract_max_chars]}"
+        )
+    else:
+        system_prompt = (
+            "You are an expert in document analysis and data extraction. "
+            "Respond exclusively with valid JSON."
+        )
+        user_prompt = (
+            "Extract structured data from this document according to the JSON schema.\n\n"
+            "Rules:\n"
+            "- Extract ONLY values explicitly stated in the document — do NOT invent values\n"
+            "- Missing fields: null (never guess or interpolate)\n"
+            "- Arrays: empty array [] if no entries present\n"
+            "- Numbers: exactly as in the document (no conversion, no rounding)\n\n"
+            "Respond EXCLUSIVELY with the JSON object. No Markdown, no explanations.\n\n"
+            f"Schema:\n{json.dumps(schema, indent=2, ensure_ascii=False)}"
+            f"{template_hints}"
+            f"{meta_instruction}\n\n"
+            f"Document:\n{markdown[:_extract_max_chars]}"
+        )
+
+    payload = {
+        "model": _text_model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "max_tokens": _extract_max_tokens,
+        "temperature": 0.0,
+    }
+
+    try:
+        log.info(
+            "extract_structured_data_start",
+            schema_keys=list(schema.get("properties", {}).keys()),
+            text_length=len(markdown),
+        )
+        result = await _call_api(payload)
+        content = result["choices"][0]["message"]["content"].strip()
+        usage = result.get("usage", {})
+        tokens = usage.get("total_tokens", 0)
+
+        # JSON aus der Antwort extrahieren (Modell könnte Markdown-Code-Blöcke liefern)
+        json_match = re.search(r"\{[\s\S]*\}", content)
+        if not json_match:
+            log.warning("extract_structured_data_no_json", raw_content=content[:200])
+            return {
+                "success": False,
+                "error": f"Kein JSON in der API-Antwort gefunden: {content[:100]}",
+                "extracted": None,
+                "tokens": tokens,
+            }
+
+        extracted = json.loads(json_match.group(0))
+
+        # Schema-Validierung (AC-014-7) — null-tolerant
+        if _jsonschema_available:
+            try:
+                # Schema null-tolerant machen: "type": "string" → "type": ["string", "null"]
+                tolerant_schema = _make_null_tolerant(schema)
+                jsonschema.validate(instance=extracted, schema=tolerant_schema)
+                log.info("extract_structured_data_valid", tokens=tokens)
+            except jsonschema.ValidationError as ve:
+                log.warning(
+                    "extract_structured_data_schema_violation",
+                    error=str(ve.message),
+                    tokens=tokens,
+                )
+                # Graceful: trotzdem zurückgeben, aber Warnung im Log
+        else:
+            log.debug("extract_structured_data_no_jsonschema")
+
+        log.info("extract_structured_data_success", tokens=tokens)
+        return {
+            "success": True,
+            "extracted": extracted,
+            "tokens": tokens,
+        }
+
+    except json.JSONDecodeError as exc:
+        log.warning("extract_structured_data_json_decode_error", error=str(exc))
+        return {
+            "success": False,
+            "error": f"JSON-Parsing fehlgeschlagen: {str(exc)}",
+            "extracted": None,
+            "tokens": 0,
+        }
+    except Exception as exc:
+        log.error("extract_structured_data_api_error", error=str(exc))
+        return {
+            "success": False,
+            "error": f"API-Fehler bei Extraktion: {str(exc)}",
+            "extracted": None,
+            "tokens": 0,
+        }
+
+
+# =============================================================================
+# Quality Scoring (FR-MKIT-010)
+# =============================================================================
+
+def calculate_quality_score(markdown: str, meta: dict) -> dict:
+    """
+    Berechnet einen Qualitäts-Score für konvertierten Markdown-Text.
+
+    Scoring-Komponenten:
+    - Zeichendichte (0-0.3): Verhältnis sinnvoller Zeichen zu Whitespace
+    - Wort-Qualität (0-0.3): Anteil erkennbarer Wörter (>= 3 Buchstaben)
+    - Struktur-Elemente (0-0.2): Headings, Listen, Tabellen, Code-Blöcke
+    - OCR/Vision Confidence (0-0.2): Token-Effizienz als Proxy bei vision_used
+
+    Args:
+        markdown: Konvertierter Markdown-Text
+        meta: Metadaten-Dictionary (kann vision_used, tokens_* enthalten)
+
+    Returns:
+        Dict mit quality_score (0.0-1.0) und quality_grade ('poor'/'fair'/'good'/'excellent')
+    """
+    if not markdown or not markdown.strip():
+        return {"quality_score": 0.0, "quality_grade": "poor"}
+
+    text = markdown.strip()
+    total_chars = len(text)
+
+    # --- Komponente 1: Zeichendichte (0-0.3) ---
+    # Verhältnis von Nicht-Whitespace zu Gesamt-Zeichen
+    non_ws_chars = len(re.sub(r'\s', '', text))
+    if total_chars > 0:
+        density_ratio = non_ws_chars / total_chars
+        # Gute Dichte ist 0.4-0.8; sehr niedrig (<0.2) oder sehr hoch (>0.9) ist suspicious
+        if density_ratio < 0.1:
+            density_score = 0.0
+        elif density_ratio < 0.2:
+            density_score = density_ratio * 1.0  # linear bis 0.2
+        elif density_ratio <= 0.8:
+            density_score = 0.3  # Optimal
+        else:
+            density_score = max(0.1, 0.3 * (1.0 - density_ratio))
+    else:
+        density_score = 0.0
+
+    # --- Komponente 2: Wort-Qualität (0-0.3) ---
+    # Anteil erkennbarer Wörter (mindestens 3 Buchstaben, keine Gibberish-Sequenzen)
+    words = re.findall(r'[a-zA-ZäöüÄÖÜß]{3,}', text)
+    total_word_tokens = re.findall(r'\S+', text)
+
+    if total_word_tokens:
+        word_ratio = len(words) / len(total_word_tokens)
+        word_score = min(0.3, word_ratio * 0.3)
+    else:
+        word_score = 0.0
+
+    # Bonus: Mindestlänge — sehr kurzer Text bekommt Abzug
+    if total_chars < 50:
+        word_score *= 0.5
+
+    # --- Komponente 3: Struktur-Elemente (0-0.2) ---
+    structure_score = 0.0
+    lines = text.split('\n')
+
+    has_headings = any(line.strip().startswith('#') for line in lines)
+    has_lists = any(re.match(r'^\s*[-*+]\s', line) or re.match(r'^\s*\d+\.\s', line) for line in lines)
+    has_tables = any('|' in line and line.count('|') >= 2 for line in lines)
+    has_codeblocks = '```' in text
+
+    structure_elements = sum([has_headings, has_lists, has_tables, has_codeblocks])
+    structure_score = min(0.2, structure_elements * 0.05)
+
+    # --- Komponente 4: OCR/Vision Confidence (0-0.2) ---
+    vision_score = 0.0
+    vision_used = meta.get("vision_used", False)
+    scanned = meta.get("scanned", False)
+
+    if vision_used or scanned:
+        tokens_prompt = meta.get("tokens_prompt") or 0
+        tokens_completion = meta.get("tokens_completion") or 0
+
+        if tokens_prompt > 0 and tokens_completion > 0:
+            # Token-Effizienz: mehr Output-Tokens relativ zu Input → guter Inhalt extrahiert
+            efficiency = tokens_completion / tokens_prompt
+            if efficiency >= 0.5:
+                vision_score = 0.2
+            elif efficiency >= 0.2:
+                vision_score = 0.15
+            elif efficiency >= 0.05:
+                vision_score = 0.1
+            else:
+                vision_score = 0.05
+        elif tokens_completion > 0:
+            # Nur Completion bekannt → Mindest-Score
+            vision_score = 0.1
+        else:
+            # Vision wurde verwendet, aber keine Token-Daten → neutraler Wert
+            vision_score = 0.1
+    else:
+        # Kein Vision → volle 0.2 als Baseline (keine Unsicherheit durch OCR)
+        vision_score = 0.2
+
+    # --- Gesamt-Score ---
+    raw_score = density_score + word_score + structure_score + vision_score
+    quality_score = round(min(1.0, max(0.0, raw_score)), 4)
+
+    # --- Grade Mapping ---
+    if quality_score < 0.3:
+        quality_grade = "poor"
+    elif quality_score < 0.6:
+        quality_grade = "fair"
+    elif quality_score < 0.8:
+        quality_grade = "good"
+    else:
+        quality_grade = "excellent"
+
+    log.debug(
+        "quality_score_calculated",
+        score=quality_score,
+        grade=quality_grade,
+        density=density_score,
+        words=word_score,
+        structure=structure_score,
+        vision=vision_score,
+    )
+
+    return {"quality_score": quality_score, "quality_grade": quality_grade}
+
+
+# =============================================================================
+# Smart Chunking (FR-MKIT-011)
+# =============================================================================
+
+def chunk_markdown(markdown: str, chunk_size: int = 512, source: str = "") -> list[dict]:
+    """
+    Splittet Markdown intelligent an Heading-Grenzen für RAG-Anwendungen.
+
+    Algorithmus:
+    1. Identifiziert alle Headings (# ## ### etc.) mit ihren Positionen
+    2. Schützt "atomare" Blöcke: Tabellen (| ... |) und Code-Blöcke (``` ... ```)
+    3. Splittet an Headings; wenn ein Chunk > chunk_size Tokens, werden Absätze
+       (doppelte Newlines) als sekundäre Split-Punkte genutzt
+    4. Tabellen und Code-Blöcke werden niemals zerstückelt
+
+    Args:
+        markdown: Der zu chunkende Markdown-Text
+        chunk_size: Maximale Chunk-Größe in Tokens (Heuristik: len(text) / 4)
+        source: Quelldatei-Name (wird in Chunk-Metadaten eingebettet)
+
+    Returns:
+        Liste von Chunk-Dicts mit: index, heading, source, token_count, text
+    """
+    if not markdown or not markdown.strip():
+        return []
+
+    def _token_count(text: str) -> int:
+        """Heuristische Token-Schätzung: len / 4."""
+        return max(1, len(text) // 4)
+
+    def _split_into_sections(text: str) -> list[tuple[str, str]]:
+        """
+        Teilt Text in (heading, content)-Paare auf.
+        Heading ist leer für Inhalt vor dem ersten Heading.
+        Atomare Blöcke (Code/Tabellen) werden nicht zerstückelt.
+        """
+        lines = text.split("\n")
+        sections: list[tuple[str, str]] = []
+        current_heading = ""
+        current_lines: list[str] = []
+        in_code_block = False
+        in_table = False
+
+        for line in lines:
+            stripped = line.strip()
+
+            # Code-Block tracking
+            if stripped.startswith("```"):
+                if in_code_block:
+                    # Ende des Code-Blocks
+                    current_lines.append(line)
+                    in_code_block = False
+                    continue
+                else:
+                    in_code_block = True
+                    current_lines.append(line)
+                    continue
+
+            if in_code_block:
+                current_lines.append(line)
+                continue
+
+            # Tabellen-Tracking (Zeilen die mit | anfangen und enden)
+            if stripped.startswith("|") and stripped.endswith("|"):
+                in_table = True
+                current_lines.append(line)
+                continue
+            else:
+                in_table = False
+
+            # Heading-Erkennung (nur außerhalb atomarer Blöcke)
+            heading_match = re.match(r"^(#{1,6})\s+(.+)$", line)
+            if heading_match:
+                # Speichert bisherigen Abschnitt
+                if current_lines or current_heading:
+                    sections.append((current_heading, "\n".join(current_lines)))
+                current_heading = line.strip()
+                current_lines = []
+            else:
+                current_lines.append(line)
+
+        # Letzten Abschnitt speichern
+        if current_lines or current_heading:
+            sections.append((current_heading, "\n".join(current_lines)))
+
+        return sections
+
+    def _split_at_paragraphs(heading: str, content: str, chunk_size: int) -> list[tuple[str, str]]:
+        """
+        Splittet langen Inhalt an Absatz-Grenzen (doppelte Newlines).
+        Respektiert Code-Blöcke und Tabellen als atomare Einheiten.
+        """
+        # Wenn unter Größenlimit: direkt zurückgeben
+        full_text = (heading + "\n\n" + content).strip() if heading else content.strip()
+        if _token_count(full_text) <= chunk_size:
+            return [(heading, content)]
+
+        # Teile an doppelten Newlines auf, aber behalte Code/Tabellen zusammen
+        paragraphs: list[str] = []
+        current_para: list[str] = []
+        in_code = False
+        in_table = False
+
+        for line in content.split("\n"):
+            stripped = line.strip()
+
+            if stripped.startswith("```"):
+                if in_code:
+                    current_para.append(line)
+                    in_code = False
+                else:
+                    in_code = True
+                    current_para.append(line)
+                continue
+
+            if in_code:
+                current_para.append(line)
+                continue
+
+            if stripped.startswith("|") and stripped.endswith("|"):
+                in_table = True
+                current_para.append(line)
+                continue
+            else:
+                if in_table and stripped == "":
+                    # Ende der Tabelle: speichern als atomaren Absatz
+                    paragraphs.append("\n".join(current_para))
+                    current_para = []
+                    in_table = False
+                    continue
+                in_table = False
+
+            if stripped == "" and current_para and not in_code and not in_table:
+                # Paragraph-Grenze
+                paragraphs.append("\n".join(current_para))
+                current_para = []
+            else:
+                current_para.append(line)
+
+        if current_para:
+            paragraphs.append("\n".join(current_para))
+
+        # Paragraphen zu Chunks zusammenfassen (so viel wie möglich unter chunk_size)
+        result_sections: list[tuple[str, str]] = []
+        current_chunk_lines: list[str] = []
+        current_tokens = _token_count(heading) if heading else 0
+
+        for para in paragraphs:
+            if not para.strip():
+                continue
+            para_tokens = _token_count(para)
+
+            if current_chunk_lines and (current_tokens + para_tokens > chunk_size):
+                # Aktuellen Chunk abschließen
+                result_sections.append((heading, "\n\n".join(current_chunk_lines)))
+                current_chunk_lines = [para]
+                current_tokens = ((_token_count(heading) if heading else 0) + para_tokens)
+            else:
+                current_chunk_lines.append(para)
+                current_tokens += para_tokens
+
+        if current_chunk_lines:
+            result_sections.append((heading, "\n\n".join(current_chunk_lines)))
+
+        return result_sections if result_sections else [(heading, content)]
+
+    # Schritt 1: Text in Heading-Sektionen aufteilen
+    sections = _split_into_sections(markdown)
+
+    # Schritt 2: Lange Sektionen an Absatz-Grenzen weiter aufteilen
+    fine_sections: list[tuple[str, str]] = []
+    for heading, content in sections:
+        sub_sections = _split_at_paragraphs(heading, content, chunk_size)
+        fine_sections.extend(sub_sections)
+
+    # Schritt 3: Chunks mit Metadaten erzeugen
+    chunks: list[dict] = []
+    for idx, (heading, content) in enumerate(fine_sections):
+        # Chunk-Text zusammensetzen
+        if heading and content.strip():
+            chunk_text = heading + "\n\n" + content.strip()
+        elif heading:
+            chunk_text = heading
+        else:
+            chunk_text = content.strip()
+
+        if not chunk_text:
+            continue
+
+        chunks.append({
+            "index": len(chunks),
+            "heading": heading,
+            "source": source,
+            "token_count": _token_count(chunk_text),
+            "text": chunk_text,
+        })
+
+    log.debug(
+        "chunk_markdown_done",
+        source=source,
+        chunk_count=len(chunks),
+        chunk_size=chunk_size,
+        total_tokens=sum(c["token_count"] for c in chunks),
+    )
+
+    return chunks
+
+
+# =============================================================================
+# Template Matching
+# =============================================================================
+
+def find_matching_template(document_type: str, markdown: str) -> Optional[dict]:
+    """Sucht ein passendes Template für einen Dokumenttyp (T-MKIT-036).
+
+    Schritt 1: Exakter Match per Template-ID (document_type == template.id).
+    Schritt 2: Keyword-Match — alle enabled Templates mit classify_keywords werden
+               gegen den Markdown-Text geprüft. Sortierung: priority DESC, matches DESC.
+
+    Returns:
+        Template-Dict (mit geparstem 'schema') oder None.
+    """
+    _get_template_by_id = _get("get_template_by_id", get_template_by_id)
+    _get_db_connection = _get("get_db_connection", get_db_connection)
+
+    # Schritt 1: Exakter Match
+    tmpl = _get_template_by_id(document_type)
+    if tmpl is not None:
+        return tmpl
+
+    # Schritt 2: Keyword-Match
+    try:
+        conn = _get_db_connection()
+        rows = conn.execute(
+            "SELECT * FROM template WHERE enabled = 1 AND classify_keywords IS NOT NULL"
+        ).fetchall()
+        conn.close()
+    except Exception:
+        return None
+
+    markdown_lower = markdown.lower()
+    candidates: list[tuple[dict, int, int]] = []
+    for row in rows:
+        keywords_raw = row["classify_keywords"] or ""
+        keywords = [k.strip().lower() for k in keywords_raw.split(",") if k.strip()]
+        if not keywords:
+            continue
+        matches = sum(1 for kw in keywords if kw in markdown_lower)
+        if matches > 0:
+            row_dict = dict(row)
+            row_dict["schema"] = json.loads(row_dict["schema"]) if isinstance(row_dict.get("schema"), str) else row_dict.get("schema", {})
+            if row_dict.get("field_descriptions") and isinstance(row_dict["field_descriptions"], str):
+                try:
+                    row_dict["field_descriptions"] = json.loads(row_dict["field_descriptions"])
+                except Exception:
+                    pass
+            priority = row["priority"] if row["priority"] is not None else 0
+            candidates.append((row_dict, matches, priority))
+
+    if not candidates:
+        return None
+
+    # Sortiere: priority DESC, matches DESC
+    candidates.sort(key=lambda x: (x[2], x[1]), reverse=True)
+    return candidates[0][0]
+
+
+# =============================================================================
+# Auto-Extract
+# =============================================================================
+
+async def _apply_auto_extract(
+    response: "ConvertResponse",
+    meta: dict,
+    markdown: str,
+    language: str,
+    min_confidence: float,
+    hints: list[str],
+) -> "ConvertResponse":
+    """Führt Auto-Extract nach der Konvertierung durch (T-MKIT-036).
+
+    Klassifiziert (falls nicht bereits geschehen), sucht ein passendes Template
+    und extrahiert strukturierte Daten — alles in einem Schritt.
+
+    Mutiert meta und response in-place, gibt response zurück.
+    """
+    _classify = _get("classify_document", classify_document)
+    _find_tmpl = _get("find_matching_template", find_matching_template)
+    _extract = _get("extract_structured_data", extract_structured_data)
+
+    # Schritt 1: Klassifizierung wenn noch nicht vorhanden
+    if not meta.get("document_type"):
+        classify_result = await _classify(markdown, None, language)
+        meta.update(classify_result)
+        response.meta = MetaData(**{k: v for k, v in meta.items()})
+
+    # Schritt 2: Template finden nur wenn Konfidenz ausreichend
+    confidence = meta.get("document_type_confidence", 0.0) or 0.0
+    doc_type = meta.get("document_type", "other") or "other"
+    meta["auto_extract"] = True
+
+    if confidence >= min_confidence and doc_type and doc_type != "other":
+        tmpl = _find_tmpl(doc_type, markdown)
+        if tmpl:
+            schema = tmpl["schema"] if isinstance(tmpl["schema"], dict) else json.loads(tmpl["schema"])
+            extraction = await _extract(
+                markdown, schema, language,
+                field_descriptions=tmpl.get("field_descriptions"),
+                notes=tmpl.get("notes"),
+            )
+            if extraction["success"]:
+                response.extracted = extraction["extracted"]
+                meta["template_used"] = tmpl["id"]
+                meta["template_version"] = tmpl.get("version", 1)
+                response.meta = MetaData(**{k: v for k, v in meta.items()})
+            else:
+                log.warning("auto_extract_failed", template=tmpl["id"], error=extraction.get("error"))
+                meta["template_used"] = None
+                response.meta = MetaData(**{k: v for k, v in meta.items()})
+        else:
+            meta["template_used"] = None
+            response.meta = MetaData(**{k: v for k, v in meta.items()})
+            hints.append(
+                f"No template registered for document_type '{doc_type}'. "
+                f"Register one via POST /v1/templates."
+            )
+            meta["hints"] = hints
+            response.meta = MetaData(**{k: v for k, v in meta.items()})
+    else:
+        meta["template_used"] = None
+        response.meta = MetaData(**{k: v for k, v in meta.items()})
+
+    return response
