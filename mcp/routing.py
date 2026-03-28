@@ -404,7 +404,48 @@ async def convert_auto(
 
             # AC-010: Quality Scoring
             meta.update(_calc_quality(markdown, meta))
+
+            audio_pipeline_steps: list[str] = ["transcription"]
+
+            if classify:
+                classify_result = await _classify_doc(markdown, classify_categories, language)
+                meta.update(classify_result)
+                audio_pipeline_steps.append("classify")
+
+            meta["pipeline_steps"] = audio_pipeline_steps
+
+            # T-MKIT-032: Response hints for LLM consumers
+            hints: list[str] = []
+            if not extract_schema and not auto_extract and meta.get("document_type") == "invoice":
+                hints.append("This transcript was classified as invoice. Add template='invoice' to extract structured fields.")
+            if not extract_schema and not auto_extract and meta.get("document_type") and meta.get("document_type") != "other":
+                hints.append("Add auto_extract=true to automatically extract structured data based on document type.")
+            if not chunk:
+                hints.append("Add chunk=true to split this transcript into RAG-ready segments.")
+            if meta.get("language"):
+                hints.append(f"Detected language: {meta['language']}.")
+            if hints:
+                meta["hints"] = hints
+
             response = create_success_response(markdown, meta=meta)
+
+            # T-MKIT-036: Auto-Extract
+            if auto_extract and not extract_schema:
+                response = await _apply_auto(response, meta, markdown, language, min_confidence, hints)
+                if "extraction" not in audio_pipeline_steps:
+                    audio_pipeline_steps.append("extraction")
+                meta["pipeline_steps"] = audio_pipeline_steps
+            # AC-014-2/AC-014-3: Strukturierte Extraktion falls Schema gesetzt
+            elif extract_schema:
+                extraction = await _extract_struct(markdown, extract_schema, language)
+                if extraction["success"]:
+                    response.extracted = extraction["extracted"]
+                    if "extraction" not in audio_pipeline_steps:
+                        audio_pipeline_steps.append("extraction")
+                    meta["pipeline_steps"] = audio_pipeline_steps
+                else:
+                    log.warning("extract_structured_data_failed_audio", error=extraction.get("error"))
+
             # FR-MKIT-011: Smart Chunking für RAG
             if chunk:
                 response.chunks = _chunk_md(markdown, chunk_size=chunk_size, source=source)

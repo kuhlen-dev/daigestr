@@ -776,3 +776,199 @@ class TestAudioInConvertAuto:
 
         assert result.success is False
         assert result.error is not None
+
+
+# =============================================================================
+# TestAudioFeatureParität
+# =============================================================================
+
+
+class TestAudioFeatureParität:
+    """T-DAI-011: classify, auto_extract, extract_schema, hints Feature-Parität."""
+
+    def _make_mock_transcription(
+        self,
+        text: str = "Rechnung Nr. 123 über 500 Euro.",
+        language: str = "de",
+        duration: float = 30.0,
+        model_size: str = "base",
+    ) -> dict:
+        return {
+            "success": True,
+            "text": text,
+            "language": language,
+            "duration": duration,
+            "model_size": model_size,
+        }
+
+    def test_audio_classify_sets_document_type(self, tmp_path):
+        """Audio mit classify=True → meta.document_type wird gesetzt."""
+        transcription = self._make_mock_transcription(text="Rechnung über 200 Euro.")
+        classify_result = {"document_type": "invoice", "classify_confidence": 0.95}
+
+        with patch.object(_server, "detect_mimetype_from_bytes", return_value=None):
+            with patch.object(_server, "TEMP_DIR", tmp_path):
+                with patch.object(_server, "transcribe_audio", return_value=transcription):
+                    with patch.object(_server, "classify_document", return_value=classify_result):
+                        result = run_async(
+                            convert_auto(
+                                file_data=b"dummy",
+                                filename="recording.mp3",
+                                source="recording.mp3",
+                                source_type="file",
+                                input_meta={},
+                                classify=True,
+                            )
+                        )
+
+        assert result.success is True
+        assert result.meta is not None
+        assert result.meta.document_type == "invoice"
+
+    def test_audio_chunk_returns_chunks(self, tmp_path):
+        """Audio mit chunk=True → chunks Feld ist gesetzt."""
+        transcription = self._make_mock_transcription(
+            text="Erster Satz. Zweiter Satz. Dritter Satz. Vierter Satz."
+        )
+
+        with patch.object(_server, "detect_mimetype_from_bytes", return_value=None):
+            with patch.object(_server, "TEMP_DIR", tmp_path):
+                with patch.object(_server, "transcribe_audio", return_value=transcription):
+                    result = run_async(
+                        convert_auto(
+                            file_data=b"dummy",
+                            filename="audio.wav",
+                            source="audio.wav",
+                            source_type="file",
+                            input_meta={},
+                            chunk=True,
+                        )
+                    )
+
+        assert result.success is True
+        assert result.chunks is not None
+        assert len(result.chunks) > 0
+
+    def test_audio_auto_extract_path_traversed(self, tmp_path):
+        """Audio mit auto_extract=True → _apply_auto_extract wird aufgerufen."""
+        transcription = self._make_mock_transcription()
+        fake_response = MagicMock()
+        fake_response.success = True
+        fake_response.extracted = {"invoice_number": "123"}
+        fake_response.chunks = None
+        fake_response.meta = MagicMock()
+
+        mock_apply_auto = AsyncMock(return_value=fake_response)
+
+        with patch.object(_server, "detect_mimetype_from_bytes", return_value=None):
+            with patch.object(_server, "TEMP_DIR", tmp_path):
+                with patch.object(_server, "transcribe_audio", return_value=transcription):
+                    with patch.object(_server, "_apply_auto_extract", mock_apply_auto):
+                        result = run_async(
+                            convert_auto(
+                                file_data=b"dummy",
+                                filename="audio.mp3",
+                                source="audio.mp3",
+                                source_type="file",
+                                input_meta={},
+                                auto_extract=True,
+                            )
+                        )
+
+        mock_apply_auto.assert_called_once()
+        assert result.success is True
+
+    def test_audio_hints_generated(self, tmp_path):
+        """Audio ohne chunk → chunk-Hint wird generiert; Sprache → language-Hint."""
+        transcription = self._make_mock_transcription(language="de")
+
+        with patch.object(_server, "detect_mimetype_from_bytes", return_value=None):
+            with patch.object(_server, "TEMP_DIR", tmp_path):
+                with patch.object(_server, "transcribe_audio", return_value=transcription):
+                    result = run_async(
+                        convert_auto(
+                            file_data=b"dummy",
+                            filename="audio.flac",
+                            source="audio.flac",
+                            source_type="file",
+                            input_meta={},
+                            # chunk=False (default) → chunk-Hint
+                        )
+                    )
+
+        assert result.success is True
+        assert result.meta is not None
+        hints = result.meta.hints
+        assert hints is not None
+        assert any("chunk" in h.lower() for h in hints)
+        assert any("de" in h for h in hints)
+
+    def test_audio_extract_schema_sets_extracted(self, tmp_path):
+        """Audio mit extract_schema → extracted Feld wird gesetzt."""
+        transcription = self._make_mock_transcription(text="Rechnung Nummer 42 über 100 Euro.")
+        schema = {"type": "object", "properties": {"invoice_number": {"type": "string"}}}
+        extract_result = {"success": True, "extracted": {"invoice_number": "42"}}
+        mock_extract = AsyncMock(return_value=extract_result)
+
+        with patch.object(_server, "detect_mimetype_from_bytes", return_value=None):
+            with patch.object(_server, "TEMP_DIR", tmp_path):
+                with patch.object(_server, "transcribe_audio", return_value=transcription):
+                    with patch.object(_server, "extract_structured_data", mock_extract):
+                        result = run_async(
+                            convert_auto(
+                                file_data=b"dummy",
+                                filename="audio.mp3",
+                                source="audio.mp3",
+                                source_type="file",
+                                input_meta={},
+                                extract_schema=schema,
+                            )
+                        )
+
+        assert result.success is True
+        assert result.extracted is not None
+        assert result.extracted.get("invoice_number") == "42"
+
+    def test_audio_pipeline_steps_includes_transcription(self, tmp_path):
+        """Audio pipeline_steps enthält 'transcription'."""
+        transcription = self._make_mock_transcription()
+
+        with patch.object(_server, "detect_mimetype_from_bytes", return_value=None):
+            with patch.object(_server, "TEMP_DIR", tmp_path):
+                with patch.object(_server, "transcribe_audio", return_value=transcription):
+                    result = run_async(
+                        convert_auto(
+                            file_data=b"dummy",
+                            filename="audio.ogg",
+                            source="audio.ogg",
+                            source_type="file",
+                            input_meta={},
+                        )
+                    )
+
+        assert result.success is True
+        assert result.meta is not None
+        assert "transcription" in result.meta.pipeline_steps
+
+    def test_audio_pipeline_steps_includes_classify_when_used(self, tmp_path):
+        """Audio pipeline_steps enthält 'classify' wenn classify=True."""
+        transcription = self._make_mock_transcription()
+        classify_result = {"document_type": "other", "classify_confidence": 0.6}
+
+        with patch.object(_server, "detect_mimetype_from_bytes", return_value=None):
+            with patch.object(_server, "TEMP_DIR", tmp_path):
+                with patch.object(_server, "transcribe_audio", return_value=transcription):
+                    with patch.object(_server, "classify_document", return_value=classify_result):
+                        result = run_async(
+                            convert_auto(
+                                file_data=b"dummy",
+                                filename="audio.mp3",
+                                source="audio.mp3",
+                                source_type="file",
+                                input_meta={},
+                                classify=True,
+                            )
+                        )
+
+        assert result.success is True
+        assert "classify" in result.meta.pipeline_steps
