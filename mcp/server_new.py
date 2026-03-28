@@ -34,6 +34,7 @@ import sqlite3
 import threading
 import time
 import logging
+import zipfile
 from datetime import datetime
 from typing import Optional, Any
 from pathlib import Path
@@ -42,12 +43,25 @@ import subprocess
 
 import httpx
 import uvicorn
+import magic
 import structlog
+try:
+    import pdfplumber
+    PDFPLUMBER_AVAILABLE = True
+except ImportError:
+    PDFPLUMBER_AVAILABLE = False
+try:
+    from pdf2image import convert_from_path
+    PDF2IMAGE_AVAILABLE = True
+except ImportError:
+    PDF2IMAGE_AVAILABLE = False
+from PIL import Image
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastmcp import FastMCP
 from markitdown import MarkItDown
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 try:
     import jsonschema
@@ -61,6 +75,25 @@ try:
 except ImportError:
     WHISPER_AVAILABLE = False
 
+try:
+    import openpyxl
+    from openpyxl.utils import get_column_letter
+    OPENPYXL_AVAILABLE = True
+except ImportError:
+    OPENPYXL_AVAILABLE = False
+
+try:
+    import fitz  # PyMuPDF
+    PYMUPDF_AVAILABLE = True
+except ImportError:
+    PYMUPDF_AVAILABLE = False
+
+try:
+    from img2table.document import PDF as Img2TablePDF
+    from img2table.ocr import TesseractOCR
+    IMG2TABLE_AVAILABLE = True
+except ImportError:
+    IMG2TABLE_AVAILABLE = False
 
 try:
     from icalendar import Calendar as ICalendar
@@ -95,91 +128,6 @@ from logging_setup import setup_logging
 
 setup_logging()
 log = structlog.get_logger()
-
-# =============================================================================
-# Module-Imports (ausgelagerte Funktionen)
-# =============================================================================
-
-from utils import (
-    resolve_path,
-    get_file_extension,
-    is_image_file,
-    is_markitdown_file,
-    is_audio_file,
-    is_video_file,
-    should_skip_file,
-    get_mimetype,
-    detect_mimetype_from_bytes,
-    strip_llm_artifacts,
-    detect_code_language,
-    detect_and_fence_code_blocks,
-)
-from mistral_client import (
-    call_mistral_vision_api,
-    call_mistral_ocr_api,
-    analyze_with_mistral_vision,
-)
-from converters.images import (
-    resize_image_if_needed,
-    extract_image_metadata,
-    _dms_to_decimal,
-    extract_images_from_docx,
-    extract_images_from_pptx,
-    classify_image_type,
-    convert_diagram_to_mermaid,
-    extract_chart_data,
-    describe_embedded_images,
-    insert_image_descriptions,
-    render_first_page_as_image,
-)
-from converters.pdf import (
-    extract_tables_with_pdfplumber,
-    extract_tables_with_img2table,
-    merge_cross_page_tables,
-    tables_to_markdown,
-    is_scanned_pdf,
-    convert_scanned_pdf_ocr3,
-    convert_scanned_pdf,
-    extract_pdf_metadata,
-    detect_zugferd,
-    extract_xmp_metadata,
-    list_embedded_files,
-    parse_zugferd_xml,
-    prepend_pdf_toc,
-    append_pdf_annotations,
-    append_pdf_form_fields,
-    embed_ocr_in_pdf,
-)
-from converters.office import (
-    convert_excel_enhanced,
-    extract_docx_extras,
-    append_docx_extras_to_markdown,
-    extract_document_properties,
-    extract_pptx_hidden_info,
-    convert_with_markitdown,
-)
-
-# Re-export availability flags and key names from sub-modules so tests can patch
-# via server namespace. Sub-modules read these back via _get() for test-patchability.
-from converters.pdf import (  # noqa: E402
-    PDFPLUMBER_AVAILABLE,
-    PDF2IMAGE_AVAILABLE,
-    PYMUPDF_AVAILABLE,
-)
-from converters.office import OPENPYXL_AVAILABLE  # noqa: E402
-# Re-export img2table availability and classes so tests can patch them.
-from converters.pdf import IMG2TABLE_AVAILABLE  # noqa: E402
-try:
-    from img2table.document import PDF as Img2TablePDF  # noqa: E402
-    from img2table.ocr import TesseractOCR  # noqa: E402
-except ImportError:
-    Img2TablePDF = None  # type: ignore[assignment,misc]
-    TesseractOCR = None  # type: ignore[assignment]
-# Re-export convert_from_path so tests can patch _server.convert_from_path.
-try:
-    from pdf2image import convert_from_path  # noqa: E402
-except ImportError:
-    convert_from_path = None  # type: ignore[assignment]
 
 
 # =============================================================================
@@ -230,6 +178,17 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         status_code=422,
         content={"detail": safe_errors},
     )
+
+
+
+
+
+
+
+
+
+
+
 
 
 def extract_audio_from_video(video_path: Path) -> Path:
@@ -355,6 +314,33 @@ def transcribe_audio(audio_path: Path) -> dict[str, Any]:
         }
 
 
+
+
+
+
+
+
+
+
+
+
+
+# =============================================================================
+# LLM Artifact Cleanup (T-MKIT-016)
+# =============================================================================
+
+# Patterns for LLM preambles that should be stripped (German and English)
+
+# Pattern for full-output code block wrapping (```markdown ... ``` or ``` ... ```)
+
+
+
+
+
+
+
+
+
 async def dual_pass_validate(
     markdown: str,
     file_data: bytes,
@@ -415,6 +401,80 @@ async def dual_pass_validate(
     except Exception as exc:
         log.warning("dual_pass_validate_exception", error=str(exc))
         return markdown
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# =============================================================================
+# Code-Block-Erkennung + Sprach-Fences (FR-MKIT-005)
+# =============================================================================
+
+# Mapping: Sprachname → Liste von Erkennungs-Patterns (case-sensitive Regex)
+_LANGUAGE_PATTERNS: list[tuple[str, list[str]]] = [
+    ("python",     [r"\bdef ", r"\bimport ", r"\bclass ", r"if __name__", r"\bprint\(", r"\bself\."]),
+    ("javascript", [r"\bfunction ", r"\bconst ", r"\blet ", r"=> ", r"\bconsole\.log"]),
+    ("java",       [r"\bpublic class\b", r"\bprivate ", r"\bSystem\.out\b", r"\bvoid "]),
+    ("sql",        [r"\bSELECT\b", r"\bFROM\b", r"\bWHERE\b", r"\bINSERT INTO\b"]),
+    ("html",       [r"<html", r"<div", r"<body", r"<!DOCTYPE"]),
+    ("css",        [r"\{color:", r"\bmargin:", r"\bpadding:", r"\bdisplay:"]),
+    ("bash",       [r"#!/bin/", r"\becho ", r"if \[", r"\bfi\b", r"\bdone\b"]),
+    ("go",         [r"\bfunc ", r"\bpackage ", r"\bimport \(", r"\bfmt\."]),
+    ("rust",       [r"\bfn ", r"\blet mut\b", r"\bimpl ", r"\bpub fn\b"]),
+    ("cpp",        [r"#include", r"\bint main\b", r"\bprintf\(", r"\bstd::"]),
+]
+
+# Minimum score (number of pattern matches) to identify a language
+
+
+
+
+
+
+
+
+
+
+
+
+# =============================================================================
+# ZUGFeRD / Factur-X E-Rechnung (T-MKIT-024)
+# =============================================================================
+
+# Bekannte ZUGFeRD/Factur-X Dateinamen in eingebetteten PDF-Anhängen
+
+# Namespaces für ZUGFeRD 2.x / Factur-X (CrossIndustryInvoice:100)
+
+# Namespaces für ZUGFeRD 1.x
+
+
+
+
+
+
+# ZUGFeRD-Dateinamen die NICHT in embedded_files erscheinen sollen
+
+
+
+
+
+
+
+
+
+
+
 
 
 # =============================================================================
@@ -549,6 +609,9 @@ def extract_email_metadata(file_data: bytes) -> Optional[dict[str, Any]]:
     }
 
 
+
+
+
 async def convert_url(url: str) -> dict[str, Any]:
     """Konvertiert eine URL zu Markdown (non-blocking via asyncio.to_thread)."""
     try:
@@ -566,6 +629,19 @@ async def convert_url(url: str) -> dict[str, Any]:
             "error_code": ErrorCode.CONVERSION_FAILED,
             "error": f"URL-Konvertierung fehlgeschlagen: {str(e)}"
         }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # =============================================================================
@@ -1659,6 +1735,8 @@ def chunk_markdown(markdown: str, chunk_size: int = 512, source: str = "") -> li
     )
 
     return chunks
+
+
 
 
 # =============================================================================

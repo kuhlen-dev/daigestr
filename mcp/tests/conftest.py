@@ -135,7 +135,11 @@ def load_server_module(use_real_pil: bool = False, extra_patches: dict | None = 
             sys.modules[name] = mock
 
     # Server-Modul und extrahierte Submodule neu laden (nicht aus Cache)
-    for _mod in ("server", "settings", "logging_setup"):
+    for _mod in (
+        "server", "settings", "logging_setup",
+        "utils", "mistral_client",
+        "converters", "converters.images", "converters.pdf", "converters.office",
+    ):
         if _mod in sys.modules:
             del sys.modules[_mod]
 

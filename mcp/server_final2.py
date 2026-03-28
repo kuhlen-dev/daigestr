@@ -34,6 +34,7 @@ import sqlite3
 import threading
 import time
 import logging
+import zipfile
 from datetime import datetime
 from typing import Optional, Any
 from pathlib import Path
@@ -42,12 +43,25 @@ import subprocess
 
 import httpx
 import uvicorn
+import magic
 import structlog
+try:
+    import pdfplumber
+    PDFPLUMBER_AVAILABLE = True
+except ImportError:
+    PDFPLUMBER_AVAILABLE = False
+try:
+    from pdf2image import convert_from_path
+    PDF2IMAGE_AVAILABLE = True
+except ImportError:
+    PDF2IMAGE_AVAILABLE = False
+from PIL import Image
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastmcp import FastMCP
 from markitdown import MarkItDown
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 try:
     import jsonschema
@@ -61,6 +75,25 @@ try:
 except ImportError:
     WHISPER_AVAILABLE = False
 
+try:
+    import openpyxl
+    from openpyxl.utils import get_column_letter
+    OPENPYXL_AVAILABLE = True
+except ImportError:
+    OPENPYXL_AVAILABLE = False
+
+try:
+    import fitz  # PyMuPDF
+    PYMUPDF_AVAILABLE = True
+except ImportError:
+    PYMUPDF_AVAILABLE = False
+
+try:
+    from img2table.document import PDF as Img2TablePDF
+    from img2table.ocr import TesseractOCR
+    IMG2TABLE_AVAILABLE = True
+except ImportError:
+    IMG2TABLE_AVAILABLE = False
 
 try:
     from icalendar import Calendar as ICalendar
@@ -95,91 +128,6 @@ from logging_setup import setup_logging
 
 setup_logging()
 log = structlog.get_logger()
-
-# =============================================================================
-# Module-Imports (ausgelagerte Funktionen)
-# =============================================================================
-
-from utils import (
-    resolve_path,
-    get_file_extension,
-    is_image_file,
-    is_markitdown_file,
-    is_audio_file,
-    is_video_file,
-    should_skip_file,
-    get_mimetype,
-    detect_mimetype_from_bytes,
-    strip_llm_artifacts,
-    detect_code_language,
-    detect_and_fence_code_blocks,
-)
-from mistral_client import (
-    call_mistral_vision_api,
-    call_mistral_ocr_api,
-    analyze_with_mistral_vision,
-)
-from converters.images import (
-    resize_image_if_needed,
-    extract_image_metadata,
-    _dms_to_decimal,
-    extract_images_from_docx,
-    extract_images_from_pptx,
-    classify_image_type,
-    convert_diagram_to_mermaid,
-    extract_chart_data,
-    describe_embedded_images,
-    insert_image_descriptions,
-    render_first_page_as_image,
-)
-from converters.pdf import (
-    extract_tables_with_pdfplumber,
-    extract_tables_with_img2table,
-    merge_cross_page_tables,
-    tables_to_markdown,
-    is_scanned_pdf,
-    convert_scanned_pdf_ocr3,
-    convert_scanned_pdf,
-    extract_pdf_metadata,
-    detect_zugferd,
-    extract_xmp_metadata,
-    list_embedded_files,
-    parse_zugferd_xml,
-    prepend_pdf_toc,
-    append_pdf_annotations,
-    append_pdf_form_fields,
-    embed_ocr_in_pdf,
-)
-from converters.office import (
-    convert_excel_enhanced,
-    extract_docx_extras,
-    append_docx_extras_to_markdown,
-    extract_document_properties,
-    extract_pptx_hidden_info,
-    convert_with_markitdown,
-)
-
-# Re-export availability flags and key names from sub-modules so tests can patch
-# via server namespace. Sub-modules read these back via _get() for test-patchability.
-from converters.pdf import (  # noqa: E402
-    PDFPLUMBER_AVAILABLE,
-    PDF2IMAGE_AVAILABLE,
-    PYMUPDF_AVAILABLE,
-)
-from converters.office import OPENPYXL_AVAILABLE  # noqa: E402
-# Re-export img2table availability and classes so tests can patch them.
-from converters.pdf import IMG2TABLE_AVAILABLE  # noqa: E402
-try:
-    from img2table.document import PDF as Img2TablePDF  # noqa: E402
-    from img2table.ocr import TesseractOCR  # noqa: E402
-except ImportError:
-    Img2TablePDF = None  # type: ignore[assignment,misc]
-    TesseractOCR = None  # type: ignore[assignment]
-# Re-export convert_from_path so tests can patch _server.convert_from_path.
-try:
-    from pdf2image import convert_from_path  # noqa: E402
-except ImportError:
-    convert_from_path = None  # type: ignore[assignment]
 
 
 # =============================================================================

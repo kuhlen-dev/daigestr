@@ -34,6 +34,7 @@ import sqlite3
 import threading
 import time
 import logging
+import zipfile
 from datetime import datetime
 from typing import Optional, Any
 from pathlib import Path
@@ -42,6 +43,7 @@ import subprocess
 
 import httpx
 import uvicorn
+import magic
 import structlog
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -122,7 +124,6 @@ from mistral_client import (
 from converters.images import (
     resize_image_if_needed,
     extract_image_metadata,
-    _dms_to_decimal,
     extract_images_from_docx,
     extract_images_from_pptx,
     classify_image_type,
@@ -158,28 +159,6 @@ from converters.office import (
     extract_pptx_hidden_info,
     convert_with_markitdown,
 )
-
-# Re-export availability flags and key names from sub-modules so tests can patch
-# via server namespace. Sub-modules read these back via _get() for test-patchability.
-from converters.pdf import (  # noqa: E402
-    PDFPLUMBER_AVAILABLE,
-    PDF2IMAGE_AVAILABLE,
-    PYMUPDF_AVAILABLE,
-)
-from converters.office import OPENPYXL_AVAILABLE  # noqa: E402
-# Re-export img2table availability and classes so tests can patch them.
-from converters.pdf import IMG2TABLE_AVAILABLE  # noqa: E402
-try:
-    from img2table.document import PDF as Img2TablePDF  # noqa: E402
-    from img2table.ocr import TesseractOCR  # noqa: E402
-except ImportError:
-    Img2TablePDF = None  # type: ignore[assignment,misc]
-    TesseractOCR = None  # type: ignore[assignment]
-# Re-export convert_from_path so tests can patch _server.convert_from_path.
-try:
-    from pdf2image import convert_from_path  # noqa: E402
-except ImportError:
-    convert_from_path = None  # type: ignore[assignment]
 
 
 # =============================================================================
