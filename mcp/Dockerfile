@@ -17,6 +17,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY server.py models.py seed.sql ./
+COPY settings.py logging_setup.py utils.py mistral_client.py intelligence.py ./
+COPY templates_db.py routing.py api_rest.py api_mcp.py ./
+COPY converters/ ./converters/
 
 RUN mkdir -p /data /tmp/markitdown
 

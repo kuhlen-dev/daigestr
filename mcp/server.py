@@ -168,6 +168,11 @@ from templates_db import (  # noqa: F401
     init_templates_db,
     get_all_template_ids,
     search_templates,
+    get_prompt,
+    get_scoring_weight,
+    upsert_prompt,
+    list_prompts,
+    get_prompt_by_id,
 )
 
 # Re-export routing functions for backwards-compatibility
