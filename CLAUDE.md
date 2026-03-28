@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Was ist das?
 
-Daigestr — Document Intelligence Service v5.1.0. Konvertiert Dokumente, Bilder, Audio/Video zu Markdown mit LLM-gestützter Analyse. Zwei Schnittstellen:
+Daigestr — Document Intelligence Service v5.4.0. Konvertiert Dokumente, Bilder, Audio/Video zu Markdown mit LLM-gestützter Analyse. Zwei Schnittstellen:
 - **MCP** (Port 8080, extern 18005): Für Claude und MCP-Clients via SSE oder stdio
 - **REST** (Port 8081, extern 18006): Für n8n und HTTP-Clients (FastAPI mit Swagger unter `/docs`)
 
@@ -74,6 +74,8 @@ Alle Features sind standardmäßig **AUS** — explizit aktivieren oder `mode: "
 | `language` | `"de"` | Sprache für Vision/OCR/Classify-Antworten (`"de"` oder `"en"`) |
 | `prompt` | `null` | Custom-Prompt für Vision-Analyse |
 | `min_confidence` | `0.7` | Minimale Klassifizierungs-Konfidenz für `auto_extract` |
+| `pages` | `null` | Seitenauswahl für PDFs. Syntax: `"1-3"`, `"7,14,22"`, `"10-20,!15"`. Null = alle Seiten. |
+| `webhook_url` | `null` | URL für POST-Callback wenn Konvertierung fertig (besonders nützlich mit Async Jobs) |
 | `classify_categories` | (aus Registry) | Erlaubte Dokumenttypen (überschreibt Default) |
 
 ### Bild-Klassifizierung (bei `describe_images: true`)
@@ -121,6 +123,16 @@ curl -X POST http://localhost:18006/v1/convert \
   -H "Content-Type: application/json" \
   -d '{"path": "/data/report.docx", "output_format": "html", "describe_images": true}'
 
+# Nur bestimmte Seiten eines PDFs konvertieren
+curl -X POST http://localhost:18006/v1/convert \
+  -H "Content-Type: application/json" \
+  -d '{"path": "/data/doc.pdf", "pages": "1-3,7,!2"}'
+
+# Async-Konvertierung mit Webhook-Callback
+curl -X POST http://localhost:18006/v1/convert/async \
+  -H "Content-Type: application/json" \
+  -d '{"path": "/data/large.pdf", "mode": "full", "webhook_url": "https://example.com/callback"}'
+
 # OCR-Text als durchsuchbare Schicht einbetten
 curl -X POST http://localhost:18006/v1/convert \
   -H "Content-Type: application/json" \
@@ -162,6 +174,11 @@ curl -X POST http://localhost:18006/v1/convert \
 | `/v1/templates/bulk` | POST | Bulk-Upsert für Templates |
 | `/v1/templates/categories` | GET | Template-Kategorien mit Anzahl |
 | `/v1/templates/search` | GET | Templates nach Stichwort suchen (`?q=invoice`) |
+| `/v1/convert/async` | POST | Async-Konvertierung starten → gibt Job-ID zurück |
+| `/v1/jobs` | GET | Alle Jobs auflisten |
+| `/v1/jobs/{id}` | GET | Job-Status abfragen |
+| `/v1/jobs/{id}/result` | GET | Job-Ergebnis abrufen (wenn fertig) |
+| `/v1/jobs/{id}` | DELETE | Job löschen |
 | `/v1/cache` | DELETE | Request-Level-Cache leeren |
 | `/v1/health` | GET | Health-Check |
 | `/v1/formats` | GET | Unterstützte Formate |
@@ -193,7 +210,7 @@ docker compose build daigestr && docker compose up -d daigestr
 docker logs -f daigestr
 ```
 
-**Kein Dev-Mode mit Volume-Mounts für Source-Code** — nach Code-Änderungen muss rebuildet werden. Volume `./data:/data` ist nur für Nutz-Daten.
+**Dev-Mode:** `docker-compose.override.yml` mountet alle Source-Dateien als Volumes. Code-Änderungen sind sofort im Container verfügbar (Container-Restart nötig, aber kein Rebuild). Volume `./data:/data` ist für Nutz-Daten.
 
 ## Tests
 
@@ -245,6 +262,9 @@ Wichtigste Variablen:
 | `MERMAID_CDN_URL` | jsdelivr | CDN für Mermaid.js (HTML-Output) |
 | `HIGHLIGHTJS_CDN_URL` | cdnjs | CDN für highlight.js (HTML-Output) |
 | `HIGHLIGHTJS_CSS_URL` | cdnjs | CDN für highlight.js CSS (HTML-Output) |
+| `MAX_DESCRIBE_IMAGES` | 50 | Max. Anzahl eingebetteter Bilder pro Dokument (Crash-Prävention) |
+| `CONVERT_TIMEOUT_SECONDS` | 300 | Globaler Timeout für eine einzelne Konvertierung |
+| `WEBHOOK_TIMEOUT_SECONDS` | 30 | Timeout für Webhook-Zustellung |
 | `WHISPER_MODEL_SIZE` | base | Whisper-Modell (tiny/base/small/medium/large) |
 
 ## Unterstützte Formate

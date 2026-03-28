@@ -4,7 +4,7 @@
 
 Most document-to-Markdown tools work fine until you hand them a real-world file: a scanned invoice, a DOCX full of charts, an Excel with merged cells across 12 sheets, or a meeting recording. Then they silently fail, return empty text, or lose all structure. This service fixes that.
 
-Built on Microsoft's [markitdown](https://github.com/microsoft/markitdown), extended with Mistral OCR-3, Vision AI, audio transcription, a Template Registry with auto-extract, and a hybrid routing engine that picks the best tool for each document — automatically. Two interfaces: **MCP server** (for Claude and AI agents) and **REST API** (for n8n, workflows, and custom integrations). Self-hosted in a single Docker container. Current version: **v5.2.0**.
+Built on Microsoft's [markitdown](https://github.com/microsoft/markitdown), extended with Mistral OCR-3, Vision AI, audio transcription, a Template Registry with auto-extract, and a hybrid routing engine that picks the best tool for each document — automatically. Two interfaces: **MCP server** (for Claude and AI agents) and **REST API** (for n8n, workflows, and custom integrations). Self-hosted in a single Docker container. Current version: **v5.4.0**.
 
 ---
 
@@ -246,6 +246,8 @@ The architecture diagram was converted to Mermaid syntax (renderable in GitHub, 
 | Schema extraction | No | No | Partial | Yes (any JSON Schema + Template Registry) |
 | Auto-extract (classify + extract) | No | No | Partial | Yes (one call, zero config) |
 | Template Registry (CRUD API) | No | No | No | Yes (SQLite + bulk import) |
+| Async jobs + webhook | No | No | Yes | Yes (job queue + webhook callback) |
+| PDF page selection | No | No | Partial | Yes (ranges, exclusions: `"1-3,!2"`) |
 | Request-level cache | No | No | No | Yes (configurable TTL, clearable via API) |
 | Quality scoring | No | No | No | Yes (per-response score + grade) |
 | MCP interface | No | No | No | Yes (SSE + stdio) |
@@ -397,6 +399,15 @@ services:
 
 The Template Registry database (`templates.db`) is stored in the `/data` volume and persists across container restarts. On first start, `seed.sql` populates the database with default templates. All server settings are controlled through `.env`. See `.env.example` for the complete list of available variables with descriptions.
 
+### Dev Mode
+
+A `docker-compose.override.yml` is included that mounts all source files as volumes. Code changes are immediately available inside the container — only a container restart is needed, no rebuild.
+
+```bash
+# Restart after code change (no rebuild needed)
+docker compose restart daigestr
+```
+
 ### Customizing the Model
 
 By default, the service uses `mistral-large-latest` (best quality). For a faster, cheaper alternative, set in `.env`:
@@ -426,6 +437,11 @@ See [Mistral Models](#mistral-models-march-2026) for the full comparison.
 | `POST` | `/v1/templates/bulk` | Bulk create/update templates (upsert) |
 | `GET` | `/v1/templates/categories` | List all categories with counts |
 | `GET` | `/v1/templates/search?q=...` | Search templates by id, name, description, keywords |
+| `POST` | `/v1/convert/async` | Start an async conversion — returns a job ID immediately |
+| `GET` | `/v1/jobs` | List all jobs |
+| `GET` | `/v1/jobs/{id}` | Get job status |
+| `GET` | `/v1/jobs/{id}/result` | Get job result (when complete) |
+| `DELETE` | `/v1/jobs/{id}` | Delete a job |
 | `DELETE` | `/v1/cache` | Clear the request-level cache |
 | `GET` | `/v1/tips` | Full feature reference as JSON (ideal for LLM self-discovery) |
 | `GET` | `/v1/formats` | List supported file formats |
@@ -605,6 +621,76 @@ curl -X POST http://localhost:18006/v1/convert/folder \
   }'
 ```
 
+### Convert specific pages of a PDF
+
+```bash
+curl -X POST http://localhost:18006/v1/convert \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "/data/report.pdf",
+    "pages": "1-3,7,!2"
+  }'
+```
+
+The `pages` parameter accepts ranges (`1-3`), individual pages (`7,14`), and exclusions (`!2`). Only the selected pages are processed — useful for large PDFs where you only need specific sections.
+
+### Async Job API
+
+For long-running conversions (large PDFs, `mode: "full"`, batch processing), the async API lets you start a job and poll for the result instead of waiting on a single HTTP request.
+
+**Workflow:** create job → poll status → get result.
+
+```bash
+# 1. Start an async conversion — returns immediately with a job ID
+curl -X POST http://localhost:18006/v1/convert/async \
+  -H "Content-Type: application/json" \
+  -d '{"path": "/data/large-report.pdf", "mode": "full"}'
+# → {"job_id": "abc123", "status": "pending"}
+
+# 2. Check job status
+curl http://localhost:18006/v1/jobs/abc123
+# → {"job_id": "abc123", "status": "running", "created_at": "..."}
+# → {"job_id": "abc123", "status": "completed", "created_at": "...", "completed_at": "..."}
+
+# 3. Get the result (once status is "completed")
+curl http://localhost:18006/v1/jobs/abc123/result
+# → Full ConvertResponse (same format as /v1/convert)
+
+# 4. Clean up (optional)
+curl -X DELETE http://localhost:18006/v1/jobs/abc123
+
+# List all jobs
+curl http://localhost:18006/v1/jobs
+```
+
+Job statuses: `pending` → `running` → `completed` (or `failed`). Results are kept in memory until deleted or the container restarts.
+
+### Webhook callback
+
+Add `webhook_url` to any convert request (sync or async). When the conversion completes, the full result is POSTed to the URL.
+
+```bash
+# Sync convert with webhook — the response is returned AND posted to the URL
+curl -X POST http://localhost:18006/v1/convert \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "/data/invoice.pdf",
+    "template": "invoice",
+    "webhook_url": "https://my-app.example.com/hooks/daigestr"
+  }'
+
+# Async convert with webhook — fire and forget
+curl -X POST http://localhost:18006/v1/convert/async \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "/data/large.pdf",
+    "mode": "full",
+    "webhook_url": "https://my-app.example.com/hooks/daigestr"
+  }'
+```
+
+The webhook receives the full `ConvertResponse` as JSON via POST. Timeout is controlled by `WEBHOOK_TIMEOUT_SECONDS` (default: 30). Failed webhook deliveries are logged but do not affect the conversion result.
+
 ---
 
 ## MCP Tools (port 18005)
@@ -725,6 +811,8 @@ The `pipeline_steps` field in the response metadata lists every stage that ran.
 | `show_formulas` | `bool` | `false` | Annotate Excel cells with their formulas |
 | `language` | `string` | `"de"` | Language for Vision responses and OCR |
 | `prompt` | `string` | — | Custom prompt for image analysis |
+| `pages` | `string` | — | Page selection for PDFs. Syntax: `"1-3"`, `"7,14,22"`, `"10-20,!15"` (exclude page 15). `null` = all pages. |
+| `webhook_url` | `string` | — | URL to POST the result to when conversion completes (especially useful with async jobs) |
 | `password` | `string` | — | Password for protected PDFs (reserved, not yet implemented) |
 | `meta` | `object` | `{}` | Arbitrary pass-through metadata |
 
@@ -772,6 +860,8 @@ The `/v1/convert/folder` endpoint and the `convert_folder` MCP tool convert all 
 | `ocr_correct: true` | Better `markdown` + `meta.ocr_corrected` | Yes (corrected) |
 | `ocr_embed: true` | `enriched_pdf` (base64, scanned PDFs only) | Yes |
 | `describe_images: true` | Richer `markdown` (diagrams → Mermaid, charts → tables, photos → descriptions — works for PDF, DOCX, PPTX, ODT, ODP, HTML) | Yes (enriched) |
+| `pages: "1-3"` | Only specified pages are processed (PDFs only) | Yes (filtered) |
+| `webhook_url: "..."` | Result is POSTed to the URL on completion | Yes |
 | `show_formulas: true` | Richer `markdown` (Excel formulas visible) | Yes (enriched) |
 
 ---
@@ -997,6 +1087,7 @@ All settings are controlled via environment variables. Copy `.env.example` to `.
 | `MAX_FILE_SIZE_MB` | `25` | Maximum file size |
 | `IMAGE_MAX_WIDTH` | `2048` | Max image width before resize (px) |
 | `MAX_RETRIES` | `3` | Retry attempts for API calls |
+| `MAX_DESCRIBE_IMAGES` | `50` | Max embedded images to describe per document (crash prevention) |
 | `SCAN_THRESHOLD_CHARS` | `50` | Avg chars/page below which a PDF is considered a scan |
 
 ### Token Limits
@@ -1032,6 +1123,8 @@ All settings are controlled via environment variables. Copy `.env.example` to `.
 | `PDFTOTEXT_TIMEOUT` | `60` | pdftotext subprocess timeout (seconds) |
 | `PDFINFO_TIMEOUT` | `30` | pdfinfo subprocess timeout (seconds) |
 | `FFMPEG_TIMEOUT` | `600` | ffmpeg audio extraction timeout (seconds) |
+| `CONVERT_TIMEOUT_SECONDS` | `300` | Global timeout for a single convert operation (seconds) |
+| `WEBHOOK_TIMEOUT_SECONDS` | `30` | Timeout for webhook delivery (seconds) |
 
 ### Logging
 
@@ -1285,6 +1378,9 @@ Test modules:
 
 | Version | Date | Highlights |
 |---------|------|-----------|
+| **5.4.0** | March 2026 | Async Job API (`POST /v1/convert/async`, `GET /v1/jobs/{id}`, `GET /v1/jobs/{id}/result`, `DELETE /v1/jobs/{id}`, `GET /v1/jobs`). Webhook callback (`webhook_url` parameter on any convert request). |
+| **5.3.0** | March 2026 | PDF page selection (`pages` parameter). Syntax: ranges (`"1-3"`), individual pages (`"7,14"`), exclusions (`"10-20,!15"`). |
+| **5.2.2** | March 2026 | Crash recovery: global exception handler, REST-thread watchdog, `MAX_DESCRIBE_IMAGES=50` limit, `CONVERT_TIMEOUT_SECONDS=300` global timeout. |
 | **5.2.0** | March 2026 | Modular architecture refactor — monolithic `server.py` split into 15 focused modules (`routing.py`, `intelligence.py`, `converters/`, `renderers/`, `api_rest.py`, `api_mcp.py`, `templates_db.py`, etc.). New features: `mode: "full"` shorthand for all features, `output_format: html/text` rendering (Mermaid.js, highlight.js, plain text), `describe_images` extended to PDF/ODT/ODP/HTML (previously DOCX/PPTX only), request-level cache with `DELETE /v1/cache`, 429 rate-limit handling with configurable wait, DB-backed prompts via Template Registry, `/v1/tips` LLM self-discovery endpoint. |
 | **3.1** | March 2026 | Template Registry & Auto-Extract — SQLite Template Registry with CRUD API (bulk import, search, categories), auto-extract pipeline (classify → template lookup → extraction in one call), `_meta` block with tax relevance on every extraction (Steuerrelevanz, MwSt, Aktenzeichen), classify uses dynamic Template Registry IDs, seed.sql for default templates, DB as single source of truth. 787 unit tests. |
 | **3.0** | March 2026 | Hidden Data & E-Rechnung — ZUGFeRD/Factur-X e-invoice extraction (structured JSON without LLM, 100% accuracy), PDF XMP metadata + embedded files, XLSX hidden/very-hidden sheets, EXIF/GPS/IPTC from images, Office document properties (core/app/custom), email routing headers + SPF/DKIM/DMARC + calendar ICS, PPTX hidden slides + embedded objects, OCR text layer embedding (ocr_embed), LLM usage hints (get_tips endpoint + context-sensitive response hints). 715+ unit tests. |
