@@ -2,6 +2,8 @@ services:
   daigestr:
     build:
       context: ./mcp
+      args:
+        DAIGESTR_VERSION: ${DAIGESTR_VERSION:-dev}
     container_name: daigestr
     restart: unless-stopped
     env_file: .env

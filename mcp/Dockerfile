@@ -24,6 +24,9 @@ COPY renderers/ ./renderers/
 
 RUN mkdir -p /data /tmp/markitdown
 
+ARG DAIGESTR_VERSION=dev
+ENV DAIGESTR_VERSION=${DAIGESTR_VERSION}
+
 EXPOSE 8080 8081
 
 CMD ["python", "server.py"]
