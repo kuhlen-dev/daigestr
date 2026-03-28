@@ -134,9 +134,10 @@ def load_server_module(use_real_pil: bool = False, extra_patches: dict | None = 
         for name, mock in extra_patches.items():
             sys.modules[name] = mock
 
-    # Server-Modul neu laden (nicht aus Cache)
-    if "server" in sys.modules:
-        del sys.modules["server"]
+    # Server-Modul und extrahierte Submodule neu laden (nicht aus Cache)
+    for _mod in ("server", "settings", "logging_setup"):
+        if _mod in sys.modules:
+            del sys.modules[_mod]
 
     server_path = str(Path(__file__).parent.parent)
     if server_path not in sys.path:

@@ -118,131 +118,13 @@ from models import (
     create_success_response,
 )
 
-
-# =============================================================================
-# Konfiguration
-# =============================================================================
-
-DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
-TEMP_DIR = Path(os.getenv("TEMP_DIR", "/tmp/markitdown"))
-TEMP_DIR.mkdir(parents=True, exist_ok=True)
-
-# Template Registry DB (T-MKIT-035)
-TEMPLATES_DB_PATH = Path(os.getenv("TEMPLATES_DB_PATH", str(DATA_DIR / "templates.db")))
-
-# Mistral Vision
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
-MISTRAL_API_URL = os.getenv("MISTRAL_API_URL", "https://api.mistral.ai/v1")
-MISTRAL_VISION_MODEL = os.getenv("MISTRAL_VISION_MODEL", "mistral-small-2603")
-MISTRAL_TIMEOUT = int(os.getenv("MISTRAL_TIMEOUT", "120"))
-
-# Mistral OCR 3
-MISTRAL_OCR_MODEL = os.getenv("MISTRAL_OCR_MODEL", "mistral-ocr-2512")
-MISTRAL_OCR_ENABLED = os.getenv("MISTRAL_OCR_ENABLED", "true").lower() == "true"
-
-# Server Ports
-MCP_PORT = int(os.getenv("MCP_PORT", "8080"))
-REST_PORT = int(os.getenv("REST_PORT", "8081"))
-
-# Limits
-MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "25"))
-MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
-IMAGE_MAX_WIDTH = int(os.getenv("IMAGE_MAX_WIDTH", "2048"))
-
-# Retry
-MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
-
-# Scanned PDF Detection
-SCAN_THRESHOLD_CHARS = int(os.getenv("SCAN_THRESHOLD_CHARS", "50"))
-
-# Klassifizierung
-DEFAULT_CLASSIFY_CATEGORIES = os.getenv(
-    "CLASSIFY_CATEGORIES",
-    "invoice,contract,cv,protocol,letter,technical_doc,report,presentation,spreadsheet,other"
-).split(",")
-
-# Cache für classify-Kategorien aus der Template-Registry
-_classify_categories_cache: dict = {"categories": None, "timestamp": 0}
-_CLASSIFY_CACHE_TTL = 300  # 5 Minuten
-
-# Logging
-LOG_LEVEL = os.getenv("LOG_LEVEL", "info").upper()
-LOG_FORMAT = os.getenv("LOG_FORMAT", "json")
-
-# Dateitypen
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
-MARKITDOWN_EXTENSIONS = {".pdf", ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls",
-                          ".odt", ".ods", ".odp", ".html", ".htm", ".xml", ".json",
-                          ".csv", ".txt", ".md", ".rtf", ".eml"}
-SKIP_FILES = set(os.getenv("SKIP_FILES", "email.md,consolidated.md,metadata.json,.DS_Store,Thumbs.db").split(","))
-
-# Audio/Video (FR-MKIT-006)
-WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "base")
-AUDIO_EXTENSIONS = {".mp3", ".wav", ".ogg", ".flac", ".m4a"}
-VIDEO_EXTENSIONS = {".mp4", ".mkv", ".webm", ".avi", ".mov"}
-
-# Modelle — separate Modelle für verschiedene Tasks
-MISTRAL_TEXT_MODEL = os.getenv("MISTRAL_TEXT_MODEL", "mistral-small-2603")
-
-# Token-Limits — großzügig, Kosten nur pro verbrauchtem Token
-VISION_MAX_TOKENS = int(os.getenv("VISION_MAX_TOKENS", "16384"))
-CLASSIFY_MAX_TOKENS = int(os.getenv("CLASSIFY_MAX_TOKENS", "1024"))
-EXTRACT_MAX_TOKENS = int(os.getenv("EXTRACT_MAX_TOKENS", "16384"))
-OCR_CORRECT_MAX_TOKENS = int(os.getenv("OCR_CORRECT_MAX_TOKENS", "16384"))
-
-# Text-Limits für LLM-Input
-CLASSIFY_MAX_CHARS = int(os.getenv("CLASSIFY_MAX_CHARS", "32000"))
-EXTRACT_MAX_CHARS = int(os.getenv("EXTRACT_MAX_CHARS", "32000"))
-
-# Sprache
-DEFAULT_LANGUAGE = os.getenv("DEFAULT_LANGUAGE", "de")
-
-# Bild-Verarbeitung
-MIN_IMAGE_SIZE_PX = int(os.getenv("MIN_IMAGE_SIZE_PX", "50"))
-PDF_RENDER_DPI = int(os.getenv("PDF_RENDER_DPI", "200"))
-
-# Timeouts
-PDFTOTEXT_TIMEOUT = int(os.getenv("PDFTOTEXT_TIMEOUT", "60"))
-PDFINFO_TIMEOUT = int(os.getenv("PDFINFO_TIMEOUT", "30"))
-FFMPEG_TIMEOUT = int(os.getenv("FFMPEG_TIMEOUT", "600"))
-
-# Whisper
-WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
-WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
-
-# Whisper-Modell-Cache (wird beim ersten Aufruf geladen)
-_whisper_model_cache: dict[str, Any] = {}  # key: model_size → WhisperModel instance
-
-VERSION = "3.0.0"
-START_TIME = time.time()
-
-
-# =============================================================================
-# Logging Setup
-# =============================================================================
-
-def setup_logging():
-    """Konfiguriert strukturiertes Logging."""
-    structlog.configure(
-        processors=[
-            structlog.stdlib.filter_by_level,
-            structlog.stdlib.add_logger_name,
-            structlog.stdlib.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info,
-            structlog.processors.UnicodeDecoder(),
-            structlog.processors.JSONRenderer() if LOG_FORMAT == "json" else structlog.dev.ConsoleRenderer(),
-        ],
-        context_class=dict,
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        wrapper_class=structlog.stdlib.BoundLogger,
-        cache_logger_on_first_use=True,
-    )
-    logging.basicConfig(
-        format="%(message)s",
-        level=getattr(logging, LOG_LEVEL, logging.INFO),
-    )
+from settings import *  # noqa: F401, F403
+from settings import (  # noqa: F401 — private names not exported by *
+    _classify_categories_cache,
+    _CLASSIFY_CACHE_TTL,
+    _whisper_model_cache,
+)
+from logging_setup import setup_logging
 
 setup_logging()
 log = structlog.get_logger()
