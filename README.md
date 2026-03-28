@@ -693,7 +693,7 @@ The `pipeline_steps` field in the response metadata lists every stage that ran.
 | `min_confidence` | `float` | `0.7` | Minimum classification confidence for auto_extract to use a template (0.0–1.0) |
 | `chunk` | `bool` | `false` | Split output into RAG-ready chunks |
 | `chunk_size` | `int` | `512` | Approximate chunk size in tokens |
-| `describe_images` | `bool` | `false` | Extract and describe embedded images in DOCX/PPTX |
+| `describe_images` | `bool` | `false` | Extract embedded images from DOCX/PPTX and auto-classify each one: diagrams → Mermaid syntax, charts → data tables, photos → descriptions, text scans → OCR, decorative → skipped |
 | `ocr_correct` | `bool` | `false` | Run LLM OCR post-correction |
 | `show_formulas` | `bool` | `false` | Annotate Excel cells with their formulas |
 | `language` | `string` | `"de"` | Language for Vision responses and OCR |
@@ -740,7 +740,7 @@ The `/v1/convert/folder` endpoint and the `convert_folder` MCP tool convert all 
 | `chunk: true` | `chunks` (list of text segments with metadata) | Yes |
 | `accuracy: "high"` | Better `markdown` + `meta.pipeline_steps` | Yes (improved) |
 | `ocr_correct: true` | Better `markdown` + `meta.ocr_corrected` | Yes (corrected) |
-| `describe_images: true` | Richer `markdown` (image descriptions inline) | Yes (enriched) |
+| `describe_images: true` | Richer `markdown` (diagrams → Mermaid, charts → tables, photos → descriptions) | Yes (enriched) |
 | `show_formulas: true` | Richer `markdown` (Excel formulas visible) | Yes (enriched) |
 
 ---
