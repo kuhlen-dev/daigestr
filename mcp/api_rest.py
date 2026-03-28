@@ -57,6 +57,7 @@ from settings import (
 from utils import _get, resolve_path, get_file_extension, get_mimetype, detect_mimetype_from_bytes
 from intelligence import (
     classify_document,
+    correct_ocr_text,
     extract_structured_data,
     _apply_auto_extract,
     chunk_markdown,
@@ -238,6 +239,7 @@ async def api_convert(request: ConvertRequest) -> ConvertResponse:
 
         if is_html:
             # Fallback: HTML-Seiten mit markitdown convert_url (strukturierter)
+            _correct_ocr = _get("correct_ocr_text", correct_ocr_text)
             start_time = time.time()
             result = await _convert_url(request.url)
             meta = {
@@ -252,23 +254,32 @@ async def api_convert(request: ConvertRequest) -> ConvertResponse:
             if result["success"]:
                 if result.get("title"):
                     meta["title"] = result["title"]
+                markdown_text = result["markdown"]
+                # OCR-Korrektur für HTML (analog zum path/base64-Pfad)
+                effective_ocr_correct = request.ocr_correct or (request.accuracy == "high")
+                if effective_ocr_correct:
+                    ocr_result = await _correct_ocr(markdown_text, request.language)
+                    if ocr_result.get("success"):
+                        markdown_text = ocr_result["corrected_text"]
+                        meta["ocr_corrected"] = True
+                        meta["ocr_corrections_count"] = ocr_result.get("corrections_count", 0)
                 if request.classify:
                     classify_result = await _classify_doc(
-                        result["markdown"], request.classify_categories, request.language
+                        markdown_text, request.classify_categories, request.language
                     )
                     meta.update(classify_result)
-                response = create_success_response(result["markdown"], meta=meta)
+                response = create_success_response(markdown_text, meta=meta)
                 # T-MKIT-036: Auto-Extract
                 if request.auto_extract and not effective_schema:
-                    response = await _apply_auto(response, meta, result["markdown"], request.language, request.min_confidence, [])
+                    response = await _apply_auto(response, meta, markdown_text, request.language, request.min_confidence, [])
                 elif effective_schema:
-                    extraction = await _extract_struct(result["markdown"], effective_schema, request.language)
+                    extraction = await _extract_struct(markdown_text, effective_schema, request.language)
                     if extraction["success"]:
                         response.extracted = extraction["extracted"]
                     else:
                         log.warning("extract_structured_data_failed_url_html", error=extraction.get("error"))
                 if request.chunk:
-                    response.chunks = _chunk_md(result["markdown"], chunk_size=request.chunk_size, source=request.url)
+                    response.chunks = _chunk_md(markdown_text, chunk_size=request.chunk_size, source=request.url)
                 return response
             else:
                 return create_error_response(
@@ -340,6 +351,21 @@ async def api_convert_folder(request: ConvertFolderRequest) -> ConvertResponse:
         folder_path=folder_path,
         input_meta=request.meta,
         language=request.language,
+        describe_images=request.describe_images,
+        classify=request.classify,
+        classify_categories=request.classify_categories,
+        extract_schema=request.extract_schema,
+        auto_extract=request.auto_extract,
+        accuracy=request.accuracy,
+        chunk=request.chunk,
+        chunk_size=request.chunk_size,
+        ocr_correct=request.ocr_correct,
+        ocr_embed=request.ocr_embed,
+        show_formulas=request.show_formulas,
+        prompt=request.prompt,
+        template=request.template,
+        min_confidence=request.min_confidence,
+        mode=request.mode,
     )
 
 

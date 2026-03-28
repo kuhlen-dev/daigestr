@@ -285,6 +285,23 @@ class ConvertFolderRequest(BaseModel):
     language: str = Field(default="de", description="Sprache für Vision-Antwort: 'de', 'en'")
     meta: dict[str, Any] = Field(default_factory=dict, description="Beliebige Metadaten")
 
+    # Optionen (analog zu ConvertRequest)
+    describe_images: bool = Field(False, description="Eingebettete Bilder in DOCX/PPTX/PDF/ODT/ODP/HTML via Mistral Vision beschreiben.")
+    classify: bool = Field(False, description="Dokumenttyp via LLM klassifizieren.")
+    classify_categories: Optional[list[str]] = Field(None, description="Erlaubte Klassifizierungs-Kategorien.")
+    extract_schema: Optional[dict[str, Any]] = Field(None, description="JSON Schema für strukturierte Daten-Extraktion.")
+    auto_extract: bool = Field(False, description="Automatisch klassifizieren, Template suchen und Daten extrahieren.")
+    accuracy: str = Field("standard", description="Accuracy-Modus: 'standard' oder 'high'.")
+    chunk: bool = Field(False, description="Smart Chunking für RAG aktivieren.")
+    chunk_size: int = Field(512, ge=1, description="Chunk-Größe in Tokens.")
+    ocr_correct: bool = Field(False, description="OCR-Nachkorrektur via LLM aktivieren.")
+    ocr_embed: bool = Field(False, description="OCR-Text als Textschicht in gescannte PDFs einbetten.")
+    show_formulas: bool = Field(False, description="Excel-Formeln im Output annotieren.")
+    prompt: Optional[str] = Field(None, description="Custom Prompt für Vision-Analyse.")
+    template: Optional[str] = Field(None, description="Vordefinierter Template-Name als Alternative zu extract_schema.")
+    min_confidence: float = Field(0.7, ge=0.0, le=1.0, description="Minimale Klassifizierungs-Konfidenz für auto_extract.")
+    mode: Optional[str] = Field(None, description="Optionaler Modus-Hint für zukünftige Erweiterungen.")
+
 
 class AnalyzeRequest(BaseModel):
     """Request für explizite Vision-Analyse (Bilder)."""

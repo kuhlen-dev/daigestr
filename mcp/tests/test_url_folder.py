@@ -533,3 +533,96 @@ class TestAudioHasAccuracyModeInMeta:
         assert result.success is True, f"Erwartet success=True, bekommen: {result}"
         assert result.meta.accuracy_mode == "high", \
             f"accuracy_mode erwartet 'high', bekommen: {result.meta.accuracy_mode}"
+
+
+# ---------------------------------------------------------------------------
+# Test: convert_folder_contents reicht alle Optionen an convert_auto durch
+# ---------------------------------------------------------------------------
+
+class TestFolderPassesAllOptions:
+    """
+    convert_folder_contents() soll alle neuen Optionen an convert_auto() durchreichen.
+    """
+
+    def _make_mock_result(self):
+        mock = MagicMock()
+        mock.success = True
+        mock.markdown = "# Test"
+        mock.meta = MagicMock(tokens_total=None, vision_used=None)
+        mock.error = None
+        return mock
+
+    def test_folder_passes_describe_images_to_convert_auto(self, tmp_path):
+        """
+        convert_folder_contents mit describe_images=True → wird an convert_auto durchgereicht.
+        """
+        test_file = tmp_path / "test.txt"
+        test_file.write_bytes(b"Hello world")
+
+        captured_kwargs = []
+
+        async def capturing_convert_auto(**kwargs):
+            captured_kwargs.append(kwargs)
+            return self._make_mock_result()
+
+        with patch.object(_server, "convert_auto", new=AsyncMock(side_effect=capturing_convert_auto)):
+            result = run_async(convert_folder_contents(
+                folder_path=tmp_path,
+                input_meta={},
+                describe_images=True,
+            ))
+
+        assert result.success is True
+        assert len(captured_kwargs) >= 1
+        assert all(kw.get("describe_images") is True for kw in captured_kwargs), \
+            f"describe_images=True wurde nicht durchgereicht: {captured_kwargs}"
+
+    def test_folder_passes_accuracy_to_convert_auto(self, tmp_path):
+        """
+        convert_folder_contents mit accuracy='high' → wird an convert_auto durchgereicht.
+        """
+        test_file = tmp_path / "doc.txt"
+        test_file.write_bytes(b"Some content")
+
+        captured_kwargs = []
+
+        async def capturing_convert_auto(**kwargs):
+            captured_kwargs.append(kwargs)
+            return self._make_mock_result()
+
+        with patch.object(_server, "convert_auto", new=AsyncMock(side_effect=capturing_convert_auto)):
+            result = run_async(convert_folder_contents(
+                folder_path=tmp_path,
+                input_meta={},
+                accuracy="high",
+            ))
+
+        assert result.success is True
+        assert len(captured_kwargs) >= 1
+        assert all(kw.get("accuracy") == "high" for kw in captured_kwargs), \
+            f"accuracy='high' wurde nicht durchgereicht: {captured_kwargs}"
+
+    def test_folder_passes_classify_to_convert_auto(self, tmp_path):
+        """
+        convert_folder_contents mit classify=True → wird an convert_auto durchgereicht.
+        """
+        test_file = tmp_path / "invoice.txt"
+        test_file.write_bytes(b"Invoice content")
+
+        captured_kwargs = []
+
+        async def capturing_convert_auto(**kwargs):
+            captured_kwargs.append(kwargs)
+            return self._make_mock_result()
+
+        with patch.object(_server, "convert_auto", new=AsyncMock(side_effect=capturing_convert_auto)):
+            result = run_async(convert_folder_contents(
+                folder_path=tmp_path,
+                input_meta={},
+                classify=True,
+            ))
+
+        assert result.success is True
+        assert len(captured_kwargs) >= 1
+        assert all(kw.get("classify") is True for kw in captured_kwargs), \
+            f"classify=True wurde nicht durchgereicht: {captured_kwargs}"

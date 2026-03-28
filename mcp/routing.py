@@ -753,6 +753,21 @@ async def convert_folder_contents(
     folder_path: Path,
     input_meta: dict[str, Any],
     language: str = "de",
+    describe_images: bool = False,
+    classify: bool = False,
+    classify_categories: list[str] | None = None,
+    extract_schema: Optional[dict] = None,
+    auto_extract: bool = False,
+    accuracy: str = "standard",
+    chunk: bool = False,
+    chunk_size: int = 512,
+    ocr_correct: bool = False,
+    ocr_embed: bool = False,
+    show_formulas: bool = False,
+    prompt: Optional[str] = None,
+    template: Optional[str] = None,
+    min_confidence: float = 0.7,
+    mode: Optional[str] = None,
 ) -> ConvertResponse:
     """
     Konvertiert alle Dateien in einem Ordner zu einem zusammengeführten Markdown.
@@ -808,7 +823,20 @@ async def convert_folder_contents(
                 source=str(file_path),
                 source_type="file",
                 input_meta={},
-                language=language,  # T-MKIT-022: language durchgereicht
+                language=language,
+                describe_images=describe_images,
+                classify=classify,
+                classify_categories=classify_categories,
+                extract_schema=extract_schema,
+                auto_extract=auto_extract,
+                accuracy=accuracy,
+                chunk=chunk,
+                chunk_size=chunk_size,
+                ocr_correct=ocr_correct,
+                ocr_embed=ocr_embed,
+                show_formulas=show_formulas,
+                prompt=prompt,
+                min_confidence=min_confidence,
             )
 
             if result.success:

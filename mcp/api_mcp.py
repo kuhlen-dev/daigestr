@@ -20,6 +20,7 @@ from settings import DATA_DIR
 from utils import _get, resolve_path
 from intelligence import (
     classify_document,
+    correct_ocr_text,
     extract_structured_data,
     chunk_markdown,
     _apply_auto_extract,
@@ -181,27 +182,41 @@ async def mcp_convert(
         _apply_auto = _get("_apply_auto_extract", _apply_auto_extract)
         _extract_struct = _get("extract_structured_data", extract_structured_data)
         _chunk_md = _get("chunk_markdown", chunk_markdown)
+        _correct_ocr = _get("correct_ocr_text", correct_ocr_text)
         result = await _convert_url(url)
         if result["success"]:
-            url_meta: dict[str, Any] = {"source": url, "source_type": "url"}
+            url_meta: dict[str, Any] = {
+                "source": url,
+                "source_type": "url",
+                "accuracy_mode": accuracy,
+            }
             if result.get("title"):
                 url_meta["title"] = result["title"]
+            markdown_text = result["markdown"]
+            # OCR-Korrektur für HTML (analog zum path/base64-Pfad)
+            effective_ocr_correct = ocr_correct or (accuracy == "high")
+            if effective_ocr_correct:
+                ocr_result = await _correct_ocr(markdown_text, language)
+                if ocr_result.get("success"):
+                    markdown_text = ocr_result["corrected_text"]
+                    url_meta["ocr_corrected"] = True
+                    url_meta["ocr_corrections_count"] = ocr_result.get("corrections_count", 0)
             if classify:
-                classify_result = await _classify_doc(result["markdown"], classify_categories, language)
+                classify_result = await _classify_doc(markdown_text, classify_categories, language)
                 url_meta.update(classify_result)
             mcp_url_meta = {**(meta or {}), **url_meta}
-            response = create_success_response(result["markdown"], meta=mcp_url_meta)
+            response = create_success_response(markdown_text, meta=mcp_url_meta)
             # T-MKIT-036: Auto-Extract für URL
             if auto_extract and not effective_schema:
-                response = await _apply_auto(response, mcp_url_meta, result["markdown"], language, min_confidence, [])
+                response = await _apply_auto(response, mcp_url_meta, markdown_text, language, min_confidence, [])
             elif effective_schema:
-                extraction = await _extract_struct(result["markdown"], effective_schema, language)
+                extraction = await _extract_struct(markdown_text, effective_schema, language)
                 if extraction["success"]:
                     response.extracted = extraction["extracted"]
                 else:
                     log.warning("mcp_convert_extract_failed_url", error=extraction.get("error"))
             if chunk:
-                response.chunks = _chunk_md(result["markdown"], chunk_size=chunk_size, source=url)
+                response.chunks = _chunk_md(markdown_text, chunk_size=chunk_size, source=url)
         else:
             response = create_error_response(result.get("error_code", "ERROR"), result["error"])
     else:
@@ -351,6 +366,21 @@ async def mcp_convert_folder(
     path: str,
     meta: Optional[dict] = None,
     language: str = "de",
+    describe_images: bool = False,
+    classify: bool = False,
+    classify_categories: Optional[list] = None,
+    extract_schema: Optional[dict] = None,
+    auto_extract: bool = False,
+    accuracy: str = "standard",
+    chunk: bool = False,
+    chunk_size: int = 512,
+    ocr_correct: bool = False,
+    ocr_embed: bool = False,
+    show_formulas: bool = False,
+    prompt: Optional[str] = None,
+    template: Optional[str] = None,
+    min_confidence: float = 0.7,
+    mode: Optional[str] = None,
 ) -> str:
     """
     Converts all files in a directory to a single merged Markdown document.
@@ -360,6 +390,21 @@ async def mcp_convert_folder(
         path: Ordnerpfad im Container.
         meta: Beliebige Metadaten (werden durchgereicht).
         language: Antwortsprache ('de' oder 'en').
+        describe_images: Eingebettete Bilder in DOCX/PPTX/PDF/ODT/ODP/HTML beschreiben.
+        classify: Dokumenttyp via LLM klassifizieren.
+        classify_categories: Erlaubte Klassifizierungs-Kategorien.
+        extract_schema: JSON Schema für strukturierte Daten-Extraktion.
+        auto_extract: Automatisch klassifizieren, Template suchen und Daten extrahieren.
+        accuracy: Accuracy-Modus: 'standard' (Default) oder 'high'.
+        chunk: Smart Chunking für RAG aktivieren.
+        chunk_size: Chunk-Größe in Tokens (Default: 512).
+        ocr_correct: OCR-Nachkorrektur via LLM aktivieren.
+        ocr_embed: OCR-Text als Textschicht in gescannte PDFs einbetten.
+        show_formulas: Excel-Formeln im Output annotieren.
+        prompt: Custom Prompt für Vision-Analyse.
+        template: Vordefinierter Template-Name als Alternative zu extract_schema.
+        min_confidence: Minimale Klassifizierungs-Konfidenz für auto_extract (Default: 0.7).
+        mode: Optionaler Modus-Hint für zukünftige Erweiterungen.
     """
     _resolve_path = _get("resolve_path", resolve_path)
     _convert_folder = _get("convert_folder_contents", convert_folder_contents)
@@ -368,6 +413,21 @@ async def mcp_convert_folder(
         folder_path=folder_path,
         input_meta=meta or {},
         language=language,
+        describe_images=describe_images,
+        classify=classify,
+        classify_categories=classify_categories,
+        extract_schema=extract_schema,
+        auto_extract=auto_extract,
+        accuracy=accuracy,
+        chunk=chunk,
+        chunk_size=chunk_size,
+        ocr_correct=ocr_correct,
+        ocr_embed=ocr_embed,
+        show_formulas=show_formulas,
+        prompt=prompt,
+        template=template,
+        min_confidence=min_confidence,
+        mode=mode,
     )
     return response.model_dump_json()
 
