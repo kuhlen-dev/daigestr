@@ -20,6 +20,7 @@ COPY server.py models.py seed.sql ./
 COPY settings.py logging_setup.py utils.py mistral_client.py intelligence.py ./
 COPY templates_db.py routing.py api_rest.py api_mcp.py ./
 COPY converters/ ./converters/
+COPY renderers/ ./renderers/
 
 RUN mkdir -p /data /tmp/markitdown
 

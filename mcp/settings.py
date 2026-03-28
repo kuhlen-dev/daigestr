@@ -153,5 +153,13 @@ _whisper_model_cache: dict[str, Any] = {}  # key: model_size → WhisperModel in
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "3600"))
 CACHE_ENABLED = os.getenv("CACHE_ENABLED", "true").lower() == "true"
 
+# =============================================================================
+# HTML-Renderer CDN URLs — T-DAI-021
+# =============================================================================
+
+MERMAID_CDN_URL = os.getenv("MERMAID_CDN_URL", "https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js")
+HIGHLIGHTJS_CDN_URL = os.getenv("HIGHLIGHTJS_CDN_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js")
+HIGHLIGHTJS_CSS_URL = os.getenv("HIGHLIGHTJS_CSS_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css")
+
 VERSION = "3.0.0"
 START_TIME = time.time()
