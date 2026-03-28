@@ -216,7 +216,8 @@ class TestClassifyDocumentWithRegistry:
         api_response = _make_mistral_response("memo", 0.88)
 
         with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
-             patch.object(_server, "get_db_connection", return_value=mock_conn) as mock_get_conn, \
+             patch.object(_server, "get_db_connection", return_value=mock_conn), \
+             patch.object(_server, "get_classify_categories_from_db", return_value=[]) as mock_get_cats, \
              patch.object(_server, "call_mistral_vision_api", new=AsyncMock(return_value=api_response)) as mock_api:
             result = run_async(classify_document(
                 "Kurze Mitteilung an alle ...",
@@ -225,8 +226,8 @@ class TestClassifyDocumentWithRegistry:
 
         # Explizite Kategorien wurden verwendet → LLM-Typ ist in explicit_categories → nicht zu "other" normalisiert
         assert result["document_type"] == "memo"
-        # DB soll NICHT abgefragt worden sein wenn explizite Kategorien übergeben wurden
-        mock_get_conn.assert_not_called()
+        # get_classify_categories_from_db soll NICHT aufgerufen werden wenn explizite Kategorien übergeben wurden
+        mock_get_cats.assert_not_called()
 
         # Prompt enthält explizite Kategorien
         call_payload = mock_api.call_args[0][0]

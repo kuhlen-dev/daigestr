@@ -8,6 +8,7 @@ Alle externen Abhängigkeiten werden per unittest.mock gemockt.
 import asyncio
 import json
 import sys
+import tempfile
 import types
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -20,6 +21,12 @@ from conftest import load_server_module, run_async
 # Einmal laden; alle Tests in diesem Modul teilen diese Instanz
 _server = load_server_module(use_real_pil=False)
 classify_document = _server.classify_document
+
+# DB in temporärem Verzeichnis initialisieren (isoliert vom Produktions-DB)
+_tmp_db_dir = tempfile.mkdtemp(prefix="daigestr_test_classify_")
+_tmp_db_path = Path(_tmp_db_dir) / "templates.db"
+_server.TEMPLATES_DB_PATH = _tmp_db_path
+_server.init_templates_db()
 
 
 def _make_mistral_response(doc_type: str, confidence: float) -> dict:
@@ -147,7 +154,9 @@ class TestClassifyDocument:
 
     def test_classify_uses_db_categories_when_none(self):
         """Wenn categories=None, werden Template-IDs aus der DB verwendet."""
-        _server.init_templates_db()
+        # Cache leeren damit DB neu geladen wird
+        _server._classify_categories_cache["categories"] = None
+        _server._classify_categories_cache["timestamp"] = 0
         api_response = _make_mistral_response("cv", 0.88)
 
         with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \

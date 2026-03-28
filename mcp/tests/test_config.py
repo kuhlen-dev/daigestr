@@ -239,8 +239,10 @@ class TestConfigUsedInFunctions:
 
         # Der User-Prompt soll den gekürzten Text enthalten
         user_content = captured_payloads[0]["messages"][1]["content"]
-        # Gekürzter Text ist maximal 100 Zeichen
-        assert len(user_content) < 500  # Sicherheitscheck: deutlich kürzer als Original
+        # Gekürzter Text darf maximal CLASSIFY_MAX_CHARS (100) x enthalten — das Original hat 500
+        x_count = user_content.count("x")
+        assert x_count <= 100, f"Erwarte max 100 x-Zeichen im Prompt, gefunden: {x_count}"
+        assert x_count > 0, "Erwarte mindestens 1 x-Zeichen (gekürzter Text muss im Prompt sein)"
 
     def test_ocr_correct_uses_text_model(self, monkeypatch):
         """correct_ocr_text soll MISTRAL_TEXT_MODEL verwenden."""

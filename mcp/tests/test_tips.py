@@ -7,6 +7,8 @@ All external dependencies are mocked via unittest.mock.
 
 import json
 import sys
+import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -47,6 +49,12 @@ _server = _load_server_with_passthrough_mcp()
 mcp_get_tips = _server.mcp_get_tips
 _build_tips_dict = _server._build_tips_dict
 convert_auto = _server.convert_auto
+
+# DB in temporärem Verzeichnis initialisieren (isoliert vom Produktions-DB)
+_tmp_db_dir = tempfile.mkdtemp(prefix="daigestr_test_tips_")
+_tmp_db_path = Path(_tmp_db_dir) / "templates.db"
+_server.TEMPLATES_DB_PATH = _tmp_db_path
+_server.init_templates_db()
 
 
 # ---------------------------------------------------------------------------

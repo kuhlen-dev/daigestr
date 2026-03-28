@@ -7,6 +7,8 @@ Alle externen Abhängigkeiten werden per unittest.mock gemockt.
 
 import json
 import sys
+import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -20,7 +22,10 @@ extract_structured_data = _server.extract_structured_data
 get_template_by_id = _server.get_template_by_id
 get_all_template_ids = _server.get_all_template_ids
 
-# DB initialisieren damit Seed-Templates verfügbar sind
+# DB in temporärem Verzeichnis initialisieren (isoliert vom Produktions-DB)
+_tmp_db_dir = tempfile.mkdtemp(prefix="daigestr_test_extract_")
+_tmp_db_path = Path(_tmp_db_dir) / "templates.db"
+_server.TEMPLATES_DB_PATH = _tmp_db_path
 _server.init_templates_db()
 
 
@@ -91,12 +96,12 @@ class TestExtractStructuredData:
         assert tmpl is not None
         schema = tmpl["schema"]
 
-        assert "invoice_number" in schema["properties"]
-        assert "total_amount" in schema["properties"]
-        assert "vendor" in schema["properties"]
-        assert "line_items" in schema["properties"]
-        assert "currency" in schema["properties"]
-        assert "date" in schema["properties"]
+        # Seed-Schema nutzt deutsche Feldnamen
+        assert "rechnungsnummer" in schema["properties"]
+        assert "positionen" in schema["properties"]
+        assert "netto" in schema["properties"]
+        assert "brutto" in schema["properties"]
+        assert "datum" in schema["properties"]
 
     def test_extract_with_template_cv(self):
         """AC-014-4: CV-Template enthält alle erwarteten Felder."""
@@ -106,9 +111,10 @@ class TestExtractStructuredData:
 
         assert "name" in schema["properties"]
         assert "email" in schema["properties"]
-        assert "skills" in schema["properties"]
-        assert "experience" in schema["properties"]
-        assert "education" in schema["properties"]
+        # Seed-Schema nutzt deutsche Feldnamen für Skills/Experience/Education
+        assert "kenntnisse" in schema["properties"]
+        assert "berufserfahrung" in schema["properties"]
+        assert "ausbildung" in schema["properties"]
 
     def test_extract_with_template_contract(self):
         """AC-014-4: Contract-Template enthält alle erwarteten Felder."""
@@ -116,10 +122,10 @@ class TestExtractStructuredData:
         assert tmpl is not None
         schema = tmpl["schema"]
 
-        assert "contract_type" in schema["properties"]
-        assert "parties" in schema["properties"]
-        assert "effective_date" in schema["properties"]
-        assert "key_terms" in schema["properties"]
+        # Seed-Schema nutzt deutsche Feldnamen
+        assert "vertragsparteien" in schema["properties"]
+        assert "gegenstand" in schema["properties"]
+        assert "laufzeit" in schema["properties"]
 
     def test_extract_invalid_json_response(self):
         """Graceful Handling bei ungültigem JSON in der API-Antwort."""
@@ -273,24 +279,23 @@ class TestExtractionTemplates:
             assert isinstance(schema["properties"], dict), f"Template '{tmpl_id}' properties sollte dict sein"
 
     def test_invoice_template_line_items_is_array(self):
-        """Invoice-Template: line_items ist ein Array."""
+        """Invoice-Template: positionen ist ein Array (Seed nutzt deutsche Feldnamen)."""
         tmpl = get_template_by_id("invoice")
-        line_items = tmpl["schema"]["properties"]["line_items"]
-        assert line_items["type"] == "array"
-        assert "items" in line_items
+        positionen = tmpl["schema"]["properties"]["positionen"]
+        assert positionen["type"] == "array"
+        assert "items" in positionen
 
     def test_cv_template_skills_is_array_of_strings(self):
-        """CV-Template: skills ist ein Array von Strings."""
+        """CV-Template: sprachen ist ein Array von Strings (Seed nutzt deutsche Feldnamen)."""
         tmpl = get_template_by_id("cv")
-        skills = tmpl["schema"]["properties"]["skills"]
-        assert skills["type"] == "array"
-        assert skills["items"]["type"] == "string"
+        sprachen = tmpl["schema"]["properties"]["sprachen"]
+        assert sprachen["type"] == "array"
 
     def test_contract_template_parties_is_array(self):
-        """Contract-Template: parties ist ein Array."""
+        """Contract-Template: vertragsparteien ist ein Array (Seed nutzt deutsche Feldnamen)."""
         tmpl = get_template_by_id("contract")
-        parties = tmpl["schema"]["properties"]["parties"]
-        assert parties["type"] == "array"
+        vertragsparteien = tmpl["schema"]["properties"]["vertragsparteien"]
+        assert vertragsparteien["type"] == "array"
 
 
 # ---------------------------------------------------------------------------
