@@ -381,12 +381,16 @@ def is_scanned_pdf(file_path: Path) -> bool:
         return False
 
 
-async def convert_scanned_pdf_ocr3(file_path: Path) -> dict[str, Any]:
+async def convert_scanned_pdf_ocr3(
+    file_path: Path,
+    page_indices: Optional[list[int]] = None,
+) -> dict[str, Any]:
     """
     Konvertiert ein gescanntes PDF via Mistral OCR 3 API (/v1/ocr).
 
     Args:
         file_path: Pfad zur PDF-Datei.
+        page_indices: Optionale Liste von 0-basierten Seiten-Indices. Wenn None, alle Seiten.
 
     Returns:
         Dict mit folgenden Schlüsseln:
@@ -461,6 +465,17 @@ async def convert_scanned_pdf_ocr3(file_path: Path) -> dict[str, Any]:
             "error": "OCR API lieferte keine Seiten zurück",
         }
 
+    # Filter by page_indices if specified (0-based)
+    if page_indices is not None:
+        page_indices_set = set(page_indices)
+        pages = [p for p in pages if p.get("index", 0) in page_indices_set]
+        if not pages:
+            return {
+                "success": False,
+                "error_code": ErrorCode.CONVERSION_FAILED,
+                "error": "Keine Seiten nach Seitenfilterung übrig",
+            }
+
     markdown_parts = []
     for page in pages:
         page_index = page.get("index", 0) + 1
@@ -479,7 +494,11 @@ async def convert_scanned_pdf_ocr3(file_path: Path) -> dict[str, Any]:
     }
 
 
-async def convert_scanned_pdf(file_path: Path, language: str = "de") -> dict[str, Any]:
+async def convert_scanned_pdf(
+    file_path: Path,
+    language: str = "de",
+    page_indices: Optional[list[int]] = None,
+) -> dict[str, Any]:
     """
     Konvertiert ein eingescanntes PDF zu Markdown.
 
@@ -489,6 +508,8 @@ async def convert_scanned_pdf(file_path: Path, language: str = "de") -> dict[str
     Args:
         file_path: Pfad zur gescannten PDF-Datei.
         language: Sprache für den Vision-Prompt (Standard: "de", nur für Fallback relevant).
+        page_indices: Optionale Liste von 0-basierten Seiten-Indices (z.B. [0, 2, 4]).
+                      Wenn None, werden alle Seiten verarbeitet.
 
     Returns:
         Dict mit folgenden Schlüsseln:
@@ -506,7 +527,7 @@ async def convert_scanned_pdf(file_path: Path, language: str = "de") -> dict[str
     # Primärer Pfad: Mistral OCR 3
     if _get("MISTRAL_OCR_ENABLED", MISTRAL_OCR_ENABLED):
         log.info("scanned_pdf_using_ocr3", file=str(file_path), model=MISTRAL_OCR_MODEL)
-        ocr3_result = await _get("convert_scanned_pdf_ocr3", convert_scanned_pdf_ocr3)(file_path)
+        ocr3_result = await _get("convert_scanned_pdf_ocr3", convert_scanned_pdf_ocr3)(file_path, page_indices=page_indices)
         if ocr3_result.get("success"):
             log.info("scanned_pdf_ocr3_success", file=str(file_path), pages=ocr3_result.get("pages", 0))
             return {
@@ -572,6 +593,13 @@ async def convert_scanned_pdf(file_path: Path, language: str = "de") -> dict[str
             "Antworte ausschließlich mit dem Markdown-Text."
         )
 
+    # Filter pages by page_indices if specified (0-based → enumerate starts at 1)
+    if page_indices is not None:
+        page_indices_set = set(page_indices)
+        filtered_pages = [(idx, img) for idx, img in enumerate(pages) if idx in page_indices_set]
+    else:
+        filtered_pages = list(enumerate(pages))
+
     markdown_parts: list[str] = []
     tokens_per_page: list[dict] = []
     total_prompt_tokens = 0
@@ -580,7 +608,8 @@ async def convert_scanned_pdf(file_path: Path, language: str = "de") -> dict[str
     pages_processed = 0
     vision_model_used = MISTRAL_VISION_MODEL
 
-    for page_num, page_image in enumerate(pages, start=1):
+    for page_idx, page_image in filtered_pages:
+        page_num = page_idx + 1
         # PIL Image → bytes (PNG)
         img_buffer = io.BytesIO()
         # Resize wenn nötig, um Tokens zu sparen

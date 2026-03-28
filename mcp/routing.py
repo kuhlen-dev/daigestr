@@ -53,6 +53,7 @@ from utils import (
     get_mimetype,
     detect_mimetype_from_bytes,
     should_skip_file,
+    parse_pages,
 )
 from mistral_client import analyze_with_mistral_vision
 from converters.images import (
@@ -149,6 +150,7 @@ async def convert_auto(
     min_confidence: float = 0.7,
     mode: str = "default",
     output_format: str = "markdown",
+    pages: Optional[str] = None,
 ) -> ConvertResponse:
     """
     Intelligente Konvertierung basierend auf Dateityp.
@@ -181,6 +183,7 @@ async def convert_auto(
                 min_confidence=min_confidence,
                 mode=mode,
                 output_format=output_format,
+                pages=pages,
             ),
             timeout=float(_timeout),
         )
@@ -216,6 +219,7 @@ async def _convert_auto_impl(
     min_confidence: float = 0.7,
     mode: str = "default",
     output_format: str = "markdown",
+    pages: Optional[str] = None,
 ) -> ConvertResponse:
     """
     Eigentliche Konvertierungslogik — wird von convert_auto() via asyncio.wait_for aufgerufen.
@@ -343,6 +347,7 @@ async def _convert_auto_impl(
     _extract_audio = _get("extract_audio_from_video", extract_audio_from_video)
     _transcribe = _get("transcribe_audio", transcribe_audio)
     _max_describe_images = _get("MAX_DESCRIBE_IMAGES", MAX_DESCRIBE_IMAGES)
+    _parse_pages = _get("parse_pages", parse_pages)
 
     ext = _get_file_extension(filename)
     mimetype = _detect_mimetype(file_data) or _get_mimetype(Path(filename))
@@ -609,10 +614,33 @@ async def _convert_auto_impl(
         try:
             temp_path.write_bytes(file_data)
 
+            # T-DAI-025: PDF Page Selection — parse pages spec into 0-based indices
+            _page_indices: list[int] | None = None
+            if pages and ext == ".pdf":
+                try:
+                    import fitz as _fitz  # noqa: PLC0415
+                    _doc = _fitz.open(str(temp_path))
+                    _total_pages = len(_doc)
+                    _doc.close()
+                    _page_indices = _parse_pages(pages, _total_pages)
+                    meta["pages_requested"] = pages
+                    meta["pages_selected"] = [i + 1 for i in _page_indices]
+                    log.info("pdf_page_selection", spec=pages, indices=_page_indices, total=_total_pages)
+                except ValueError as _pe:
+                    meta["duration_ms"] = int((time.time() - start_time) * 1000)
+                    return create_error_response(
+                        ErrorCode.INVALID_INPUT,
+                        f"Ungültige Seitenauswahl: {str(_pe)}",
+                        meta=meta,
+                    )
+                except Exception as _pe:
+                    log.warning("pdf_page_selection_failed", error=str(_pe))
+                    # Fallback: alle Seiten
+
             # Scanned PDF Detection: VOR dem normalen markitdown-Pfad prüfen
             if ext == ".pdf" and _is_scanned(temp_path):
                 log.info("scanned_pdf_detected", file=filename)
-                result = await _convert_scanned(temp_path, language=language)
+                result = await _convert_scanned(temp_path, language=language, page_indices=_page_indices)
                 meta["duration_ms"] = int((time.time() - start_time) * 1000)
 
                 if result["success"]:
@@ -788,7 +816,7 @@ async def _convert_auto_impl(
                     elif ext in {".pptx", ".ppt"}:
                         images = _extract_imgs_pptx(temp_path)
                     elif ext == ".pdf":
-                        images = _extract_imgs_pdf(temp_path)
+                        images = _extract_imgs_pdf(temp_path, page_indices=_page_indices)
                     elif ext == ".odt":
                         images = _extract_imgs_odt(temp_path)
                     elif ext == ".odp":

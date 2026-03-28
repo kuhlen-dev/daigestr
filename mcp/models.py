@@ -52,6 +52,7 @@ class MetaData(BaseModel):
     pages: Optional[int] = Field(None, description="Anzahl Seiten (PDF)")
     author: Optional[str] = Field(None, description="Autor (PDF)")
     title: Optional[str] = Field(None, description="Titel (PDF)")
+    pages_requested: Optional[str] = Field(None, description="Angeforderter Seitenbereich (z.B. '1-3,!2')")
 
     # Embedded-Images-spezifisch
     images_described: Optional[int] = Field(None, description="Anzahl beschriebener eingebetteter Bilder")
@@ -234,6 +235,9 @@ class ConvertRequest(BaseModel):
         if v not in ("default", "full"):
             raise ValueError(f"mode must be 'default' or 'full', got '{v}'")
         return v
+
+    # PDF Page Selection (T-DAI-025)
+    pages: Optional[str] = Field(None, description="Page selection for PDFs. Syntax: '1-3', '7,14,22', '10-20,!15'. Null = all pages.")
 
     # Meta Pass-through
     meta: dict[str, Any] = Field(default_factory=dict, description="Beliebige Metadaten (werden durchgereicht)")

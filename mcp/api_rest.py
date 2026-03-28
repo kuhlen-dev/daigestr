@@ -194,6 +194,7 @@ async def api_convert(request: ConvertRequest) -> ConvertResponse:
             min_confidence=request.min_confidence,
             mode=request.mode,
             output_format=request.output_format,
+            pages=request.pages,
         )
 
     # Base64
@@ -234,6 +235,7 @@ async def api_convert(request: ConvertRequest) -> ConvertResponse:
             min_confidence=request.min_confidence,
             mode=request.mode,
             output_format=request.output_format,
+            pages=request.pages,
         )
 
     # URL — T-MKIT-022: durch convert_auto() routen für vollständige Pipeline
@@ -346,6 +348,7 @@ async def api_convert(request: ConvertRequest) -> ConvertResponse:
                     min_confidence=request.min_confidence,
                     mode=request.mode,
                     output_format=request.output_format,
+                    pages=request.pages,
                 )
             finally:
                 temp_path.unlink(missing_ok=True)

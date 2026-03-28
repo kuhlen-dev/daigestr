@@ -64,6 +64,7 @@ async def mcp_convert(
     min_confidence: float = 0.7,
     mode: str = "default",
     output_format: str = "markdown",
+    pages: Optional[str] = None,
 ) -> str:
     """
     Converts a file, URL, or base64 payload to Markdown.
@@ -110,6 +111,7 @@ async def mcp_convert(
         auto_extract: Wenn True, wird der Dokumenttyp klassifiziert, ein passendes Template gesucht und strukturierte Daten extrahiert — alles in einem Schritt.
         min_confidence: Minimale Klassifizierungs-Konfidenz für auto_extract (Default: 0.7).
         mode: Processing mode. 'default': use individual parameter settings. 'full': enable all features (describe_images, accuracy=high, classify, ocr_correct, auto_extract, chunk).
+        pages: Seitenauswahl für PDFs. Syntax: '1-3', '7,14,22', '10-20,!15'. Null = alle Seiten.
     """
     # Patchable symbols via _get() for test-patchability
     _resolve_path = _get("resolve_path", resolve_path)
@@ -154,6 +156,7 @@ async def mcp_convert(
             min_confidence=min_confidence,
             mode=mode,
             output_format=output_format,
+            pages=pages,
         )
     elif base64_data and filename:
         try:
@@ -182,6 +185,7 @@ async def mcp_convert(
             min_confidence=min_confidence,
             mode=mode,
             output_format=output_format,
+            pages=pages,
         )
     elif url:
         _convert_url = _get("convert_url", convert_url)

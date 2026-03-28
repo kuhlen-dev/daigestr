@@ -296,15 +296,19 @@ def extract_images_from_pptx(file_path: Path) -> list[dict]:
     return images
 
 
-def extract_images_from_pdf(file_path: Path) -> list[dict]:
+def extract_images_from_pdf(
+    file_path: Path,
+    page_indices: Optional[list[int]] = None,
+) -> list[dict]:
     """
     Extrahiert eingebettete Bilder aus einer PDF-Datei via PyMuPDF (fitz).
 
-    Iteriert über alle Seiten und extrahiert eingebettete Raster-Bilder.
+    Iteriert über alle Seiten (oder nur die angegebenen) und extrahiert eingebettete Raster-Bilder.
     Zu kleine Bilder (< MIN_IMAGE_SIZE_PX) werden übersprungen.
 
     Args:
-        file_path: Pfad zur PDF-Datei
+        file_path:    Pfad zur PDF-Datei
+        page_indices: Optionale Liste von 0-basierten Seiten-Indices. Wenn None, alle Seiten.
 
     Returns:
         Liste von Dicts mit 'name', 'data' (bytes), 'page_number'
@@ -313,7 +317,13 @@ def extract_images_from_pdf(file_path: Path) -> list[dict]:
     try:
         import fitz  # noqa: PLC0415
         doc = fitz.open(str(file_path))
-        for page_num in range(len(doc)):
+        all_page_nums = range(len(doc))
+        selected_pages = (
+            [p for p in all_page_nums if p in set(page_indices)]
+            if page_indices is not None
+            else list(all_page_nums)
+        )
+        for page_num in selected_pages:
             page = doc[page_num]
             img_list = page.get_images(full=True)
             for img_idx, img_info in enumerate(img_list):

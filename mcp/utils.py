@@ -310,6 +310,75 @@ def detect_and_fence_code_blocks(markdown: str) -> str:
 
 
 # =============================================================================
+# PDF Page Selection
+# =============================================================================
+
+def parse_pages(spec: str, total_pages: int) -> list[int]:
+    """
+    Parse a page selection spec string into a sorted list of 0-based page indices.
+
+    Syntax:
+    - "N"      → single page N (1-based)
+    - "N-M"    → pages N through M (inclusive, 1-based)
+    - "!N"     → exclude page N (1-based)
+    - Comma-separated combinations: "1-3,7,!2"
+
+    Args:
+        spec:        Page selection string, e.g. "1-3", "7,14,22", "10-20,!15".
+        total_pages: Total number of pages in the document (1-based max).
+
+    Returns:
+        Sorted list of 0-based page indices.
+
+    Raises:
+        ValueError: If the resulting page set is empty.
+    """
+    if not spec or not spec.strip():
+        raise ValueError("Empty page spec")
+
+    included: set[int] = set()
+    excluded: set[int] = set()
+
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+
+        if part.startswith("!"):
+            # Exclusion
+            try:
+                n = int(part[1:])
+            except ValueError:
+                continue
+            if 1 <= n <= total_pages:
+                excluded.add(n - 1)
+        elif "-" in part:
+            # Range N-M
+            dash_idx = part.index("-")
+            try:
+                n = int(part[:dash_idx])
+                m = int(part[dash_idx + 1:])
+            except ValueError:
+                continue
+            for p in range(n, m + 1):
+                if 1 <= p <= total_pages:
+                    included.add(p - 1)
+        else:
+            # Single page
+            try:
+                n = int(part)
+            except ValueError:
+                continue
+            if 1 <= n <= total_pages:
+                included.add(n - 1)
+
+    result = sorted(included - excluded)
+    if not result:
+        raise ValueError(f"Page spec '{spec}' results in no valid pages (total: {total_pages})")
+    return result
+
+
+# =============================================================================
 # Path / File Helpers
 # =============================================================================
 
