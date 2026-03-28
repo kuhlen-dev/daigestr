@@ -133,6 +133,7 @@ class ConvertResponse(BaseModel):
     """
     success: bool = Field(..., description="War die Konvertierung erfolgreich?")
     markdown: Optional[str] = Field(None, description="Konvertierter Markdown-Inhalt")
+    html: Optional[str] = Field(None, description="Konvertierter HTML-Inhalt (nur wenn output_format='html')")
     error: Optional[ErrorDetail] = Field(None, description="Fehlerdetails (nur bei success=False)")
     meta: MetaData = Field(default_factory=MetaData, description="Metadaten")
     extracted: Optional[dict[str, Any]] = Field(None, description="Strukturiert extrahierte Daten (nur wenn extract_schema gesetzt)")
@@ -170,7 +171,14 @@ class ConvertRequest(BaseModel):
 
     # Optionen
     password: Optional[str] = Field(None, description="Passwort für geschützte PDFs")  # Reserved for future use
-    output_format: str = Field("markdown", description="Ausgabeformat: 'markdown', 'text', 'html'")  # Reserved for future use
+    output_format: str = Field("markdown", description="Ausgabeformat: 'markdown', 'text', 'html'")
+
+    @field_validator("output_format")
+    @classmethod
+    def validate_output_format(cls, v: str) -> str:
+        if v not in ("markdown", "html", "text"):
+            raise ValueError(f"output_format must be 'markdown', 'html', or 'text', got '{v}'")
+        return v
 
     # Vision-spezifisch
     prompt: Optional[str] = Field(None, description="Custom Prompt für Vision-Analyse")

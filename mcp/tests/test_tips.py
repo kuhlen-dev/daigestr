@@ -108,7 +108,8 @@ class TestGetTipsMCPTool:
         # All key features must be documented
         for key in ["accuracy", "classify", "extract_schema", "template",
                     "describe_images", "ocr_correct", "show_formulas", "chunk",
-                    "chunk_size", "language"]:
+                    "chunk_size", "language", "mode", "prompt",
+                    "classify_categories", "output_format"]:
             assert key in features, f"Missing feature documentation: {key}"
 
     def test_get_tips_has_quick_reference(self):
@@ -146,6 +147,46 @@ class TestGetTipsMCPTool:
         result = json.loads(run_async(mcp_get_tips()))
         problems = [m["problem"] for m in result["common_mistakes"]]
         assert "chunks is null" in problems
+
+    def test_ocr_embed_mistake_present(self):
+        """The 'ocr_embed has no effect' common mistake must be documented."""
+        result = json.loads(run_async(mcp_get_tips()))
+        problems = [m["problem"] for m in result["common_mistakes"]]
+        assert "ocr_embed has no effect" in problems
+
+    def test_classify_categories_ignored_mistake_present(self):
+        """The 'classify_categories ignored' common mistake must be documented."""
+        result = json.loads(run_async(mcp_get_tips()))
+        problems = [m["problem"] for m in result["common_mistakes"]]
+        assert "classify_categories ignored" in problems
+
+    def test_prompt_no_effect_mistake_present(self):
+        """The 'prompt has no effect on documents' common mistake must be documented."""
+        result = json.loads(run_async(mcp_get_tips()))
+        problems = [m["problem"] for m in result["common_mistakes"]]
+        assert "prompt has no effect on documents" in problems
+
+    def test_describe_images_mentions_pdf_and_mermaid(self):
+        """describe_images description must mention PDF and Mermaid."""
+        result = json.loads(run_async(mcp_get_tips()))
+        desc = result["optional_features"]["describe_images"]["description"]
+        assert "PDF" in desc, "describe_images description must mention PDF"
+        assert "Mermaid" in desc, "describe_images description must mention Mermaid"
+
+    def test_available_templates_not_empty(self):
+        """available_templates must be a non-empty dict (dynamically loaded from DB)."""
+        result = json.loads(run_async(mcp_get_tips()))
+        assert "available_templates" in result
+        templates = result["available_templates"]
+        assert isinstance(templates, (dict, list))
+        # Templates are seeded in DB — must not be empty
+        assert len(templates) > 0
+
+    def test_response_fields_has_html(self):
+        """response_fields must document the html field for output_format='html'."""
+        result = json.loads(run_async(mcp_get_tips()))
+        assert "html" in result["response_fields"]
+        assert "output_format" in result["response_fields"]["html"].lower() or "html" in result["response_fields"]["html"].lower()
 
 
 # ---------------------------------------------------------------------------

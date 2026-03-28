@@ -110,6 +110,19 @@ async def convert_url(url: str) -> dict[str, Any]:
         }
 
 
+def _apply_output_format(response: "ConvertResponse", output_format: str) -> "ConvertResponse":
+    """Wendet output_format-Rendering auf eine erfolgreiche ConvertResponse an."""
+    if not response.success or not response.markdown:
+        return response
+    if output_format == "html":
+        from renderers.html import markdown_to_html
+        response.html = markdown_to_html(response.markdown)
+    elif output_format == "text":
+        from renderers.text import markdown_to_text
+        response.markdown = markdown_to_text(response.markdown)
+    return response
+
+
 async def convert_auto(
     file_data: bytes,
     filename: str,
@@ -131,6 +144,7 @@ async def convert_auto(
     auto_extract: bool = False,
     min_confidence: float = 0.7,
     mode: str = "default",
+    output_format: str = "markdown",
 ) -> ConvertResponse:
     """
     Intelligente Konvertierung basierend auf Dateityp.
@@ -354,7 +368,7 @@ async def convert_auto(
             # FR-MKIT-011: Smart Chunking für RAG
             if chunk:
                 response.chunks = _chunk_md(markdown, chunk_size=chunk_size, source=source)
-            return response
+            return _apply_output_format(response, output_format)
         else:
             return create_error_response(
                 result.get("error_code", ErrorCode.VISION_FAILED),
@@ -459,7 +473,7 @@ async def convert_auto(
             # FR-MKIT-011: Smart Chunking für RAG
             if chunk:
                 response.chunks = _chunk_md(markdown, chunk_size=chunk_size, source=source)
-            return response
+            return _apply_output_format(response, output_format)
 
         finally:
             temp_media_path.unlink(missing_ok=True)
@@ -580,7 +594,7 @@ async def convert_auto(
                     # FR-MKIT-011: Smart Chunking für RAG
                     if chunk:
                         response.chunks = _chunk_md(scanned_markdown, chunk_size=chunk_size, source=source)
-                    return response
+                    return _apply_output_format(response, output_format)
                 else:
                     return create_error_response(
                         result.get("error_code", ErrorCode.CONVERSION_FAILED),
@@ -740,7 +754,7 @@ async def convert_auto(
                 # FR-MKIT-011: Smart Chunking für RAG
                 if chunk:
                     response.chunks = _chunk_md(markdown, chunk_size=chunk_size, source=source)
-                return response
+                return _apply_output_format(response, output_format)
             else:
                 return create_error_response(
                     result.get("error_code", ErrorCode.CONVERSION_FAILED),
@@ -919,6 +933,9 @@ def _build_tips_dict() -> dict:
             {"problem": "Images in DOCX/PPTX/PDF/ODT/ODP/HTML not described", "cause": "describe_images defaults to false", "fix": "Set describe_images=true (costs extra API calls)"},
             {"problem": "Document type not detected", "cause": "classify defaults to false", "fix": "Set classify=true to get document_type in meta"},
             {"problem": "OCR errors in output", "cause": "No post-correction", "fix": "Set ocr_correct=true or accuracy='high' (auto-enables correction)"},
+            {"problem": "ocr_embed has no effect", "cause": "Only works on scanned PDFs", "fix": "ocr_embed only embeds OCR text layer in scanned PDFs — has no effect on text PDFs or other formats"},
+            {"problem": "classify_categories ignored", "cause": "classify defaults to false", "fix": "Set classify=true to use custom categories"},
+            {"problem": "prompt has no effect on documents", "cause": "prompt only affects Vision analysis", "fix": "prompt is only used for image files processed via Vision API, not for documents"},
         ],
         "available_templates": get_all_template_ids(),
         "available_formats": {
@@ -934,7 +951,7 @@ def _build_tips_dict() -> dict:
             "template": {"type": "str", "default": None, "description": "Shortcut for extract_schema. Available: invoice, cv, contract"},
             "auto_extract": {"type": "bool", "default": False, "description": "Automatically classify document, find matching template, and extract structured data — all in one call. No template or extract_schema needed."},
             "min_confidence": {"type": "float", "default": 0.7, "description": "Minimum classification confidence for auto_extract to use a template (0.0-1.0)"},
-            "describe_images": {"type": "bool", "default": False, "description": "Extract and describe embedded images in DOCX/PPTX/PDF/ODT/ODP/HTML via Vision AI"},
+            "describe_images": {"type": "bool", "default": False, "description": "Extract embedded images from PDF, DOCX, PPTX, ODT, ODP, HTML and auto-classify each one: diagrams → Mermaid syntax, charts → data tables, photos → descriptions, text scans → OCR, decorative → skipped"},
             "ocr_correct": {"type": "bool", "default": False, "description": "LLM post-correction for OCR errors"},
             "ocr_embed": {"type": "bool", "default": False, "description": "Embed OCR text layer into PDF — creates searchable PDF output"},
             "show_formulas": {"type": "bool", "default": False, "description": "Show Excel formulas in output"},
@@ -942,12 +959,17 @@ def _build_tips_dict() -> dict:
             "chunk_size": {"type": "int", "default": 512, "description": "Approximate chunk size in tokens"},
             "language": {"type": "str", "default": "de", "description": "Language for Vision/OCR responses"},
             "zugferd": {"type": "bool", "default": "auto", "description": "Extract ZUGFeRD/Factur-X e-invoice data from PDF (auto-detected, 100% accuracy, no LLM required)"},
+            "mode": {"values": ["default", "full"], "default": "default", "description": "full enables all features in one call (describe_images, accuracy=high, classify, ocr_correct, auto_extract, chunk)"},
+            "prompt": {"type": "str", "default": None, "description": "Custom prompt for Vision analysis (images only)"},
+            "classify_categories": {"type": "list", "default": None, "description": "Custom classification categories (requires classify=true)"},
+            "output_format": {"values": ["markdown", "html", "text"], "default": "markdown", "description": "Output format. html includes Mermaid rendering, CSS, syntax highlighting. text strips all Markdown syntax."},
         },
         "response_fields": {
             "markdown": "Always present — the converted document as Markdown",
             "extracted": "Only present when extract_schema or template is set — structured JSON",
             "chunks": "Only present when chunk=true — list of text segments with metadata",
             "meta": "Always present — processing metadata (quality_score, duration, pipeline_steps, etc.)",
+            "html": "Only present when output_format='html' — standalone HTML page with CSS and Mermaid rendering",
         },
         "v3_meta_fields": {
             "zugferd": "ZUGFeRD/Factur-X structured invoice data (auto-extracted from PDF when present)",
