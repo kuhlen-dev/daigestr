@@ -169,3 +169,9 @@ HIGHLIGHTJS_CSS_URL = os.getenv("HIGHLIGHTJS_CSS_URL", "https://cdnjs.cloudflare
 
 VERSION = os.getenv("DAIGESTR_VERSION", "dev")
 START_TIME = time.time()
+
+# =============================================================================
+# Webhook — T-DAI-023
+# =============================================================================
+
+WEBHOOK_TIMEOUT_SECONDS = int(os.getenv("WEBHOOK_TIMEOUT_SECONDS", "30"))

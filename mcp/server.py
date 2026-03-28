@@ -184,6 +184,13 @@ from templates_db import (  # noqa: F401
     cache_get,
     cache_set,
     cache_clear,
+    # Async Job API (T-DAI-023)
+    job_create,
+    job_update,
+    job_set_result,
+    job_get,
+    job_delete,
+    job_list,
 )
 
 # Re-export routing functions for backwards-compatibility
@@ -214,6 +221,15 @@ from api_rest import (  # noqa: F401
     api_formats,
     api_tips,
     run_rest_server,
+    # Async Job API + Webhook (T-DAI-023)
+    api_convert_async,
+    api_list_jobs,
+    api_get_job,
+    api_get_job_result,
+    api_delete_job,
+    _fire_webhook,
+    _run_async_job,
+    _api_convert_impl,
 )
 
 # Re-export MCP tools for backwards-compatibility

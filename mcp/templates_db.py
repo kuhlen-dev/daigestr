@@ -91,6 +91,18 @@ def init_templates_db() -> None:
         )
     """)
 
+    # Async Job Tracking (T-DAI-023)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS job (
+            id TEXT PRIMARY KEY,
+            status TEXT DEFAULT 'queued',
+            progress_json TEXT,
+            result_json TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+
     # Seed aus seed.sql wenn DB leer (template-Tabelle prüfen)
     cursor = conn.execute("SELECT COUNT(*) FROM template")
     if cursor.fetchone()[0] == 0:
@@ -295,6 +307,116 @@ def cache_clear() -> None:
     conn.execute("DELETE FROM cache")
     conn.commit()
     conn.close()
+
+
+# =============================================================================
+# Async Job API — T-DAI-023
+# =============================================================================
+
+def job_create(job_id: str) -> dict:
+    """Erstellt einen neuen Job mit Status 'queued'.
+
+    Args:
+        job_id: Eindeutige Job-ID (UUID).
+
+    Returns:
+        Dict mit job_id und status.
+    """
+    _get_db_conn = _get("get_db_connection", get_db_connection)
+    conn = _get_db_conn()
+    conn.execute(
+        "INSERT INTO job (id, status) VALUES (?, 'queued')",
+        (job_id,)
+    )
+    conn.commit()
+    conn.close()
+    return {"job_id": job_id, "status": "queued"}
+
+
+def job_update(job_id: str, status: str, progress_json: Optional[str] = None) -> None:
+    """Aktualisiert Status und Fortschritt eines Jobs.
+
+    Args:
+        job_id: Job-ID.
+        status: Neuer Status (z.B. 'processing', 'completed', 'failed').
+        progress_json: Optional serialisiertes Fortschritts-Objekt (JSON-String).
+    """
+    _get_db_conn = _get("get_db_connection", get_db_connection)
+    conn = _get_db_conn()
+    conn.execute(
+        "UPDATE job SET status=?, progress_json=?, updated_at=datetime('now') WHERE id=?",
+        (status, progress_json, job_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def job_set_result(job_id: str, result_json: str) -> None:
+    """Setzt das Ergebnis eines abgeschlossenen Jobs.
+
+    Args:
+        job_id: Job-ID.
+        result_json: Serialisiertes ConvertResponse als JSON-String.
+    """
+    _get_db_conn = _get("get_db_connection", get_db_connection)
+    conn = _get_db_conn()
+    conn.execute(
+        "UPDATE job SET result_json=?, status='completed', updated_at=datetime('now') WHERE id=?",
+        (result_json, job_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def job_get(job_id: str) -> Optional[dict]:
+    """Lädt einen Job per ID.
+
+    Args:
+        job_id: Job-ID.
+
+    Returns:
+        Dict mit id, status, progress_json, result_json, created_at, updated_at
+        oder None wenn nicht gefunden.
+    """
+    _get_db_conn = _get("get_db_connection", get_db_connection)
+    conn = _get_db_conn()
+    row = conn.execute("SELECT * FROM job WHERE id=?", (job_id,)).fetchone()
+    conn.close()
+    if not row:
+        return None
+    return dict(row)
+
+
+def job_delete(job_id: str) -> bool:
+    """Löscht einen Job.
+
+    Args:
+        job_id: Job-ID.
+
+    Returns:
+        True wenn gelöscht, False wenn nicht gefunden.
+    """
+    _get_db_conn = _get("get_db_connection", get_db_connection)
+    conn = _get_db_conn()
+    cursor = conn.execute("DELETE FROM job WHERE id=?", (job_id,))
+    conn.commit()
+    conn.close()
+    return cursor.rowcount > 0
+
+
+def job_list() -> list[dict]:
+    """Gibt alle Jobs zurück, neueste zuerst.
+
+    Returns:
+        Liste von Dicts mit id, status, created_at, updated_at (ohne result_json für Kompaktheit).
+    """
+    _get_db_conn = _get("get_db_connection", get_db_connection)
+    conn = _get_db_conn()
+    rows = conn.execute(
+        "SELECT id, status, progress_json, created_at, updated_at FROM job ORDER BY created_at DESC"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 def get_scoring_weight(name: str) -> float:

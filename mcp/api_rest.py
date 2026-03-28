@@ -7,11 +7,13 @@ Patchbare Symbole werden über _get() aus dem server-Namespace gelesen,
 damit Test-Patches auf _server.X korrekt funktionieren.
 """
 
+import asyncio
 import base64
 import hashlib
 import json
 import mimetypes
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 
@@ -53,6 +55,7 @@ from settings import (
     START_TIME,
     TEMP_DIR,
     MISTRAL_TIMEOUT,
+    WEBHOOK_TIMEOUT_SECONDS,
 )
 from utils import _get, resolve_path, get_file_extension, get_mimetype, detect_mimetype_from_bytes
 from intelligence import (
@@ -64,7 +67,10 @@ from intelligence import (
     get_db_connection,
     get_template_by_id,
 )
-from templates_db import get_all_template_ids, search_templates, cache_clear
+from templates_db import (
+    get_all_template_ids, search_templates, cache_clear,
+    job_create, job_update, job_set_result, job_get, job_delete, job_list,
+)
 from routing import (
     convert_auto,
     convert_url,
@@ -129,6 +135,15 @@ async def api_convert(request: ConvertRequest) -> ConvertResponse:
     """
     Konvertiert eine Datei zu Markdown.
     """
+    response = await _api_convert_impl(request)
+    # Webhook (T-DAI-023): nach Konvertierung feuern wenn webhook_url gesetzt
+    if request.webhook_url:
+        await _fire_webhook(request.webhook_url, response)
+    return response
+
+
+async def _api_convert_impl(request: ConvertRequest) -> ConvertResponse:
+    """Interne Implementierung von api_convert (ohne Webhook-Logik)."""
     # Patchable symbols via _get() for test-patchability
     _resolve_path = _get("resolve_path", resolve_path)
     _convert_auto = _get("convert_auto", convert_auto)
@@ -746,6 +761,214 @@ async def api_cache_clear() -> dict:
     _cache_clear = _get("cache_clear", cache_clear)
     _cache_clear()
     return {"cleared": True}
+
+
+# =============================================================================
+# Async Job API — T-DAI-023
+# =============================================================================
+
+async def _fire_webhook(webhook_url: str, result: ConvertResponse) -> None:
+    """Sendet das Konvertierungsergebnis an eine Webhook-URL (POST).
+
+    Fehler werden geloggt aber nicht weitergeworfen — sie beeinflussen die Response nicht.
+
+    Args:
+        webhook_url: Ziel-URL für den POST-Request.
+        result: Konvertierungsergebnis als ConvertResponse.
+    """
+    _httpx = _get("httpx", httpx)
+    _timeout = _get("WEBHOOK_TIMEOUT_SECONDS", WEBHOOK_TIMEOUT_SECONDS)
+    try:
+        async with _httpx.AsyncClient(timeout=float(_timeout)) as client:
+            await client.post(webhook_url, json=result.model_dump())
+        log.info("webhook_sent", url=webhook_url)
+    except Exception as exc:
+        log.warning("webhook_failed", url=webhook_url, error=str(exc))
+
+
+async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
+    """Background-Worker: führt convert_auto aus und schreibt Ergebnis in die DB.
+
+    Args:
+        job_id: Job-ID in der Datenbank.
+        request: Original ConvertRequest.
+    """
+    _convert_auto = _get("convert_auto", convert_auto)
+    _job_update = _get("job_update", job_update)
+    _job_set_result = _get("job_set_result", job_set_result)
+
+    _job_update(job_id, "processing", json.dumps({"message": "Conversion started"}))
+    try:
+        # Eingabe auflösen
+        _resolve_path = _get("resolve_path", resolve_path)
+        _httpx_mod = _get("httpx", httpx)
+        _temp_dir = _get("TEMP_DIR", TEMP_DIR)
+        _mistral_timeout = _get("MISTRAL_TIMEOUT", MISTRAL_TIMEOUT)
+
+        inputs = [request.path, request.base64, request.url]
+        if sum(1 for x in inputs if x) != 1:
+            raise ValueError("Genau einer von 'path', 'base64' oder 'url' muss angegeben werden")
+
+        # Template → Schema Auflösung
+        effective_schema = request.extract_schema
+        if request.template and not effective_schema:
+            _get_template = _get("get_template_by_id", get_template_by_id)
+            tmpl = _get_template(request.template)
+            if tmpl:
+                effective_schema = tmpl["schema"]
+
+        if request.path:
+            file_path = _resolve_path(request.path)
+            file_data = file_path.read_bytes()
+            filename = file_path.name
+            source = str(file_path)
+            source_type = "file"
+        elif request.base64:
+            file_data = base64.b64decode(request.base64)
+            filename = request.filename or "upload"
+            source = "base64"
+            source_type = "base64"
+        else:
+            async with _httpx_mod.AsyncClient(timeout=float(_mistral_timeout)) as client:
+                dl_resp = await client.get(request.url, follow_redirects=True)
+                dl_resp.raise_for_status()
+            file_data = dl_resp.content
+            ct_base = dl_resp.headers.get("content-type", "application/octet-stream").split(";")[0].strip()
+            guessed_ext = mimetypes.guess_extension(ct_base) or ".bin"
+            _ext_map = {".jpe": ".jpg", ".jpeg": ".jpg"}
+            guessed_ext = _ext_map.get(guessed_ext, guessed_ext)
+            url_hash = hashlib.md5(request.url.encode()).hexdigest()
+            temp_path = _temp_dir / f"url_{url_hash}{guessed_ext}"
+            temp_path.write_bytes(dl_resp.content)
+            filename = temp_path.name
+            source = request.url
+            source_type = "url"
+
+        result: ConvertResponse = await _convert_auto(
+            file_data=file_data,
+            filename=filename,
+            source=source,
+            source_type=source_type,
+            input_meta=request.meta,
+            prompt=request.prompt,
+            language=request.language,
+            describe_images=request.describe_images,
+            classify=request.classify,
+            classify_categories=request.classify_categories,
+            extract_schema=effective_schema,
+            ocr_correct=request.ocr_correct,
+            show_formulas=request.show_formulas,
+            chunk=request.chunk,
+            chunk_size=request.chunk_size,
+            accuracy=request.accuracy,
+            ocr_embed=request.ocr_embed,
+            auto_extract=request.auto_extract,
+            min_confidence=request.min_confidence,
+            mode=request.mode,
+            output_format=request.output_format,
+            pages=request.pages,
+        )
+        _job_set_result(job_id, result.model_dump_json())
+
+        # Webhook senden wenn konfiguriert
+        if request.webhook_url:
+            await _fire_webhook(request.webhook_url, result)
+
+    except Exception as exc:
+        log.error("async_job_failed", job_id=job_id, error=str(exc))
+        error_result = create_error_response(
+            ErrorCode.INTERNAL_ERROR,
+            f"Job fehlgeschlagen: {str(exc)}",
+        )
+        _job_update(job_id, "failed", json.dumps({"error": str(exc)}))
+        # Webhook auch bei Fehler senden
+        if request.webhook_url:
+            await _fire_webhook(request.webhook_url, error_result)
+
+
+@app.post("/v1/convert/async")
+async def api_convert_async(request: ConvertRequest) -> dict:
+    """
+    Startet eine asynchrone Konvertierung.
+
+    Gibt sofort eine Job-ID zurück. Der Fortschritt kann über GET /v1/jobs/{id}
+    abgefragt werden. Das Ergebnis ist über GET /v1/jobs/{id}/result abrufbar.
+    """
+    _job_create = _get("job_create", job_create)
+    job_id = str(uuid.uuid4())
+    _job_create(job_id)
+    asyncio.create_task(_run_async_job(job_id, request))
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.get("/v1/jobs")
+async def api_list_jobs() -> dict:
+    """Gibt alle Jobs zurück (neueste zuerst)."""
+    _job_list = _get("job_list", job_list)
+    jobs = _job_list()
+    result = []
+    for j in jobs:
+        entry = {
+            "job_id": j["id"],
+            "status": j["status"],
+            "created_at": j["created_at"],
+            "updated_at": j["updated_at"],
+        }
+        if j.get("progress_json"):
+            try:
+                entry["progress"] = json.loads(j["progress_json"])
+            except Exception:
+                entry["progress"] = None
+        result.append(entry)
+    return {"jobs": result}
+
+
+@app.get("/v1/jobs/{job_id}")
+async def api_get_job(job_id: str) -> dict:
+    """Gibt den Status und Fortschritt eines Jobs zurück."""
+    _job_get = _get("job_get", job_get)
+    job = _job_get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+    result = {
+        "job_id": job["id"],
+        "status": job["status"],
+        "created_at": job["created_at"],
+        "updated_at": job["updated_at"],
+    }
+    if job.get("progress_json"):
+        try:
+            result["progress"] = json.loads(job["progress_json"])
+        except Exception:
+            result["progress"] = None
+    return result
+
+
+@app.get("/v1/jobs/{job_id}/result", response_model=ConvertResponse)
+async def api_get_job_result(job_id: str) -> ConvertResponse:
+    """Gibt das volle ConvertResponse Ergebnis zurück (nur wenn status=completed)."""
+    _job_get = _get("job_get", job_get)
+    job = _job_get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+    if job["status"] != "completed":
+        raise HTTPException(
+            status_code=202,
+            detail=f"Job '{job_id}' is not completed yet (status: {job['status']})"
+        )
+    if not job.get("result_json"):
+        raise HTTPException(status_code=500, detail=f"Job '{job_id}' has no result data")
+    return ConvertResponse.model_validate_json(job["result_json"])
+
+
+@app.delete("/v1/jobs/{job_id}")
+async def api_delete_job(job_id: str) -> dict:
+    """Löscht einen Job."""
+    _job_delete = _get("job_delete", job_delete)
+    deleted = _job_delete(job_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+    return {"success": True, "job_id": job_id}
 
 
 @app.get("/v1/tips")

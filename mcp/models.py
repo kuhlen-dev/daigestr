@@ -242,6 +242,9 @@ class ConvertRequest(BaseModel):
     # Meta Pass-through
     meta: dict[str, Any] = Field(default_factory=dict, description="Beliebige Metadaten (werden durchgereicht)")
 
+    # Webhook (T-DAI-023)
+    webhook_url: Optional[str] = Field(None, description="URL to POST the result to when conversion completes")
+
 
 class ExtractRequest(BaseModel):
     """
