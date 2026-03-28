@@ -231,6 +231,7 @@ async def _convert_auto_impl(
                    als unsichtbare Textschicht eingebettet (T-MKIT-033).
     """
     start_time = time.time()
+    log.info("convert_progress", step="start", detail=filename, progress=0)
 
     # T-DAI-015: Mode-Resolution — 'full' enables all features
     if mode == "full":
@@ -623,6 +624,8 @@ async def _convert_auto_impl(
                     # Fallback: alle Seiten
 
             # Scanned PDF Detection: VOR dem normalen markitdown-Pfad prüfen
+            if ext == ".pdf":
+                log.info("convert_progress", step="scan_detection", detail=filename, progress=5)
             if ext == ".pdf" and _is_scanned(temp_path):
                 log.info("scanned_pdf_detected", file=filename)
                 result = await _convert_scanned(temp_path, language=language, page_indices=_page_indices)
@@ -679,6 +682,7 @@ async def _convert_auto_impl(
                     meta["pipeline_steps"] = scanned_pipeline_steps
 
                     if classify:
+                        log.info("convert_progress", step="classify", detail=filename, progress=70)
                         classify_result = await _classify_doc(scanned_markdown, classify_categories, language)
                         meta.update(classify_result)
                     # AC-010: Quality Scoring
@@ -711,9 +715,11 @@ async def _convert_auto_impl(
                             log.warning("ocr_embed_failed_no_output")
                     # T-MKIT-036: Auto-Extract (classify → template lookup → extraction)
                     if auto_extract and not extract_schema:
+                        log.info("convert_progress", step="extract", detail=filename, progress=80)
                         response = await _apply_auto(response, meta, scanned_markdown, language, min_confidence, scanned_hints)
                     # AC-014-2/AC-014-3: Strukturierte Extraktion falls Schema gesetzt
                     elif extract_schema:
+                        log.info("convert_progress", step="extract", detail=filename, progress=80)
                         extraction = await _extract_struct(scanned_markdown, extract_schema, language)
                         if extraction["success"]:
                             response.extracted = extraction["extracted"]
@@ -729,7 +735,10 @@ async def _convert_auto_impl(
                             log.warning("extract_structured_data_failed_scanned_pdf", error=extraction.get("error"))
                     # FR-MKIT-011: Smart Chunking für RAG
                     if chunk:
+                        log.info("convert_progress", step="chunk", detail=filename, progress=90)
                         response.chunks = _chunk_md(scanned_markdown, chunk_size=chunk_size, source=source)
+                    log.info("convert_progress", step="render", detail=output_format, progress=95)
+                    log.info("convert_progress", step="done", detail=filename, progress=100)
                     return _cache_and_return(_apply_output_format(response, output_format))
                 else:
                     return create_error_response(
@@ -738,6 +747,7 @@ async def _convert_auto_impl(
                         meta=meta
                     )
 
+            log.info("convert_progress", step="markitdown", detail=filename, progress=10)
             result = _convert_markitdown(temp_path, show_formulas=show_formulas)
             meta["duration_ms"] = int((time.time() - start_time) * 1000)
 
@@ -821,6 +831,7 @@ async def _convert_auto_impl(
                             )
                             images = images[:_max_describe_images]
                             meta["images_truncated"] = True
+                        log.info("convert_progress", step="describe_images", detail=f"{len(images)} images found", progress=30)
                         descriptions = await _describe_imgs(images, language=language)
                         markdown = _insert_img_desc(markdown, descriptions)
                         meta["images_described"] = len(descriptions)
@@ -856,6 +867,7 @@ async def _convert_auto_impl(
                 meta["pipeline_steps"] = markitdown_pipeline_steps
 
                 if classify:
+                    log.info("convert_progress", step="classify", detail=filename, progress=70)
                     classify_result = await _classify_doc(markdown, classify_categories, language)
                     meta.update(classify_result)
 
@@ -882,15 +894,18 @@ async def _convert_auto_impl(
                 response = create_success_response(markdown, meta=meta)
                 # T-MKIT-036: Auto-Extract (classify → template lookup → extraction)
                 if auto_extract and not extract_schema:
+                    log.info("convert_progress", step="extract", detail=filename, progress=80)
                     response = await _apply_auto(response, meta, markdown, language, min_confidence, doc_hints)
                 # T-MKIT-024: ZUGFeRD Daten direkt als extracted verwenden (kein LLM nötig)
                 elif extract_schema and meta.get("zugferd") is not None:
+                    log.info("convert_progress", step="extract", detail=filename, progress=80)
                     response.extracted = meta["zugferd"]
                     meta["zugferd_source"] = "embedded_xml"
                     meta["extraction_method"] = "zugferd"
                     response.meta = MetaData(**{k: v for k, v in meta.items()})
                     log.info("zugferd_used_as_extracted", file=filename)
                 elif extract_schema:
+                    log.info("convert_progress", step="extract", detail=filename, progress=80)
                     # AC-014-2/AC-014-3: Strukturierte Extraktion falls Schema gesetzt (kein ZUGFeRD)
                     extraction = await _extract_struct(markdown, extract_schema, language)
                     if extraction["success"]:
@@ -907,7 +922,10 @@ async def _convert_auto_impl(
                         log.warning("extract_structured_data_failed_markitdown", error=extraction.get("error"))
                 # FR-MKIT-011: Smart Chunking für RAG
                 if chunk:
+                    log.info("convert_progress", step="chunk", detail=filename, progress=90)
                     response.chunks = _chunk_md(markdown, chunk_size=chunk_size, source=source)
+                log.info("convert_progress", step="render", detail=output_format, progress=95)
+                log.info("convert_progress", step="done", detail=filename, progress=100)
                 return _cache_and_return(_apply_output_format(response, output_format))
             else:
                 return create_error_response(

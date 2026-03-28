@@ -674,11 +674,13 @@ async def describe_embedded_images(
         Liste von Dicts mit 'name', 'description', 'tokens', 'image_type'
     """
     results: list[dict] = []
-    for image in images:
+    total = len(images)
+    for i, image in enumerate(images):
         name = image["name"]
         data = image["data"]
         mimetype = _get("detect_mimetype_from_bytes", detect_mimetype_from_bytes)(data) or "image/png"
         log.info("describing_embedded_image", name=name, size=len(data))
+        log.info("convert_progress", step="describe_image", detail=f"image {i+1}/{total}: {name}", progress=int(30 + 40 * i / total) if total else 30)
 
         # AC-004-1: Bild klassifizieren
         image_type = await _get("classify_image_type", classify_image_type)(data, mimetype)

@@ -477,10 +477,12 @@ async def convert_scanned_pdf_ocr3(
             }
 
     markdown_parts = []
-    for page in pages:
+    total_pages = len(pages)
+    for i, page in enumerate(pages):
         page_index = page.get("index", 0) + 1
         page_markdown = page.get("markdown", "")
         markdown_parts.append(f"## Seite {page_index}\n\n{page_markdown}")
+        log.info("convert_progress", step="ocr", detail=f"page {i+1}/{total_pages}", progress=int(10 + 50 * i / total_pages) if total_pages else 10)
 
     combined_markdown = "\n\n".join(markdown_parts)
 
@@ -608,8 +610,10 @@ async def convert_scanned_pdf(
     pages_processed = 0
     vision_model_used = MISTRAL_VISION_MODEL
 
-    for page_idx, page_image in filtered_pages:
+    total_filtered = len(filtered_pages)
+    for i, (page_idx, page_image) in enumerate(filtered_pages):
         page_num = page_idx + 1
+        log.info("convert_progress", step="ocr", detail=f"page {i+1}/{total_filtered}", progress=int(10 + 50 * i / total_filtered) if total_filtered else 10)
         # PIL Image → bytes (PNG)
         img_buffer = io.BytesIO()
         # Resize wenn nötig, um Tokens zu sparen
