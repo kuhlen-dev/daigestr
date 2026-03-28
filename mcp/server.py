@@ -78,6 +78,10 @@ from converters.images import (
     _dms_to_decimal,
     extract_images_from_docx,
     extract_images_from_pptx,
+    extract_images_from_pdf,
+    extract_images_from_odt,
+    extract_images_from_odp,
+    extract_images_from_html,
     classify_image_type,
     convert_diagram_to_mermaid,
     extract_chart_data,
@@ -110,6 +114,9 @@ from converters.office import (
     extract_document_properties,
     extract_pptx_hidden_info,
     convert_with_markitdown,
+    extract_odt_extras,
+    extract_odp_hidden_slides,
+    convert_ods_enhanced,
 )
 from converters.audio import (
     extract_audio_from_video,

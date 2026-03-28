@@ -811,6 +811,430 @@ def extract_pptx_hidden_info(file_data: bytes) -> Optional[dict[str, Any]]:
 
 
 # =============================================================================
+# T-DAI-012: OpenDocument Extras (ODT, ODP, ODS)
+# =============================================================================
+
+def extract_odt_extras(file_path: Path) -> dict:
+    """
+    Extrahiert erweiterte Metadaten aus einer ODT-Datei (T-DAI-012).
+
+    ODT-Dokumente sind ZIP-Archive mit content.xml (ODF XML).
+    Verarbeitet:
+    - Kommentare (office:annotation Elemente)
+    - Track Changes (text:tracked-changes Elemente)
+    - Header und Footer (style:header, style:footer in styles.xml)
+
+    Args:
+        file_path: Pfad zur ODT-Datei.
+
+    Returns:
+        Dict mit:
+        - comments: Liste von Dicts mit 'author', 'date', 'text'
+        - track_changes: Liste von Dicts mit 'type', 'author', 'date', 'text'
+        - headers: Liste von Header-Texten (nicht leer)
+        - footers: Liste von Footer-Texten (nicht leer)
+    """
+    import xml.etree.ElementTree as ET
+
+    result: dict = {
+        "comments": [],
+        "track_changes": [],
+        "headers": [],
+        "footers": [],
+    }
+
+    # ODF XML-Namespaces
+    OFFICE_NS = "urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+    TEXT_NS = "urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+    DC_NS = "http://purl.org/dc/elements/1.1/"
+    META_NS = "urn:oasis:names:tc:opendocument:xmlns:meta:1.0"
+    STYLE_NS = "urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+    FO_NS = "urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+
+    def _get_text_content(element) -> str:
+        """Extrahiert alle Texte rekursiv aus einem XML-Element."""
+        parts = []
+        if element.text:
+            parts.append(element.text.strip())
+        for child in element:
+            child_text = _get_text_content(child)
+            if child_text:
+                parts.append(child_text)
+            if child.tail:
+                parts.append(child.tail.strip())
+        return " ".join(p for p in parts if p)
+
+    # --- content.xml: Kommentare und Track Changes ---
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            if "content.xml" in zf.namelist():
+                xml_data = zf.read("content.xml")
+                root = ET.fromstring(xml_data)
+
+                # Kommentare: office:annotation Elemente
+                for annotation in root.iter(f"{{{OFFICE_NS}}}annotation"):
+                    # Author aus dc:creator oder office:author
+                    author = ""
+                    author_el = annotation.find(f"{{{DC_NS}}}creator")
+                    if author_el is None:
+                        author_el = annotation.find(f"{{{META_NS}}}creator")
+                    if author_el is not None and author_el.text:
+                        author = author_el.text.strip()
+
+                    # Datum aus dc:date oder office:date
+                    date = ""
+                    date_el = annotation.find(f"{{{DC_NS}}}date")
+                    if date_el is None:
+                        date_el = annotation.find(f"{{{META_NS}}}date")
+                    if date_el is not None and date_el.text:
+                        date = date_el.text.strip()
+
+                    # Text aus text:p Elementen
+                    text_parts = []
+                    for p in annotation.findall(f"{{{TEXT_NS}}}p"):
+                        p_text = _get_text_content(p)
+                        if p_text:
+                            text_parts.append(p_text)
+                    text = " ".join(text_parts).strip()
+
+                    if text or author:
+                        result["comments"].append({
+                            "author": author,
+                            "date": date,
+                            "text": text,
+                        })
+
+                log.info(
+                    "odt_comments_extracted",
+                    file=str(file_path),
+                    count=len(result["comments"]),
+                )
+
+                # Track Changes: text:tracked-changes und text:insertion/text:deletion
+                tracked_changes_el = root.find(f".//{{{TEXT_NS}}}tracked-changes")
+                if tracked_changes_el is not None:
+                    for change_el in tracked_changes_el:
+                        tag_local = change_el.tag.split("}")[-1] if "}" in change_el.tag else change_el.tag
+                        if tag_local in ("insertion", "deletion"):
+                            change_type = "insertion" if tag_local == "insertion" else "deletion"
+                            # Autor aus office:change-info
+                            author = change_el.get(f"{{{OFFICE_NS}}}chng-author", "")
+                            date = change_el.get(f"{{{OFFICE_NS}}}chng-date", "")
+                            # Text aus Kind-Elementen
+                            text = _get_text_content(change_el).strip()
+                            if text or author:
+                                result["track_changes"].append({
+                                    "type": change_type,
+                                    "author": author,
+                                    "date": date,
+                                    "text": text,
+                                })
+
+                log.info(
+                    "odt_track_changes_extracted",
+                    file=str(file_path),
+                    count=len(result["track_changes"]),
+                )
+
+    except Exception as e:
+        log.warning("odt_content_xml_error", file=str(file_path), error=str(e))
+
+    # --- styles.xml: Header und Footer ---
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            if "styles.xml" in zf.namelist():
+                xml_data = zf.read("styles.xml")
+                root = ET.fromstring(xml_data)
+
+                for hf_tag, target_list in [
+                    (f"{{{STYLE_NS}}}header", result["headers"]),
+                    (f"{{{STYLE_NS}}}footer", result["footers"]),
+                ]:
+                    for hf_el in root.iter(hf_tag):
+                        text = _get_text_content(hf_el).strip()
+                        if text and text not in target_list:
+                            target_list.append(text)
+
+                log.info(
+                    "odt_headers_footers_extracted",
+                    file=str(file_path),
+                    headers=len(result["headers"]),
+                    footers=len(result["footers"]),
+                )
+    except Exception as e:
+        log.warning("odt_styles_xml_error", file=str(file_path), error=str(e))
+
+    return result
+
+
+def extract_odp_hidden_slides(file_data: bytes) -> Optional[dict]:
+    """
+    Analysiert eine ODP-Datei auf versteckte Slides (T-DAI-012).
+
+    ODP ist ein ZIP-Archiv mit content.xml. Slides sind draw:page Elemente.
+    Ein versteckter Slide hat ein zugehöriges Style mit
+    presentation:visibility="hidden" oder draw:show="false".
+
+    Args:
+        file_data: Rohe ODP-Bytes.
+
+    Returns:
+        Dict mit:
+        - hidden_slide_count (int): Anzahl versteckter Slides
+        - hidden_slides (list[int]): Slide-Nummern (1-basiert)
+        Oder None bei Fehler.
+    """
+    import xml.etree.ElementTree as ET
+
+    DRAW_NS = "urn:oasis:names:tc:opendocument:xmlns:drawing:1.0"
+    PRESENTATION_NS = "urn:oasis:names:tc:opendocument:xmlns:presentation:1.0"
+    STYLE_NS = "urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+    OFFICE_NS = "urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_data), "r") as zf:
+            if "content.xml" not in zf.namelist():
+                return {"hidden_slide_count": 0, "hidden_slides": []}
+
+            xml_data = zf.read("content.xml")
+            root = ET.fromstring(xml_data)
+
+            # Alle draw:page Stile aus automatic-styles und styles sammeln
+            # Diese können presentation:visibility="hidden" enthalten
+            hidden_style_names: set = set()
+
+            for styles_container in root.iter(f"{{{OFFICE_NS}}}automatic-styles"):
+                for style_el in styles_container:
+                    style_name = style_el.get(f"{{{STYLE_NS}}}name", "")
+                    # Prüfe presentation:show attribute am Style selbst
+                    visibility = style_el.get(f"{{{PRESENTATION_NS}}}visibility", "")
+                    if visibility == "hidden":
+                        hidden_style_names.add(style_name)
+                    # Prüfe draw:drawing-page-properties Kind-Element
+                    for prop_el in style_el:
+                        prop_tag_local = prop_el.tag.split("}")[-1] if "}" in prop_el.tag else prop_el.tag
+                        if prop_tag_local == "drawing-page-properties":
+                            vis = prop_el.get(f"{{{PRESENTATION_NS}}}visibility", "")
+                            if vis == "hidden":
+                                hidden_style_names.add(style_name)
+
+            hidden_slide_numbers: list[int] = []
+            slide_num = 0
+
+            # Finde alle draw:page Elemente
+            for page_el in root.iter(f"{{{DRAW_NS}}}page"):
+                slide_num += 1
+                page_style = page_el.get(f"{{{DRAW_NS}}}style-name", "")
+                # Direkte Sichtbarkeit am draw:page Element
+                show_val = page_el.get(f"{{{PRESENTATION_NS}}}show", "")
+                if show_val == "false" or page_style in hidden_style_names:
+                    hidden_slide_numbers.append(slide_num)
+
+        log.info(
+            "odp_hidden_slides_extracted",
+            hidden_count=len(hidden_slide_numbers),
+            total_slides=slide_num,
+        )
+
+        return {
+            "hidden_slide_count": len(hidden_slide_numbers),
+            "hidden_slides": sorted(hidden_slide_numbers),
+        }
+    except Exception as e:
+        log.warning("odp_hidden_slides_failed", error=str(e))
+        return None
+
+
+def convert_ods_enhanced(file_path: Path, show_formulas: bool = False) -> dict:
+    """
+    Konvertiert eine ODS-Datei zu Markdown mit erweiterten Features (T-DAI-012).
+
+    ODS ist ein ZIP-Archiv mit content.xml (ODF XML). Nutzt direkte XML-Verarbeitung
+    (kein openpyxl — unterstützt kein ODS).
+
+    Features:
+    - Multi-Sheet: Jedes table:table als eigene ## Sheet: Name Sektion
+    - Hidden Sheets: Sheets mit table:display="false" als [HIDDEN] markiert
+    - Formeln: table:formula Attribute optional annotiert
+
+    Args:
+        file_path: Pfad zur ODS-Datei.
+        show_formulas: Wenn True, werden Formel-Annotationen hinzugefügt.
+
+    Returns:
+        Dict mit:
+        - success (bool)
+        - markdown (str): Konvertierter Markdown-Text
+        - sheets_count (int): Gesamtanzahl der Sheets
+        - hidden_sheets (list[str]): Namen der versteckten Sheets (nur wenn vorhanden)
+        - error_code / error: Nur bei Fehler
+    """
+    import xml.etree.ElementTree as ET
+
+    TABLE_NS = "urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+    TEXT_NS = "urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+    OFFICE_NS = "urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+    STYLE_NS = "urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+
+    log.info("ods_enhanced_convert_start", file=str(file_path), show_formulas=show_formulas)
+
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            if "content.xml" not in zf.namelist():
+                return {
+                    "success": False,
+                    "error_code": ErrorCode.CONVERSION_FAILED,
+                    "error": "Keine content.xml in der ODS-Datei gefunden",
+                }
+            xml_data = zf.read("content.xml")
+    except Exception as exc:
+        log.error("ods_open_error", file=str(file_path), error=str(exc))
+        return {
+            "success": False,
+            "error_code": ErrorCode.CONVERSION_FAILED,
+            "error": f"ODS-Datei konnte nicht geöffnet werden: {str(exc)}",
+        }
+
+    try:
+        root = ET.fromstring(xml_data)
+    except Exception as exc:
+        log.error("ods_xml_parse_error", file=str(file_path), error=str(exc))
+        return {
+            "success": False,
+            "error_code": ErrorCode.CONVERSION_FAILED,
+            "error": f"ODS content.xml konnte nicht geparst werden: {str(exc)}",
+        }
+
+    # Sammle Table-Style-Eigenschaften für Hidden-Sheet-Erkennung
+    # table:table-properties mit table:display="false"
+    hidden_style_names: set = set()
+    for auto_styles in root.iter(f"{{{OFFICE_NS}}}automatic-styles"):
+        for style_el in auto_styles:
+            style_name = style_el.get(f"{{{STYLE_NS}}}name", "")
+            for prop_el in style_el:
+                prop_tag_local = prop_el.tag.split("}")[-1] if "}" in prop_el.tag else prop_el.tag
+                if prop_tag_local == "table-properties":
+                    display = prop_el.get(f"{{{TABLE_NS}}}display", "true")
+                    if display == "false":
+                        hidden_style_names.add(style_name)
+
+    markdown_parts: list[str] = []
+    hidden_sheet_names: list[str] = []
+
+    # Alle table:table Elemente finden
+    for table_el in root.iter(f"{{{TABLE_NS}}}table"):
+        sheet_name = table_el.get(f"{{{TABLE_NS}}}name", "Tabelle")
+
+        # Erkennung Hidden Sheet: table:print="false" oder Style mit display="false"
+        table_print = table_el.get(f"{{{TABLE_NS}}}print", "true")
+        table_style = table_el.get(f"{{{TABLE_NS}}}style-name", "")
+        is_hidden = (table_print == "false") or (table_style in hidden_style_names)
+
+        if is_hidden:
+            hidden_sheet_names.append(sheet_name)
+            sheet_heading = f"## Sheet: {sheet_name} [HIDDEN]"
+        else:
+            sheet_heading = f"## Sheet: {sheet_name}"
+
+        sheet_parts: list[str] = [sheet_heading]
+
+        # Zeilen aus table:row → Zellen aus table:cell / table:covered-table-cell
+        table_rows: list[list[str]] = []
+
+        for row_el in table_el.findall(f"{{{TABLE_NS}}}table-row"):
+            row_data: list[str] = []
+
+            for cell_el in row_el:
+                cell_tag_local = cell_el.tag.split("}")[-1] if "}" in cell_el.tag else cell_el.tag
+                if cell_tag_local not in ("table-cell", "covered-table-cell"):
+                    continue
+
+                # Wiederholungsfaktor berücksichtigen
+                repeat = int(cell_el.get(f"{{{TABLE_NS}}}number-columns-repeated", "1"))
+
+                # Formel auslesen
+                formula = cell_el.get(f"{{{TABLE_NS}}}formula", "")
+
+                # Zellinhalt: alle text:p Texte
+                text_parts = []
+                for p_el in cell_el.findall(f"{{{TEXT_NS}}}p"):
+                    # Alle Textknoten rekursiv
+                    p_text = "".join(p_el.itertext()).strip()
+                    if p_text:
+                        text_parts.append(p_text)
+                cell_str = " ".join(text_parts)
+
+                # Formel-Annotation
+                if show_formulas and formula and formula.startswith("of:="):
+                    formula_display = "=" + formula[4:]  # "of:=" → "="
+                    cell_str = f"{cell_str} [{formula_display}]" if cell_str else f"[{formula_display}]"
+                elif show_formulas and formula and formula.startswith("="):
+                    cell_str = f"{cell_str} [{formula}]" if cell_str else f"[{formula}]"
+
+                # Pipe-Zeichen escapen
+                cell_str = cell_str.replace("|", "\\|").replace("\n", " ")
+
+                # Wiederholungsfaktor: Zelle N-fach einfügen
+                for _ in range(min(repeat, 100)):  # max 100 zum Schutz vor riesigen Dateien
+                    row_data.append(cell_str)
+
+            if row_data:
+                table_rows.append(row_data)
+
+        if not table_rows:
+            sheet_parts.append("*Kein Inhalt*")
+            markdown_parts.append("\n".join(sheet_parts))
+            continue
+
+        # Prüfen ob Sheet komplett leer ist
+        all_empty = all(cell == "" for row in table_rows for cell in row)
+        if all_empty:
+            sheet_parts.append("*Kein Inhalt*")
+            markdown_parts.append("\n".join(sheet_parts))
+            continue
+
+        # Maximale Spaltenanzahl
+        max_cols = max(len(row) for row in table_rows)
+
+        # Markdown-Tabelle
+        header = table_rows[0]
+        # Fehlende Header-Spalten mit generischen Namen auffüllen
+        while len(header) < max_cols:
+            header.append(f"Col{len(header) + 1}")
+        display_header = [h if h else f"Col{i + 1}" for i, h in enumerate(header)]
+
+        table_lines: list[str] = []
+        table_lines.append("| " + " | ".join(display_header[:max_cols]) + " |")
+        table_lines.append("| " + " | ".join(["---"] * max_cols) + " |")
+        for data_row in table_rows[1:]:
+            padded = data_row + [""] * (max_cols - len(data_row))
+            table_lines.append("| " + " | ".join(padded[:max_cols]) + " |")
+
+        sheet_parts.append("\n".join(table_lines))
+        markdown_parts.append("\n\n".join(sheet_parts))
+
+    combined_markdown = "\n\n".join(markdown_parts)
+    sheets_count = len(list(root.iter(f"{{{TABLE_NS}}}table")))
+
+    log.info(
+        "ods_enhanced_convert_done",
+        file=str(file_path),
+        sheets=sheets_count,
+        hidden_sheets=len(hidden_sheet_names),
+        chars=len(combined_markdown),
+    )
+
+    result: dict = {
+        "success": True,
+        "markdown": combined_markdown,
+        "sheets_count": sheets_count,
+    }
+    if hidden_sheet_names:
+        result["hidden_sheets"] = hidden_sheet_names
+    return result
+
+
+# =============================================================================
 # MarkItDown-basierte Konvertierung
 # =============================================================================
 

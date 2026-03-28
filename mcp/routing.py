@@ -56,6 +56,10 @@ from converters.images import (
     extract_image_metadata,
     extract_images_from_docx,
     extract_images_from_pptx,
+    extract_images_from_pdf,
+    extract_images_from_odt,
+    extract_images_from_odp,
+    extract_images_from_html,
     describe_embedded_images,
     insert_image_descriptions,
     render_first_page_as_image,
@@ -138,7 +142,7 @@ async def convert_auto(
         input_meta: Beliebige Pass-through-Metadaten
         prompt: Optionaler Custom-Prompt für Vision
         language: Antwortsprache ('de' oder 'en')
-        describe_images: Eingebettete Bilder in DOCX/PPTX durch Pixtral beschreiben
+        describe_images: Eingebettete Bilder in DOCX/PPTX/PDF/ODT/ODP/HTML durch Pixtral beschreiben
         classify: Dokumenttyp nach Konvertierung via LLM klassifizieren
         classify_categories: Erlaubte Dokumenttypen (überschreibt DEFAULT_CLASSIFY_CATEGORIES)
         extract_schema: JSON-Schema für strukturierte Daten-Extraktion (AC-014-1)
@@ -179,6 +183,10 @@ async def convert_auto(
     _chunk_md = _get("chunk_markdown", chunk_markdown)
     _extract_imgs_docx = _get("extract_images_from_docx", extract_images_from_docx)
     _extract_imgs_pptx = _get("extract_images_from_pptx", extract_images_from_pptx)
+    _extract_imgs_pdf = _get("extract_images_from_pdf", extract_images_from_pdf)
+    _extract_imgs_odt = _get("extract_images_from_odt", extract_images_from_odt)
+    _extract_imgs_odp = _get("extract_images_from_odp", extract_images_from_odp)
+    _extract_imgs_html = _get("extract_images_from_html", extract_images_from_html)
     _describe_imgs = _get("describe_embedded_images", describe_embedded_images)
     _insert_img_desc = _get("insert_image_descriptions", insert_image_descriptions)
     _render_page = _get("render_first_page_as_image", render_first_page_as_image)
@@ -580,13 +588,25 @@ async def convert_auto(
                 markdown = result["markdown"]
                 markitdown_pipeline_steps: list[str] = ["markitdown"]
 
-                # Eingebettete Bilder beschreiben (nur für DOCX/PPTX, nur wenn aktiviert)
-                if describe_images and ext in {".docx", ".doc", ".pptx", ".ppt"}:
+                # Eingebettete Bilder beschreiben (DOCX, PPTX, PDF, ODT, ODP, HTML)
+                _DESCRIBE_IMGS_EXTS = {
+                    ".docx", ".doc", ".pptx", ".ppt",
+                    ".pdf", ".odt", ".odp", ".html", ".htm",
+                }
+                if describe_images and ext in _DESCRIBE_IMGS_EXTS:
                     log.info("embedded_images_describe_start", file=filename, ext=ext)
                     if ext in {".docx", ".doc"}:
                         images = _extract_imgs_docx(temp_path)
-                    else:
+                    elif ext in {".pptx", ".ppt"}:
                         images = _extract_imgs_pptx(temp_path)
+                    elif ext == ".pdf":
+                        images = _extract_imgs_pdf(temp_path)
+                    elif ext == ".odt":
+                        images = _extract_imgs_odt(temp_path)
+                    elif ext == ".odp":
+                        images = _extract_imgs_odp(temp_path)
+                    else:  # .html / .htm
+                        images = _extract_imgs_html(temp_path)
 
                     if images:
                         descriptions = await _describe_imgs(images, language=language)
@@ -632,7 +652,8 @@ async def convert_auto(
                     doc_hints.append("Low quality score detected. Try accuracy='high' for better results on scanned or complex documents.")
                 if meta.get("scanned") and not ocr_correct and accuracy != "high":
                     doc_hints.append("This is a scanned document. Enable ocr_correct=true or accuracy='high' to fix common OCR errors.")
-                if not describe_images and ext in (".docx", ".pptx") and source_type == "file":
+                _HINT_EXTS = (".docx", ".pptx", ".pdf", ".odt", ".odp", ".html", ".htm")
+                if not describe_images and ext in _HINT_EXTS and source_type == "file":
                     doc_hints.append("This document may contain embedded images. Add describe_images=true to describe them via Vision AI.")
                 # T-MKIT-024: ZUGFeRD hint wenn erkannt aber kein template/extract_schema
                 if meta.get("zugferd") is not None and not extract_schema and not auto_extract:
@@ -816,7 +837,7 @@ def _build_tips_dict() -> dict:
             {"problem": "extracted is null with auto_extract=true", "cause": "No template registered for this document type", "fix": "Register a template via POST /v1/templates or check meta.document_type and meta.template_used for details"},
             {"problem": "chunks is null", "cause": "Missing chunk parameter", "fix": "Add chunk=true to get RAG-ready chunks in the chunks field"},
             {"problem": "Poor quality on scanned PDFs", "cause": "Using standard accuracy", "fix": "Set accuracy='high' for OCR correction + dual-pass validation"},
-            {"problem": "Images in DOCX/PPTX not described", "cause": "describe_images defaults to false", "fix": "Set describe_images=true (costs extra API calls)"},
+            {"problem": "Images in DOCX/PPTX/PDF/ODT/ODP/HTML not described", "cause": "describe_images defaults to false", "fix": "Set describe_images=true (costs extra API calls)"},
             {"problem": "Document type not detected", "cause": "classify defaults to false", "fix": "Set classify=true to get document_type in meta"},
             {"problem": "OCR errors in output", "cause": "No post-correction", "fix": "Set ocr_correct=true or accuracy='high' (auto-enables correction)"},
         ],
@@ -834,7 +855,7 @@ def _build_tips_dict() -> dict:
             "template": {"type": "str", "default": None, "description": "Shortcut for extract_schema. Available: invoice, cv, contract"},
             "auto_extract": {"type": "bool", "default": False, "description": "Automatically classify document, find matching template, and extract structured data — all in one call. No template or extract_schema needed."},
             "min_confidence": {"type": "float", "default": 0.7, "description": "Minimum classification confidence for auto_extract to use a template (0.0-1.0)"},
-            "describe_images": {"type": "bool", "default": False, "description": "Extract and describe embedded images in DOCX/PPTX via Vision AI"},
+            "describe_images": {"type": "bool", "default": False, "description": "Extract and describe embedded images in DOCX/PPTX/PDF/ODT/ODP/HTML via Vision AI"},
             "ocr_correct": {"type": "bool", "default": False, "description": "LLM post-correction for OCR errors"},
             "ocr_embed": {"type": "bool", "default": False, "description": "Embed OCR text layer into PDF — creates searchable PDF output"},
             "show_formulas": {"type": "bool", "default": False, "description": "Show Excel formulas in output"},

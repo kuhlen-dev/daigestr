@@ -13,6 +13,7 @@ Enthält alle Hilfsfunktionen für Bild-Verarbeitung:
 - PDF First Page Rendering
 """
 
+import base64
 import io
 import re
 import zipfile
@@ -292,6 +293,200 @@ def extract_images_from_pptx(file_path: Path) -> list[dict]:
     except Exception as e:
         log.error("pptx_open_error", file=str(file_path), error=str(e))
     log.info("pptx_images_extracted", file=str(file_path), count=len(images))
+    return images
+
+
+def extract_images_from_pdf(file_path: Path) -> list[dict]:
+    """
+    Extrahiert eingebettete Bilder aus einer PDF-Datei via PyMuPDF (fitz).
+
+    Iteriert über alle Seiten und extrahiert eingebettete Raster-Bilder.
+    Zu kleine Bilder (< MIN_IMAGE_SIZE_PX) werden übersprungen.
+
+    Args:
+        file_path: Pfad zur PDF-Datei
+
+    Returns:
+        Liste von Dicts mit 'name', 'data' (bytes), 'page_number'
+    """
+    images: list[dict] = []
+    try:
+        import fitz  # noqa: PLC0415
+        doc = fitz.open(str(file_path))
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            img_list = page.get_images(full=True)
+            for img_idx, img_info in enumerate(img_list):
+                xref = img_info[0]
+                try:
+                    pix = fitz.Pixmap(doc, xref)
+                    # Konvertiere zu RGB falls nötig (z.B. CMYK oder Graustufen mit Alpha)
+                    if pix.n > 4:
+                        pix = fitz.Pixmap(fitz.csRGB, pix)
+                    width = pix.width
+                    height = pix.height
+                    if width < MIN_IMAGE_SIZE_PX or height < MIN_IMAGE_SIZE_PX:
+                        log.debug(
+                            "skip_small_image_pdf",
+                            page=page_num + 1,
+                            idx=img_idx,
+                            width=width,
+                            height=height,
+                        )
+                        continue
+                    img_bytes = pix.tobytes("png")
+                    images.append({
+                        "name": f"page{page_num + 1}_img{img_idx}.png",
+                        "data": img_bytes,
+                        "page_number": page_num + 1,
+                    })
+                except Exception as e:
+                    log.warning(
+                        "pdf_image_read_error",
+                        page=page_num + 1,
+                        idx=img_idx,
+                        error=str(e),
+                    )
+        doc.close()
+    except Exception as e:
+        log.error("pdf_open_error", file=str(file_path), error=str(e))
+    log.info("pdf_images_extracted", file=str(file_path), count=len(images))
+    return images
+
+
+def extract_images_from_odt(file_path: Path) -> list[dict]:
+    """
+    Extrahiert eingebettete Bilder aus einer ODT-Datei.
+
+    ODT ist intern ein ZIP-Archiv. Bilder liegen im Pictures/ Ordner.
+
+    Args:
+        file_path: Pfad zur ODT-Datei
+
+    Returns:
+        Liste von Dicts mit 'name', 'data' (bytes), 'position_hint' (Index)
+    """
+    images: list[dict] = []
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            media_files = [
+                name for name in zf.namelist()
+                if name.startswith("Pictures/") and not name.endswith("/")
+            ]
+            for idx, media_name in enumerate(sorted(media_files)):
+                try:
+                    data = zf.read(media_name)
+                    img = Image.open(io.BytesIO(data))
+                    width, height = img.size
+                    if width < MIN_IMAGE_SIZE_PX or height < MIN_IMAGE_SIZE_PX:
+                        log.debug(
+                            "skip_small_image_odt",
+                            name=media_name,
+                            width=width,
+                            height=height,
+                        )
+                        continue
+                    images.append({
+                        "name": Path(media_name).name,
+                        "data": data,
+                        "position_hint": idx,
+                    })
+                except Exception as e:
+                    log.warning("odt_image_read_error", name=media_name, error=str(e))
+    except Exception as e:
+        log.error("odt_open_error", file=str(file_path), error=str(e))
+    log.info("odt_images_extracted", file=str(file_path), count=len(images))
+    return images
+
+
+def extract_images_from_odp(file_path: Path) -> list[dict]:
+    """
+    Extrahiert eingebettete Bilder aus einer ODP-Datei.
+
+    ODP ist intern ein ZIP-Archiv. Bilder liegen im Pictures/ Ordner.
+
+    Args:
+        file_path: Pfad zur ODP-Datei
+
+    Returns:
+        Liste von Dicts mit 'name', 'data' (bytes), 'position_hint' (Index)
+    """
+    images: list[dict] = []
+    try:
+        with zipfile.ZipFile(file_path, "r") as zf:
+            media_files = [
+                name for name in zf.namelist()
+                if name.startswith("Pictures/") and not name.endswith("/")
+            ]
+            for idx, media_name in enumerate(sorted(media_files)):
+                try:
+                    data = zf.read(media_name)
+                    img = Image.open(io.BytesIO(data))
+                    width, height = img.size
+                    if width < MIN_IMAGE_SIZE_PX or height < MIN_IMAGE_SIZE_PX:
+                        log.debug(
+                            "skip_small_image_odp",
+                            name=media_name,
+                            width=width,
+                            height=height,
+                        )
+                        continue
+                    images.append({
+                        "name": Path(media_name).name,
+                        "data": data,
+                        "position_hint": idx,
+                    })
+                except Exception as e:
+                    log.warning("odp_image_read_error", name=media_name, error=str(e))
+    except Exception as e:
+        log.error("odp_open_error", file=str(file_path), error=str(e))
+    log.info("odp_images_extracted", file=str(file_path), count=len(images))
+    return images
+
+
+def extract_images_from_html(file_path: Path) -> list[dict]:
+    """
+    Extrahiert eingebettete Base64-Bilder aus einer HTML-Datei.
+
+    Sucht nach <img src="data:image/...;base64,..."> Tags und dekodiert
+    die Base64-Daten zu Bild-Bytes.
+
+    Args:
+        file_path: Pfad zur HTML-Datei
+
+    Returns:
+        Liste von Dicts mit 'name', 'data' (bytes), 'position_hint' (Index)
+    """
+    images: list[dict] = []
+    try:
+        html_content = file_path.read_text(encoding="utf-8", errors="replace")
+        # Pattern für data-URI Base64-Bilder
+        pattern = r'<img[^>]+src=["\']data:image/([^;]+);base64,([A-Za-z0-9+/=]+)["\']'
+        matches = re.findall(pattern, html_content, re.IGNORECASE)
+        for idx, (img_type, b64_data) in enumerate(matches):
+            try:
+                data = base64.b64decode(b64_data)
+                img = Image.open(io.BytesIO(data))
+                width, height = img.size
+                if width < MIN_IMAGE_SIZE_PX or height < MIN_IMAGE_SIZE_PX:
+                    log.debug(
+                        "skip_small_image_html",
+                        idx=idx,
+                        width=width,
+                        height=height,
+                    )
+                    continue
+                ext = img_type.lower().split("+")[0]  # z.B. "svg+xml" → "svg"
+                images.append({
+                    "name": f"html_img{idx}.{ext}",
+                    "data": data,
+                    "position_hint": idx,
+                })
+            except Exception as e:
+                log.warning("html_image_read_error", idx=idx, error=str(e))
+    except Exception as e:
+        log.error("html_open_error", file=str(file_path), error=str(e))
+    log.info("html_images_extracted", file=str(file_path), count=len(images))
     return images
 
 
