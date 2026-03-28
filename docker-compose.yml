@@ -1,0 +1,10 @@
+services:
+  daigestr:
+    build:
+      context: ./mcp
+    container_name: daigestr
+    restart: unless-stopped
+    env_file: .env
+    # Ports in docker-compose.override.yml (localhost-only)
+    volumes:
+      - ./data:/data
