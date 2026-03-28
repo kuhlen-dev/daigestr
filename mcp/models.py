@@ -214,6 +214,16 @@ class ConvertRequest(BaseModel):
     auto_extract: bool = Field(False, description="When true, automatically classifies the document, looks up a matching template from the registry, and extracts structured data — all in one call. No need to specify template or extract_schema.")
     min_confidence: float = Field(0.7, ge=0.0, le=1.0, description="Minimum classification confidence for auto_extract to use a template. Below this threshold, only markdown is returned without extraction.")
 
+    # Processing Mode (T-DAI-015)
+    mode: str = Field("default", description="Processing mode. 'default': use individual parameter settings. 'full': enable all features (describe_images, accuracy=high, classify, ocr_correct, auto_extract, chunk).")
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        if v not in ("default", "full"):
+            raise ValueError(f"mode must be 'default' or 'full', got '{v}'")
+        return v
+
     # Meta Pass-through
     meta: dict[str, Any] = Field(default_factory=dict, description="Beliebige Metadaten (werden durchgereicht)")
 

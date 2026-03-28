@@ -62,6 +62,7 @@ async def mcp_convert(
     prompt: Optional[str] = None,
     auto_extract: bool = False,
     min_confidence: float = 0.7,
+    mode: str = "default",
 ) -> str:
     """
     Converts a file, URL, or base64 payload to Markdown.
@@ -107,6 +108,7 @@ async def mcp_convert(
         prompt: Optionaler Custom-Prompt für Vision.
         auto_extract: Wenn True, wird der Dokumenttyp klassifiziert, ein passendes Template gesucht und strukturierte Daten extrahiert — alles in einem Schritt.
         min_confidence: Minimale Klassifizierungs-Konfidenz für auto_extract (Default: 0.7).
+        mode: Processing mode. 'default': use individual parameter settings. 'full': enable all features (describe_images, accuracy=high, classify, ocr_correct, auto_extract, chunk).
     """
     # Patchable symbols via _get() for test-patchability
     _resolve_path = _get("resolve_path", resolve_path)
@@ -149,6 +151,7 @@ async def mcp_convert(
             ocr_embed=ocr_embed,
             auto_extract=auto_extract,
             min_confidence=min_confidence,
+            mode=mode,
         )
     elif base64_data and filename:
         try:
@@ -175,6 +178,7 @@ async def mcp_convert(
             ocr_embed=ocr_embed,
             auto_extract=auto_extract,
             min_confidence=min_confidence,
+            mode=mode,
         )
     elif url:
         _convert_url = _get("convert_url", convert_url)

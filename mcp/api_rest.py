@@ -182,6 +182,7 @@ async def api_convert(request: ConvertRequest) -> ConvertResponse:
             ocr_embed=request.ocr_embed,
             auto_extract=request.auto_extract,
             min_confidence=request.min_confidence,
+            mode=request.mode,
         )
 
     # Base64
@@ -220,6 +221,7 @@ async def api_convert(request: ConvertRequest) -> ConvertResponse:
             ocr_embed=request.ocr_embed,
             auto_extract=request.auto_extract,
             min_confidence=request.min_confidence,
+            mode=request.mode,
         )
 
     # URL — T-MKIT-022: durch convert_auto() routen für vollständige Pipeline
@@ -330,6 +332,7 @@ async def api_convert(request: ConvertRequest) -> ConvertResponse:
                     accuracy=request.accuracy,
                     auto_extract=request.auto_extract,
                     min_confidence=request.min_confidence,
+                    mode=request.mode,
                 )
             finally:
                 temp_path.unlink(missing_ok=True)

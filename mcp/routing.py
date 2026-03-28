@@ -130,6 +130,7 @@ async def convert_auto(
     ocr_embed: bool = False,
     auto_extract: bool = False,
     min_confidence: float = 0.7,
+    mode: str = "default",
 ) -> ConvertResponse:
     """
     Intelligente Konvertierung basierend auf Dateityp.
@@ -156,6 +157,15 @@ async def convert_auto(
                    als unsichtbare Textschicht eingebettet (T-MKIT-033).
     """
     start_time = time.time()
+
+    # T-DAI-015: Mode-Resolution — 'full' enables all features
+    if mode == "full":
+        describe_images = True
+        accuracy = "high"
+        classify = True
+        ocr_correct = True
+        auto_extract = True
+        chunk = True
 
     # All patchable symbols read via _get() for test-patchability
     _get_file_extension = _get("get_file_extension", get_file_extension)
