@@ -851,7 +851,7 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
             filename=filename,
             source=source,
             source_type=source_type,
-            input_meta=request.meta,
+            input_meta={**request.meta, "_job_id": job_id},
             prompt=request.prompt,
             language=request.language,
             describe_images=request.describe_images,
