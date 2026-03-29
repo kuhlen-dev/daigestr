@@ -990,6 +990,221 @@ async def api_tips() -> dict:
     return _build_tips_dict()
 
 
+# =============================================================================
+# T-DAI-027: Mistral Batch Integration
+# =============================================================================
+
+async def _resolve_file_input(path: Optional[str], b64: Optional[str], filename: Optional[str], url: Optional[str]) -> tuple[bytes, str] | dict:
+    """
+    Löst path/base64/url zu (file_data, filename) auf.
+
+    Returns:
+        Tuple (bytes, filename) bei Erfolg,
+        oder dict mit 'error' und 'error_code' bei Fehler.
+    """
+    _resolve_path = _get("resolve_path", resolve_path)
+    _httpx = _get("httpx", httpx)
+    _mistral_timeout = _get("MISTRAL_TIMEOUT", MISTRAL_TIMEOUT)
+    _temp_dir = _get("TEMP_DIR", TEMP_DIR)
+
+    if path:
+        file_path = _resolve_path(path)
+        if not file_path.exists():
+            return {"error": f"Datei nicht gefunden: {file_path}", "error_code": ErrorCode.FILE_NOT_FOUND}
+        return file_path.read_bytes(), file_path.name
+
+    if b64:
+        if not filename:
+            return {"error": "'filename' ist erforderlich bei Base64-Upload", "error_code": ErrorCode.INVALID_INPUT}
+        try:
+            file_data = base64.b64decode(b64)
+        except Exception as e:
+            return {"error": f"Ungültiges Base64: {str(e)}", "error_code": ErrorCode.INVALID_BASE64}
+        return file_data, filename
+
+    if url:
+        try:
+            async with _httpx.AsyncClient(timeout=float(_mistral_timeout)) as client:
+                resp = await client.get(url, follow_redirects=True)
+                resp.raise_for_status()
+            guessed_filename = url.split("/")[-1].split("?")[0] or "document.pdf"
+            return resp.content, guessed_filename
+        except Exception as exc:
+            return {"error": f"URL-Download fehlgeschlagen: {str(exc)}", "error_code": ErrorCode.CONVERSION_FAILED}
+
+    return {"error": "Genau einer von 'path', 'base64' oder 'url' muss angegeben werden", "error_code": ErrorCode.INVALID_INPUT}
+
+
+@app.post("/v1/prepare-batch")
+async def api_prepare_batch(request: ConvertRequest) -> dict:
+    """
+    Bereitet einen Mistral Batch-Job vor.
+
+    Extrahiert Bilder aus dem Dokument und baut Classify-Prompts zusammen,
+    OHNE Vision-API-Calls zu machen. Gibt batch_jobs Array zurück das mit
+    Mistral Batch API oder 'brix run convert-pdf-batch' verarbeitet werden kann.
+
+    Returns:
+        {
+            "batch_jobs": [{"id": "page3_img0", "image_base64": "...", "prompt": "...", "mimetype": "..."}],
+            "markdown": "...",
+            "meta": {...}
+        }
+    """
+    from converters.images import (
+        extract_images_from_pdf,
+        extract_images_from_docx,
+        extract_images_from_pptx,
+        extract_images_from_odt,
+        extract_images_from_odp,
+        extract_images_from_html,
+        resize_image_if_needed,
+    )
+    from converters.office import convert_with_markitdown
+    from utils import get_file_extension, detect_mimetype_from_bytes
+
+    _get_file_extension = _get("get_file_extension", get_file_extension)
+    _detect_mimetype = _get("detect_mimetype_from_bytes", detect_mimetype_from_bytes)
+    _convert_markitdown = _get("convert_with_markitdown", convert_with_markitdown)
+    _extract_imgs_pdf = _get("extract_images_from_pdf", extract_images_from_pdf)
+    _extract_imgs_docx = _get("extract_images_from_docx", extract_images_from_docx)
+    _extract_imgs_pptx = _get("extract_images_from_pptx", extract_images_from_pptx)
+    _extract_imgs_odt = _get("extract_images_from_odt", extract_images_from_odt)
+    _extract_imgs_odp = _get("extract_images_from_odp", extract_images_from_odp)
+    _extract_imgs_html = _get("extract_images_from_html", extract_images_from_html)
+    _resize_image = _get("resize_image_if_needed", resize_image_if_needed)
+    _temp_dir = _get("TEMP_DIR", TEMP_DIR)
+
+    # Eingabe auflösen
+    file_result = await _resolve_file_input(request.path, request.base64, request.filename, request.url)
+    if isinstance(file_result, dict):
+        raise HTTPException(status_code=400, detail=file_result["error"])
+    file_data, filename = file_result
+
+    ext = _get_file_extension(filename)
+    start_time = time.time()
+
+    # Dokument zu Markdown konvertieren (ohne Vision)
+    import hashlib as _hashlib
+    temp_path = _temp_dir / f"{_hashlib.md5(file_data).hexdigest()}_{filename}"
+    markdown = ""
+    meta: dict = {
+        "source": request.path or "base64" if request.path or request.base64 else (request.url or ""),
+        "source_type": "file" if request.path else ("base64" if request.base64 else "url"),
+        "format": ext.lstrip("."),
+        "size_bytes": len(file_data),
+    }
+
+    try:
+        temp_path.write_bytes(file_data)
+
+        _MARKITDOWN_EXTS = {".pdf", ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls",
+                            ".odt", ".ods", ".odp", ".html", ".htm"}
+        if ext in _MARKITDOWN_EXTS:
+            result = _convert_markitdown(temp_path)
+            if result["success"]:
+                markdown = result["markdown"]
+                if result.get("title"):
+                    meta["title"] = result["title"]
+
+        # Bilder extrahieren
+        images: list[dict] = []
+        _DESCRIBE_EXTS = {".docx", ".doc", ".pptx", ".ppt", ".pdf", ".odt", ".odp", ".html", ".htm"}
+        if ext in _DESCRIBE_EXTS:
+            if ext in {".docx", ".doc"}:
+                images = _extract_imgs_docx(temp_path)
+            elif ext in {".pptx", ".ppt"}:
+                images = _extract_imgs_pptx(temp_path)
+            elif ext == ".pdf":
+                images = _extract_imgs_pdf(temp_path)
+            elif ext == ".odt":
+                images = _extract_imgs_odt(temp_path)
+            elif ext == ".odp":
+                images = _extract_imgs_odp(temp_path)
+            elif ext in {".html", ".htm"}:
+                images = _extract_imgs_html(temp_path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+    # Batch-Jobs aufbauen (ein Job pro Bild, kein Vision-API-Call)
+    classify_prompt = (
+        "Classify this image into EXACTLY one category. Reply with ONE word only:\n\n"
+        "photo      = photograph of real-world objects, people, places\n"
+        "chart      = bar chart, line chart, pie chart, data visualization with axes/values\n"
+        "diagram    = flowchart, org chart, mind map, network diagram, UML, architecture diagram\n"
+        "text_scan  = image of a document, form, invoice, letter, or any image where text is the primary content\n"
+        "decorative = logo, icon, background image, decorative graphic with no information value\n\n"
+        "Reply with exactly one of: photo, chart, diagram, text_scan, decorative"
+    )
+
+    batch_jobs: list[dict] = []
+    for img in images:
+        img_data = img["data"]
+        # Resize vor Batch-Upload
+        img_data_resized, _ = _resize_image(img_data)
+        mimetype = _detect_mimetype(img_data_resized) or "image/png"
+        batch_jobs.append({
+            "id": img["name"],
+            "image_base64": base64.b64encode(img_data_resized).decode("utf-8"),
+            "prompt": classify_prompt,
+            "mimetype": mimetype,
+        })
+
+    meta["duration_ms"] = int((time.time() - start_time) * 1000)
+    meta["images_found"] = len(batch_jobs)
+
+    log.info("prepare_batch_done", filename=filename, jobs=len(batch_jobs))
+    return {
+        "batch_jobs": batch_jobs,
+        "markdown": markdown,
+        "meta": meta,
+    }
+
+
+@app.post("/v1/apply-batch-results")
+async def api_apply_batch_results(body: dict) -> dict:
+    """
+    Fügt Batch-Ergebnisse in ein Markdown-Dokument ein.
+
+    Nimmt das Markdown aus prepare-batch und die Ergebnisse des Batch-Runs
+    und ersetzt Bild-Platzhalter durch die Beschreibungen.
+
+    Request body:
+        {
+            "markdown": "...",
+            "batch_results": [{"id": "page3_img0", "description": "..."}]
+        }
+
+    Returns:
+        {"markdown": "...", "images_inserted": N}
+    """
+    from converters.images import insert_image_descriptions
+
+    _insert_img_desc = _get("insert_image_descriptions", insert_image_descriptions)
+
+    markdown = body.get("markdown", "")
+    batch_results = body.get("batch_results", [])
+
+    if not isinstance(markdown, str):
+        raise HTTPException(status_code=400, detail="'markdown' muss ein String sein")
+    if not isinstance(batch_results, list):
+        raise HTTPException(status_code=400, detail="'batch_results' muss ein Array sein")
+
+    # batch_results in das Format konvertieren das insert_image_descriptions erwartet
+    descriptions: list[dict] = []
+    for item in batch_results:
+        if isinstance(item, dict) and "id" in item and "description" in item:
+            descriptions.append({"name": item["id"], "description": item["description"]})
+
+    enriched_markdown = _insert_img_desc(markdown, descriptions)
+
+    log.info("apply_batch_results_done", images_inserted=len(descriptions))
+    return {
+        "markdown": enriched_markdown,
+        "images_inserted": len(descriptions),
+    }
+
+
 def run_rest_server():
     """Startet den REST-Server in einem separaten Thread."""
     import os

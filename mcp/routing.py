@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 from typing import Optional, Any
 
+import httpx
 import structlog
 from markitdown import MarkItDown as _MarkItDown
 
@@ -46,6 +47,7 @@ from settings import (
     CACHE_TTL_SECONDS,
     MAX_DESCRIBE_IMAGES,
     CONVERT_TIMEOUT_SECONDS,
+    BRIX_URL,
 )
 from utils import (
     _get,
@@ -93,6 +95,26 @@ log = structlog.get_logger()
 _md = _MarkItDown()
 
 _EXAMPLE_URL = "https://example.com"  # Example URL for documentation purposes only
+
+# =============================================================================
+# Brix Detection — T-DAI-027
+# =============================================================================
+
+_brix_available_cache: dict = {"available": None, "checked_at": 0}
+
+
+def _is_brix_available() -> bool:
+    """Lazy Brix health-check mit 5-Minuten-Cache."""
+    _brix_url = _get("BRIX_URL", BRIX_URL)
+    if time.time() - _brix_available_cache["checked_at"] < 300:  # 5min Cache
+        return bool(_brix_available_cache["available"])
+    try:
+        r = httpx.get(f"{_brix_url}/health", timeout=3)
+        available = r.status_code == 200
+    except Exception:
+        available = False
+    _brix_available_cache.update({"available": available, "checked_at": time.time()})
+    return available
 
 
 async def convert_url(url: str) -> dict[str, Any]:
@@ -872,6 +894,14 @@ async def _convert_auto_impl(
                         images = _extract_imgs_html(temp_path)
 
                     if images:
+                        # T-DAI-027: Brix batch hint für Dokumente mit vielen Bildern
+                        _brix_hint_images = images  # snapshot for hint check
+                        if len(_brix_hint_images) > 10 and _is_brix_available():
+                            existing_hints = meta.get("hints", [])
+                            meta["hints"] = existing_hints + [
+                                f"This document has {len(_brix_hint_images)} images. For faster processing, "
+                                f"use Brix batch: POST /v1/prepare-batch then 'brix run convert-pdf-batch'"
+                            ]
                         # FIX 3 (T-DAI-024): Limit auf MAX_DESCRIBE_IMAGES — verhindert OOM/Timeout bei großen PDFs
                         total_images = len(images)
                         if total_images > _max_describe_images:

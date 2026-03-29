@@ -689,12 +689,9 @@ async def describe_embedded_images(
 
         # AC-004-1: Bild klassifizieren
         try:
-            image_type = await asyncio.wait_for(
-                _get("classify_image_type", classify_image_type)(data, mimetype),
-                timeout=60,
-            )
-        except asyncio.TimeoutError:
-            log.warning("vision_call_timeout", name=name, timeout=60)
+            image_type = await _get("classify_image_type", classify_image_type)(data, mimetype)
+        except Exception as _e:
+            log.warning("classify_image_type_failed", name=name, error=str(_e))
             continue
         log.info("image_classified", name=name, image_type=image_type)
 
@@ -706,12 +703,9 @@ async def describe_embedded_images(
         if image_type == "diagram":
             # AC-004-2: Flowcharts/Organigramme → Mermaid
             try:
-                description = await asyncio.wait_for(
-                    _get("convert_diagram_to_mermaid", convert_diagram_to_mermaid)(data, mimetype),
-                    timeout=60,
-                )
-            except asyncio.TimeoutError:
-                log.warning("vision_call_timeout", name=name, timeout=60)
+                description = await _get("convert_diagram_to_mermaid", convert_diagram_to_mermaid)(data, mimetype)
+            except Exception as _e:
+                log.warning("convert_diagram_to_mermaid_failed", name=name, error=str(_e))
                 continue
             results.append({
                 "name": name,
@@ -724,12 +718,9 @@ async def describe_embedded_images(
         if image_type == "chart":
             # AC-004-3: Balken-/Linien-/Kreisdiagramme → Datentabelle
             try:
-                description = await asyncio.wait_for(
-                    _get("extract_chart_data", extract_chart_data)(data, mimetype),
-                    timeout=60,
-                )
-            except asyncio.TimeoutError:
-                log.warning("vision_call_timeout", name=name, timeout=60)
+                description = await _get("extract_chart_data", extract_chart_data)(data, mimetype)
+            except Exception as _e:
+                log.warning("extract_chart_data_failed", name=name, error=str(_e))
                 continue
             results.append({
                 "name": name,
@@ -789,12 +780,9 @@ async def describe_embedded_images(
                 )
 
         try:
-            result = await asyncio.wait_for(
-                _get("analyze_with_mistral_vision", analyze_with_mistral_vision)(data, mimetype, generic_prompt, language),
-                timeout=60,
-            )
-        except asyncio.TimeoutError:
-            log.warning("vision_call_timeout", name=name, timeout=60)
+            result = await _get("analyze_with_mistral_vision", analyze_with_mistral_vision)(data, mimetype, generic_prompt, language)
+        except Exception as _e:
+            log.warning("vision_call_failed", name=name, error=str(_e))
             continue
         if result["success"]:
             results.append({
