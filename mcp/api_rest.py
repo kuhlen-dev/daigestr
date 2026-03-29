@@ -210,6 +210,7 @@ async def _api_convert_impl(request: ConvertRequest) -> ConvertResponse:
             mode=request.mode,
             output_format=request.output_format,
             pages=request.pages,
+            no_cache=request.no_cache,
         )
 
     # Base64
@@ -251,6 +252,7 @@ async def _api_convert_impl(request: ConvertRequest) -> ConvertResponse:
             mode=request.mode,
             output_format=request.output_format,
             pages=request.pages,
+            no_cache=request.no_cache,
         )
 
     # URL — T-MKIT-022: durch convert_auto() routen für vollständige Pipeline
@@ -867,6 +869,7 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
             mode=request.mode,
             output_format=request.output_format,
             pages=request.pages,
+            no_cache=request.no_cache,
         )
         _job_set_result(job_id, result.model_dump_json())
 

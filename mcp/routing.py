@@ -151,6 +151,7 @@ async def convert_auto(
     mode: str = "default",
     output_format: str = "markdown",
     pages: Optional[str] = None,
+    no_cache: bool = False,
 ) -> ConvertResponse:
     """
     Intelligente Konvertierung basierend auf Dateityp.
@@ -179,6 +180,7 @@ async def convert_auto(
         mode=mode,
         output_format=output_format,
         pages=pages,
+        no_cache=no_cache,
     )
 
 
@@ -205,9 +207,10 @@ async def _convert_auto_impl(
     mode: str = "default",
     output_format: str = "markdown",
     pages: Optional[str] = None,
+    no_cache: bool = False,
 ) -> ConvertResponse:
     """
-    Eigentliche Konvertierungslogik — wird von convert_auto() via asyncio.wait_for aufgerufen.
+    Eigentliche Konvertierungslogik.
 
     Args:
         file_data: Rohe Datei-Bytes
@@ -248,7 +251,7 @@ async def _convert_auto_impl(
     _cache_get = _get("cache_get", cache_get)
     _cache_set = _get("cache_set", cache_set)
 
-    if _cache_enabled:
+    if _cache_enabled and not no_cache:
         _cache_key_data = (
             hashlib.sha256(file_data).hexdigest()
             + str(sorted({
@@ -256,6 +259,7 @@ async def _convert_auto_impl(
                 "language": language,
                 "describe_images": describe_images,
                 "classify": classify,
+                "classify_categories": str(classify_categories),
                 "extract_schema": str(sorted(extract_schema.items()) if extract_schema else None),
                 "ocr_correct": ocr_correct,
                 "show_formulas": show_formulas,
@@ -267,6 +271,8 @@ async def _convert_auto_impl(
                 "min_confidence": min_confidence,
                 "mode": mode,
                 "output_format": output_format,
+                "pages": pages,
+                "prompt": prompt,
             }.items()))
         )
         _cache_key = hashlib.sha256(_cache_key_data.encode()).hexdigest()
@@ -1152,6 +1158,7 @@ def _build_tips_dict() -> dict:
             "output_format": {"values": ["markdown", "html", "text"], "default": "markdown", "description": "Output format. html includes Mermaid rendering, CSS, syntax highlighting. text strips all Markdown syntax."},
             "pages": {"type": "str", "default": None, "description": "PDF page selection. Syntax: '1-3', '7,14,22', '10-20,!15'. Null = all pages."},
             "webhook_url": {"type": "str", "default": None, "description": "URL to POST the result to when conversion completes. Errors logged silently."},
+            "no_cache": {"type": "bool", "default": False, "description": "Bypass cache and force fresh conversion. Result is still cached for future requests."},
         },
         "response_fields": {
             "markdown": "Always present — the converted document as Markdown",

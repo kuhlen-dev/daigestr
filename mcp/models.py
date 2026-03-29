@@ -245,6 +245,9 @@ class ConvertRequest(BaseModel):
     # Webhook (T-DAI-023)
     webhook_url: Optional[str] = Field(None, description="URL to POST the result to when conversion completes")
 
+    # Cache control
+    no_cache: bool = Field(False, description="When true, bypass cache and force fresh conversion. Result is still cached for future requests.")
+
 
 class ExtractRequest(BaseModel):
     """
