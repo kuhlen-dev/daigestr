@@ -36,7 +36,6 @@ img2table>=1.2.0
 
 # PDF Metadata (Bookmarks, Annotations, Form Fields) (FR-MKIT-009)
 PyMuPDF>=1.23.0  # import name: fitz
-fitz  # virtual — provided by PyMuPDF, listed for import checker
 
 # Excel Processing (FR-MKIT-007)
 openpyxl>=3.1.0
