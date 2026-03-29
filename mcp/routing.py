@@ -1150,6 +1150,8 @@ def _build_tips_dict() -> dict:
             "prompt": {"type": "str", "default": None, "description": "Custom prompt for Vision analysis (images only)"},
             "classify_categories": {"type": "list", "default": None, "description": "Custom classification categories (requires classify=true)"},
             "output_format": {"values": ["markdown", "html", "text"], "default": "markdown", "description": "Output format. html includes Mermaid rendering, CSS, syntax highlighting. text strips all Markdown syntax."},
+            "pages": {"type": "str", "default": None, "description": "PDF page selection. Syntax: '1-3', '7,14,22', '10-20,!15'. Null = all pages."},
+            "webhook_url": {"type": "str", "default": None, "description": "URL to POST the result to when conversion completes. Errors logged silently."},
         },
         "response_fields": {
             "markdown": "Always present — the converted document as Markdown",
