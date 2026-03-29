@@ -159,6 +159,8 @@ class TestPageSelectionIntegration:
         on the routing module AND on sys.modules['server'] so _get() finds them.
         """
         # Fitz mock: 5-page document
+        import fitz as _real_fitz  # noqa: PLC0415
+        _original_fitz = sys.modules.get("fitz", _real_fitz)
         fitz_mock = MagicMock()
         mock_doc = MagicMock()
         mock_doc.__len__ = lambda self: 5
@@ -242,3 +244,5 @@ class TestPageSelectionIntegration:
         finally:
             tmp_path.unlink(missing_ok=True)
             utils_mod._LOADED_BY_SERVER = original_lbs
+            # Restore real fitz so other tests can use it
+            sys.modules["fitz"] = _original_fitz

@@ -747,6 +747,21 @@ async def _convert_auto_impl(
                         meta=meta
                     )
 
+            # T-DAI-025: Non-scanned PDF page selection — create temp PDF with only requested pages
+            if ext == ".pdf" and _page_indices is not None:
+                try:
+                    import fitz as _fitz_mkit  # noqa: PLC0415
+                    _mkit_doc = _fitz_mkit.open(str(temp_path))
+                    _mkit_doc.select(_page_indices)
+                    _sliced_path = _temp_dir / f"sliced_{temp_path.name}"
+                    _mkit_doc.save(str(_sliced_path))
+                    _mkit_doc.close()
+                    temp_path = _sliced_path
+                    log.info("pdf_page_slice_done", indices=_page_indices, sliced_path=str(_sliced_path))
+                except Exception as _slice_err:
+                    log.warning("pdf_page_slice_failed", error=str(_slice_err))
+                    # Fallback: use full PDF
+
             log.info("convert_progress", step="markitdown", detail=filename, progress=10)
             result = _convert_markitdown(temp_path, show_formulas=show_formulas)
             meta["duration_ms"] = int((time.time() - start_time) * 1000)
