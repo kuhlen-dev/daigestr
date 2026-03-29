@@ -812,6 +812,7 @@ The `pipeline_steps` field in the response metadata lists every stage that ran.
 | `language` | `string` | `"de"` | Language for Vision responses and OCR |
 | `prompt` | `string` | — | Custom prompt for image analysis |
 | `pages` | `string` | — | Page selection for PDFs. Syntax: `"1-3"`, `"7,14,22"`, `"10-20,!15"` (exclude page 15). `null` = all pages. |
+| `no_cache` | `bool` | `false` | Bypass cache and force fresh conversion |
 | `webhook_url` | `string` | — | URL to POST the result to when conversion completes (especially useful with async jobs) |
 | `password` | `string` | — | Password for protected PDFs (reserved, not yet implemented) |
 | `meta` | `object` | `{}` | Arbitrary pass-through metadata |
@@ -861,6 +862,7 @@ The `/v1/convert/folder` endpoint and the `convert_folder` MCP tool convert all 
 | `ocr_embed: true` | `enriched_pdf` (base64, scanned PDFs only) | Yes |
 | `describe_images: true` | Richer `markdown` (diagrams → Mermaid, charts → tables, photos → descriptions — works for PDF, DOCX, PPTX, ODT, ODP, HTML) | Yes (enriched) |
 | `pages: "1-3"` | Only specified pages are processed (PDFs only) | Yes (filtered) |
+| `no_cache: true` | Fresh conversion (ignores cached result) | Yes |
 | `webhook_url: "..."` | Result is POSTed to the URL on completion | Yes |
 | `show_formulas: true` | Richer `markdown` (Excel formulas visible) | Yes (enriched) |
 

@@ -75,6 +75,7 @@ Alle Features sind standardmäßig **AUS** — explizit aktivieren oder `mode: "
 | `prompt` | `null` | Custom-Prompt für Vision-Analyse |
 | `min_confidence` | `0.7` | Minimale Klassifizierungs-Konfidenz für `auto_extract` |
 | `pages` | `null` | Seitenauswahl für PDFs. Syntax: `"1-3"`, `"7,14,22"`, `"10-20,!15"`. Null = alle Seiten. |
+| `no_cache` | `false` | Cache umgehen und frische Konvertierung erzwingen |
 | `webhook_url` | `null` | URL für POST-Callback wenn Konvertierung fertig (besonders nützlich mit Async Jobs) |
 | `classify_categories` | (aus Registry) | Erlaubte Dokumenttypen (überschreibt Default) |
 
