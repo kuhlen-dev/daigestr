@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Was ist das?
 
-Daigestr — Document Intelligence Service v5.4.0. Konvertiert Dokumente, Bilder, Audio/Video zu Markdown mit LLM-gestützter Analyse. Zwei Schnittstellen:
+Daigestr — Document Intelligence Service v5.5.0. Konvertiert Dokumente, Bilder, Audio/Video zu Markdown mit LLM-gestützter Analyse. Zwei Schnittstellen:
 - **MCP** (Port 8080, extern 18005): Für Claude und MCP-Clients via SSE oder stdio
 - **REST** (Port 8081, extern 18006): Für n8n und HTTP-Clients (FastAPI mit Swagger unter `/docs`)
 
@@ -180,6 +180,8 @@ curl -X POST http://localhost:18006/v1/convert \
 | `/v1/jobs/{id}` | GET | Job-Status abfragen |
 | `/v1/jobs/{id}/result` | GET | Job-Ergebnis abrufen (wenn fertig) |
 | `/v1/jobs/{id}` | DELETE | Job löschen |
+| `/v1/prepare-batch` | POST | Mistral-Batch-Job aus einer Liste von Convert-Requests vorbereiten |
+| `/v1/apply-batch-results` | POST | Abgeschlossene Mistral-Batch-Ergebnisse auf Jobs anwenden |
 | `/v1/cache` | DELETE | Request-Level-Cache leeren |
 | `/v1/health` | GET | Health-Check |
 | `/v1/formats` | GET | Unterstützte Formate |
@@ -264,7 +266,8 @@ Wichtigste Variablen:
 | `HIGHLIGHTJS_CDN_URL` | cdnjs | CDN für highlight.js (HTML-Output) |
 | `HIGHLIGHTJS_CSS_URL` | cdnjs | CDN für highlight.js CSS (HTML-Output) |
 | `MAX_DESCRIBE_IMAGES` | 50 | Max. Anzahl eingebetteter Bilder pro Dokument (Crash-Prävention) |
-| `CONVERT_TIMEOUT_SECONDS` | 300 | Globaler Timeout für eine einzelne Konvertierung |
+| `JOB_TIMEOUT_SECONDS` | 900 | Async Jobs werden nach dieser Zeit (Sekunden) auf `failed` gesetzt |
+| `BRIX_URL` | http://brix:8080 | URL des Brix-Orchestrators (Batch-Detection und Hints) |
 | `WEBHOOK_TIMEOUT_SECONDS` | 30 | Timeout für Webhook-Zustellung |
 | `WHISPER_MODEL_SIZE` | base | Whisper-Modell (tiny/base/small/medium/large) |
 

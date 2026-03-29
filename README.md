@@ -4,7 +4,7 @@
 
 Most document-to-Markdown tools work fine until you hand them a real-world file: a scanned invoice, a DOCX full of charts, an Excel with merged cells across 12 sheets, or a meeting recording. Then they silently fail, return empty text, or lose all structure. This service fixes that.
 
-Built on Microsoft's [markitdown](https://github.com/microsoft/markitdown), extended with Mistral OCR-3, Vision AI, audio transcription, a Template Registry with auto-extract, and a hybrid routing engine that picks the best tool for each document — automatically. Two interfaces: **MCP server** (for Claude and AI agents) and **REST API** (for n8n, workflows, and custom integrations). Self-hosted in a single Docker container. Current version: **v5.4.0**.
+Built on Microsoft's [markitdown](https://github.com/microsoft/markitdown), extended with Mistral OCR-3, Vision AI, audio transcription, a Template Registry with auto-extract, and a hybrid routing engine that picks the best tool for each document — automatically. Two interfaces: **MCP server** (for Claude and AI agents) and **REST API** (for n8n, workflows, and custom integrations). Self-hosted in a single Docker container. Current version: **v5.5.0**.
 
 ---
 
@@ -442,6 +442,8 @@ See [Mistral Models](#mistral-models-march-2026) for the full comparison.
 | `GET` | `/v1/jobs/{id}` | Get job status |
 | `GET` | `/v1/jobs/{id}/result` | Get job result (when complete) |
 | `DELETE` | `/v1/jobs/{id}` | Delete a job |
+| `POST` | `/v1/prepare-batch` | Prepare a Mistral batch job from a list of convert requests |
+| `POST` | `/v1/apply-batch-results` | Apply completed Mistral batch results back to jobs |
 | `DELETE` | `/v1/cache` | Clear the request-level cache |
 | `GET` | `/v1/tips` | Full feature reference as JSON (ideal for LLM self-discovery) |
 | `GET` | `/v1/formats` | List supported file formats |
@@ -690,6 +692,43 @@ curl -X POST http://localhost:18006/v1/convert/async \
 ```
 
 The webhook receives the full `ConvertResponse` as JSON via POST. Timeout is controlled by `WEBHOOK_TIMEOUT_SECONDS` (default: 30). Failed webhook deliveries are logged but do not affect the conversion result.
+
+### Batch Processing with Brix
+
+For large-scale image conversion (>10 images), Daigestr can offload Vision API calls to a **Mistral batch job** via the [Brix](https://github.com/Hanz74/brix) pipeline orchestrator. Batch jobs run asynchronously at lower cost (typically ~50% discount on Mistral API pricing).
+
+**When does this activate?**
+
+When a convert request with `describe_images: true` contains more than 10 images and a Brix instance is reachable at `BRIX_URL` (default: `http://brix:8080`), the service emits a hint in `meta.brix_hint` recommending the batch workflow.
+
+**Workflow:**
+
+```bash
+# 1. Prepare a batch job — packages image requests for Mistral Batch API
+curl -X POST http://localhost:18006/v1/prepare-batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "requests": [
+      {"path": "/data/doc1.pdf", "describe_images": true},
+      {"path": "/data/doc2.pdf", "describe_images": true}
+    ]
+  }'
+# → {"batch_id": "batch_abc123", "request_count": 2, "status": "submitted"}
+
+# 2. Wait for the Mistral batch job to complete (check via Mistral API or Brix)
+
+# 3. Apply batch results back to the jobs
+curl -X POST http://localhost:18006/v1/apply-batch-results \
+  -H "Content-Type: application/json" \
+  -d '{"batch_id": "batch_abc123"}'
+# → {"applied": 2, "failed": 0}
+```
+
+**With Brix:** The [Brix](https://github.com/Hanz74/brix) `convert-pdf.yaml` pipeline handles the full batch workflow — prepare, poll, apply — in a single pipeline run with parallel execution and structured reporting.
+
+```bash
+brix run convert-pdf.yaml -p path=/data/documents -p describe_images=true
+```
 
 ---
 
@@ -1081,6 +1120,7 @@ All settings are controlled via environment variables. Copy `.env.example` to `.
 | `MCP_TRANSPORT` | `sse` | MCP transport: `sse` or `stdio` |
 | `DATA_DIR` | `/data` | Container path for document storage |
 | `TEMP_DIR` | `/tmp/markitdown` | Temporary file storage |
+| `BRIX_URL` | `http://brix:8080` | URL of the Brix orchestrator (used for batch detection and hints) |
 
 ### Limits
 
@@ -1125,7 +1165,7 @@ All settings are controlled via environment variables. Copy `.env.example` to `.
 | `PDFTOTEXT_TIMEOUT` | `60` | pdftotext subprocess timeout (seconds) |
 | `PDFINFO_TIMEOUT` | `30` | pdfinfo subprocess timeout (seconds) |
 | `FFMPEG_TIMEOUT` | `600` | ffmpeg audio extraction timeout (seconds) |
-| `CONVERT_TIMEOUT_SECONDS` | `300` | Global timeout for a single convert operation (seconds) |
+| `JOB_TIMEOUT_SECONDS` | `900` | Async jobs are marked `failed` after this many seconds (15 min) |
 | `WEBHOOK_TIMEOUT_SECONDS` | `30` | Timeout for webhook delivery (seconds) |
 
 ### Logging
@@ -1380,6 +1420,7 @@ Test modules:
 
 | Version | Date | Highlights |
 |---------|------|-----------|
+| **5.5.0** | March 2026 | Mistral Batch Integration (`POST /v1/prepare-batch`, `POST /v1/apply-batch-results`). Brix detection: hint in `meta.brix_hint` when >10 images detected. Per-image progress in async jobs (`"image 14/50"`). `JOB_TIMEOUT_SECONDS=900` — async jobs fail-safe after 15 min. `BRIX_URL` ENV for Brix reachability check. `DAIGESTR_VERSION` read from Git tag. `CONVERT_TIMEOUT_SECONDS` removed (no internal timeout in `convert_auto`). |
 | **5.4.0** | March 2026 | Async Job API (`POST /v1/convert/async`, `GET /v1/jobs/{id}`, `GET /v1/jobs/{id}/result`, `DELETE /v1/jobs/{id}`, `GET /v1/jobs`). Webhook callback (`webhook_url` parameter on any convert request). |
 | **5.3.0** | March 2026 | PDF page selection (`pages` parameter). Syntax: ranges (`"1-3"`), individual pages (`"7,14"`), exclusions (`"10-20,!15"`). |
 | **5.2.2** | March 2026 | Crash recovery: global exception handler, REST-thread watchdog, `MAX_DESCRIBE_IMAGES=50` limit, `CONVERT_TIMEOUT_SECONDS=300` global timeout. |
