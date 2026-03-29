@@ -155,33 +155,44 @@ async def convert_auto(
 ) -> ConvertResponse:
     """
     Intelligente Konvertierung basierend auf Dateityp.
-    Kein interner Timeout — externe Limits (REST-Client, Brix-Pipeline) steuern.
+    Wraps _convert_auto_impl mit CONVERT_TIMEOUT_SECONDS Timeout.
     """
-    return await _convert_auto_impl(
-        file_data=file_data,
-        filename=filename,
-        source=source,
-        source_type=source_type,
-        input_meta=input_meta,
-        prompt=prompt,
-        language=language,
-        describe_images=describe_images,
-        classify=classify,
-        classify_categories=classify_categories,
-        extract_schema=extract_schema,
-        ocr_correct=ocr_correct,
-        show_formulas=show_formulas,
-        chunk=chunk,
-        chunk_size=chunk_size,
-        accuracy=accuracy,
-        ocr_embed=ocr_embed,
-        auto_extract=auto_extract,
-        min_confidence=min_confidence,
-        mode=mode,
-        output_format=output_format,
-        pages=pages,
-        no_cache=no_cache,
-    )
+    _timeout = _get("CONVERT_TIMEOUT_SECONDS", CONVERT_TIMEOUT_SECONDS)
+    try:
+        return await asyncio.wait_for(
+            _convert_auto_impl(
+                file_data=file_data,
+                filename=filename,
+                source=source,
+                source_type=source_type,
+                input_meta=input_meta,
+                prompt=prompt,
+                language=language,
+                describe_images=describe_images,
+                classify=classify,
+                classify_categories=classify_categories,
+                extract_schema=extract_schema,
+                ocr_correct=ocr_correct,
+                show_formulas=show_formulas,
+                chunk=chunk,
+                chunk_size=chunk_size,
+                accuracy=accuracy,
+                ocr_embed=ocr_embed,
+                auto_extract=auto_extract,
+                min_confidence=min_confidence,
+                mode=mode,
+                output_format=output_format,
+                pages=pages,
+                no_cache=no_cache,
+            ),
+            timeout=float(_timeout),
+        )
+    except asyncio.TimeoutError:
+        log.warning("convert_auto_timeout", filename=filename, timeout=_timeout)
+        return create_error_response(
+            ErrorCode.INTERNAL_ERROR,
+            f"Timeout: Conversion exceeded {_timeout}s",
+        )
 
 
 async def _convert_auto_impl(
@@ -873,7 +884,12 @@ async def _convert_auto_impl(
                             images = images[:_max_describe_images]
                             meta["images_truncated"] = True
                         _update_progress("describe_images", f"{len(images)} images found", 30)
-                        descriptions = await _describe_imgs(images, language=language)
+                        import inspect as _inspect
+                        _describe_kwargs: dict = {"language": language}
+                        _describe_sig = _inspect.signature(_describe_imgs)
+                        if "progress_callback" in _describe_sig.parameters:
+                            _describe_kwargs["progress_callback"] = lambda detail, pct: _update_progress("describe_image", detail, pct)
+                        descriptions = await _describe_imgs(images, **_describe_kwargs)
                         markdown = _insert_img_desc(markdown, descriptions)
                         meta["images_described"] = len(descriptions)
                         if meta.get("images_truncated"):

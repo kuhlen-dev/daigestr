@@ -56,6 +56,9 @@ MAX_DESCRIBE_IMAGES = int(os.getenv("MAX_DESCRIBE_IMAGES", "50"))
 # Timeout für einzelne convert_auto Aufrufe in Sekunden (FIX 4 — T-DAI-024)
 CONVERT_TIMEOUT_SECONDS = int(os.getenv("CONVERT_TIMEOUT_SECONDS", "300"))
 
+# Timeout für Background-Jobs in Sekunden (BUG 3 — Job-Timeout)
+JOB_TIMEOUT_SECONDS = int(os.getenv("JOB_TIMEOUT_SECONDS", "900"))  # 15 Minuten
+
 # Retry
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 RATE_LIMIT_MAX_WAIT_SECONDS = int(os.getenv("RATE_LIMIT_MAX_WAIT_SECONDS", "60"))

@@ -13,6 +13,7 @@ Enthält alle Hilfsfunktionen für Bild-Verarbeitung:
 - PDF First Page Rendering
 """
 
+import asyncio
 import base64
 import io
 import re
@@ -655,6 +656,7 @@ async def extract_chart_data(
 async def describe_embedded_images(
     images: list[dict],
     language: str = "de",
+    progress_callback=None,
 ) -> list[dict]:
     """
     Beschreibt eine Liste extrahierter Bilder via Mistral Pixtral Vision.
@@ -680,10 +682,20 @@ async def describe_embedded_images(
         data = image["data"]
         mimetype = _get("detect_mimetype_from_bytes", detect_mimetype_from_bytes)(data) or "image/png"
         log.info("describing_embedded_image", name=name, size=len(data))
-        log.info("convert_progress", step="describe_image", detail=f"image {i+1}/{total}: {name}", progress=int(30 + 40 * i / total) if total else 30)
+        _progress = int(30 + 40 * i / total) if total else 30
+        log.info("convert_progress", step="describe_image", detail=f"image {i+1}/{total}: {name}", progress=_progress)
+        if progress_callback:
+            progress_callback(f"image {i+1}/{total}: {name}", _progress)
 
         # AC-004-1: Bild klassifizieren
-        image_type = await _get("classify_image_type", classify_image_type)(data, mimetype)
+        try:
+            image_type = await asyncio.wait_for(
+                _get("classify_image_type", classify_image_type)(data, mimetype),
+                timeout=60,
+            )
+        except asyncio.TimeoutError:
+            log.warning("vision_call_timeout", name=name, timeout=60)
+            continue
         log.info("image_classified", name=name, image_type=image_type)
 
         if image_type == "decorative":
@@ -693,7 +705,14 @@ async def describe_embedded_images(
 
         if image_type == "diagram":
             # AC-004-2: Flowcharts/Organigramme → Mermaid
-            description = await _get("convert_diagram_to_mermaid", convert_diagram_to_mermaid)(data, mimetype)
+            try:
+                description = await asyncio.wait_for(
+                    _get("convert_diagram_to_mermaid", convert_diagram_to_mermaid)(data, mimetype),
+                    timeout=60,
+                )
+            except asyncio.TimeoutError:
+                log.warning("vision_call_timeout", name=name, timeout=60)
+                continue
             results.append({
                 "name": name,
                 "description": description,
@@ -704,7 +723,14 @@ async def describe_embedded_images(
 
         if image_type == "chart":
             # AC-004-3: Balken-/Linien-/Kreisdiagramme → Datentabelle
-            description = await _get("extract_chart_data", extract_chart_data)(data, mimetype)
+            try:
+                description = await asyncio.wait_for(
+                    _get("extract_chart_data", extract_chart_data)(data, mimetype),
+                    timeout=60,
+                )
+            except asyncio.TimeoutError:
+                log.warning("vision_call_timeout", name=name, timeout=60)
+                continue
             results.append({
                 "name": name,
                 "description": description,
@@ -762,7 +788,14 @@ async def describe_embedded_images(
                          "recognizable objects and overall context. Format: short paragraph."
                 )
 
-        result = await _get("analyze_with_mistral_vision", analyze_with_mistral_vision)(data, mimetype, generic_prompt, language)
+        try:
+            result = await asyncio.wait_for(
+                _get("analyze_with_mistral_vision", analyze_with_mistral_vision)(data, mimetype, generic_prompt, language),
+                timeout=60,
+            )
+        except asyncio.TimeoutError:
+            log.warning("vision_call_timeout", name=name, timeout=60)
+            continue
         if result["success"]:
             results.append({
                 "name": name,

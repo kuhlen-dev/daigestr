@@ -56,6 +56,7 @@ from settings import (
     TEMP_DIR,
     MISTRAL_TIMEOUT,
     WEBHOOK_TIMEOUT_SECONDS,
+    JOB_TIMEOUT_SECONDS,
 )
 from utils import _get, resolve_path, get_file_extension, get_mimetype, detect_mimetype_from_bytes
 from intelligence import (
@@ -846,31 +847,40 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
             source = request.url
             source_type = "url"
 
-        result: ConvertResponse = await _convert_auto(
-            file_data=file_data,
-            filename=filename,
-            source=source,
-            source_type=source_type,
-            input_meta={**request.meta, "_job_id": job_id},
-            prompt=request.prompt,
-            language=request.language,
-            describe_images=request.describe_images,
-            classify=request.classify,
-            classify_categories=request.classify_categories,
-            extract_schema=effective_schema,
-            ocr_correct=request.ocr_correct,
-            show_formulas=request.show_formulas,
-            chunk=request.chunk,
-            chunk_size=request.chunk_size,
-            accuracy=request.accuracy,
-            ocr_embed=request.ocr_embed,
-            auto_extract=request.auto_extract,
-            min_confidence=request.min_confidence,
-            mode=request.mode,
-            output_format=request.output_format,
-            pages=request.pages,
-            no_cache=request.no_cache,
-        )
+        _job_timeout = _get("JOB_TIMEOUT_SECONDS", JOB_TIMEOUT_SECONDS)
+        try:
+            result: ConvertResponse = await asyncio.wait_for(
+                _convert_auto(
+                    file_data=file_data,
+                    filename=filename,
+                    source=source,
+                    source_type=source_type,
+                    input_meta={**request.meta, "_job_id": job_id},
+                    prompt=request.prompt,
+                    language=request.language,
+                    describe_images=request.describe_images,
+                    classify=request.classify,
+                    classify_categories=request.classify_categories,
+                    extract_schema=effective_schema,
+                    ocr_correct=request.ocr_correct,
+                    show_formulas=request.show_formulas,
+                    chunk=request.chunk,
+                    chunk_size=request.chunk_size,
+                    accuracy=request.accuracy,
+                    ocr_embed=request.ocr_embed,
+                    auto_extract=request.auto_extract,
+                    min_confidence=request.min_confidence,
+                    mode=request.mode,
+                    output_format=request.output_format,
+                    pages=request.pages,
+                    no_cache=request.no_cache,
+                ),
+                timeout=float(_job_timeout),
+            )
+        except asyncio.TimeoutError:
+            log.error("async_job_timeout", job_id=job_id, timeout=_job_timeout)
+            _job_update(job_id, "failed", json.dumps({"error": f"Job timed out after {_job_timeout}s"}))
+            return
         _job_set_result(job_id, result.model_dump_json())
 
         # Webhook senden wenn konfiguriert
