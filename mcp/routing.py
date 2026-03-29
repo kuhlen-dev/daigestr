@@ -177,44 +177,33 @@ async def convert_auto(
 ) -> ConvertResponse:
     """
     Intelligente Konvertierung basierend auf Dateityp.
-    Wraps _convert_auto_impl mit CONVERT_TIMEOUT_SECONDS Timeout.
+    Kein interner Timeout — externe Limits (REST-Client, Brix-Pipeline) steuern.
     """
-    _timeout = _get("CONVERT_TIMEOUT_SECONDS", CONVERT_TIMEOUT_SECONDS)
-    try:
-        return await asyncio.wait_for(
-            _convert_auto_impl(
-                file_data=file_data,
-                filename=filename,
-                source=source,
-                source_type=source_type,
-                input_meta=input_meta,
-                prompt=prompt,
-                language=language,
-                describe_images=describe_images,
-                classify=classify,
-                classify_categories=classify_categories,
-                extract_schema=extract_schema,
-                ocr_correct=ocr_correct,
-                show_formulas=show_formulas,
-                chunk=chunk,
-                chunk_size=chunk_size,
-                accuracy=accuracy,
-                ocr_embed=ocr_embed,
-                auto_extract=auto_extract,
-                min_confidence=min_confidence,
-                mode=mode,
-                output_format=output_format,
-                pages=pages,
-                no_cache=no_cache,
-            ),
-            timeout=float(_timeout),
-        )
-    except asyncio.TimeoutError:
-        log.warning("convert_auto_timeout", filename=filename, timeout=_timeout)
-        return create_error_response(
-            ErrorCode.INTERNAL_ERROR,
-            f"Timeout: Conversion exceeded {_timeout}s",
-        )
+    return await _convert_auto_impl(
+        file_data=file_data,
+        filename=filename,
+        source=source,
+        source_type=source_type,
+        input_meta=input_meta,
+        prompt=prompt,
+        language=language,
+        describe_images=describe_images,
+        classify=classify,
+        classify_categories=classify_categories,
+        extract_schema=extract_schema,
+        ocr_correct=ocr_correct,
+        show_formulas=show_formulas,
+        chunk=chunk,
+        chunk_size=chunk_size,
+        accuracy=accuracy,
+        ocr_embed=ocr_embed,
+        auto_extract=auto_extract,
+        min_confidence=min_confidence,
+        mode=mode,
+        output_format=output_format,
+        pages=pages,
+        no_cache=no_cache,
+    )
 
 
 async def _convert_auto_impl(
