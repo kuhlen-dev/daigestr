@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Was ist das?
 
-Daigestr — Document Intelligence Service v5.5.0. Konvertiert Dokumente, Bilder, Audio/Video zu Markdown mit LLM-gestützter Analyse. Zwei Schnittstellen:
+Daigestr — Document Intelligence Service. Konvertiert Dokumente, Bilder, Audio/Video zu Markdown mit LLM-gestützter Analyse. Zwei Schnittstellen:
 - **MCP** (Port 8080, extern 18005): Für Claude und MCP-Clients via SSE oder stdio
 - **REST** (Port 8081, extern 18006): Für n8n und HTTP-Clients (FastAPI mit Swagger unter `/docs`)
 
@@ -16,26 +16,32 @@ Ein Container (`daigestr`) definiert in `docker-compose.yml`, Build-Context ist 
 
 ### Modulstruktur (`mcp/`)
 
-| Modul | Zeilen | Zweck |
-|-------|--------|-------|
-| `server.py` | 281 | Startup, uvloop, Re-Exports für Backwards-Compatibility |
-| `settings.py` | ~160 | Alle Umgebungsvariablen und Konstanten |
-| `logging_setup.py` | — | structlog-Konfiguration |
-| `utils.py` | — | Hilfsfunktionen: `_get()`, `resolve_path`, Dateityp-Erkennung |
-| `mistral_client.py` | — | Mistral Vision API-Client |
-| `converters/images.py` | — | Resize, EXIF, Bilder aus DOCX/PPTX/PDF/ODT/ODP/HTML, `describe_embedded_images` |
-| `converters/pdf.py` | — | `is_scanned_pdf`, `convert_scanned_pdf`, `embed_ocr_in_pdf` |
-| `converters/office.py` | — | `convert_with_markitdown` (inkl. Excel-Formeln, DOCX-Extras) |
-| `converters/audio.py` | — | ffmpeg-Extraktion + faster-whisper Transkription |
-| `converters/email.py` | — | EML-Parsing, Routing-Metadaten, Thread-Infos, Kalender-Events |
-| `intelligence.py` | 1279 | `classify`, `extract`, `quality_score`, `chunk`, `dual_pass_validate`, `_apply_auto_extract` |
-| `templates_db.py` | 318 | SQLite: templates, prompts, scoring_weights, cache (`cache_get/set/clear`) |
-| `routing.py` | 1041 | `convert_auto`, `convert_folder_contents`, `convert_url`, `_build_tips_dict` |
-| `api_rest.py` | 749 | FastAPI-App, alle REST-Endpoints |
-| `api_mcp.py` | 471 | FastMCP-Instanz, alle MCP-Tools |
-| `renderers/html.py` | — | Markdown → vollständiges HTML (Mermaid.js, highlight.js, CSS) |
-| `renderers/text.py` | — | Markdown → Plaintext (Markdown-Syntax entfernen) |
-| `models.py` | — | Pydantic-Schemas: Request/Response-Modelle, ErrorCodes, MetaData |
+| Modul | Zweck |
+|-------|-------|
+| `server.py` | Startup, uvloop, Re-Exports für Backwards-Compatibility und Test-Patchability |
+| `settings.py` | Alle Umgebungsvariablen und Konstanten |
+| `logging_setup.py` | structlog-Konfiguration |
+| `utils.py` | Hilfsfunktionen: `_get()`, `resolve_path`, Dateityp-Erkennung |
+| `mistral_client.py` | Mistral Vision API-Client |
+| `converters/images.py` | Resize, EXIF, Bilder aus DOCX/PPTX/PDF/ODT/ODP/HTML, `describe_embedded_images` |
+| `converters/pdf.py` | `is_scanned_pdf`, `convert_scanned_pdf`, `embed_ocr_in_pdf` |
+| `converters/office.py` | `convert_with_markitdown` (inkl. Excel-Formeln, DOCX-Extras) |
+| `converters/audio.py` | ffmpeg-Extraktion + faster-whisper Transkription |
+| `converters/email.py` | EML-Parsing, Routing-Metadaten, Thread-Infos, Kalender-Events |
+| `intelligence.py` | `classify`, `extract`, `quality_score`, `chunk`, `dual_pass_validate`, `_apply_auto_extract` |
+| `templates_db.py` | SQLite: templates, prompts, scoring_weights, cache (`cache_get/set/clear`) |
+| `routing.py` | `convert_auto`, `convert_folder_contents`, `convert_url`, `_build_tips_dict` |
+| `api_rest.py` | FastAPI-App, alle REST-Endpoints |
+| `api_mcp.py` | FastMCP-Instanz, alle MCP-Tools |
+| `renderers/html.py` | Markdown → vollständiges HTML (Mermaid.js, highlight.js, CSS) |
+| `renderers/text.py` | Markdown → Plaintext (Markdown-Syntax entfernen) |
+| `models.py` | Pydantic-Schemas: Request/Response-Modelle, ErrorCodes, MetaData |
+
+### Re-Export / `_get()` Pattern (wichtig für Code-Änderungen!)
+
+`server.py` re-exportiert alle öffentlichen Funktionen aus den Submodulen. Das ist kein Dead Code — Tests patchen Symbole auf dem `server`-Namespace (`_server.SOME_FLAG = ...`). Die Submodule lesen diese Werte über `utils._get("SOME_FLAG", default)` zurück, was im `server`-Modul nachschlägt. Dieses Muster ermöglicht isoliertes Testen ohne echte externe Abhängigkeiten.
+
+**Wenn du eine neue öffentliche Funktion/Konstante in einem Submodul hinzufügst:** Re-Export in `server.py` ergänzen, damit Tests sie patchen können.
 
 ### Datenfluß
 
@@ -58,9 +64,9 @@ Alle Features sind standardmäßig **AUS** — explizit aktivieren oder `mode: "
 
 | Parameter | Default | Beschreibung |
 |-----------|---------|-------------|
-| `mode` | `"default"` | `"full"` schaltet alle Features ein: `describe_images`, `accuracy="high"`, `classify`, `ocr_correct`, `auto_extract`, `chunk` |
+| `mode` | `"default"` | `"full"` aktiviert Page-Rendering für PDFs + alle Features (accuracy=high, classify, ocr_correct, auto_extract, chunk). `"deep"` wie full, plus Einzelbild-Extraktion mit Klassifizierung (diagram→Mermaid, chart→Datentabelle, photo→Beschreibung). Für Non-PDF-Formate fällt full auf Einzelbild-Beschreibung zurück. |
 | `output_format` | `"markdown"` | Ausgabeformat: `"markdown"`, `"html"` (Mermaid + highlight.js), `"text"` (Plaintext ohne Syntax) |
-| `describe_images` | `false` | Eingebettete Bilder in **allen** Formaten beschreiben: PDF, DOCX, PPTX, ODT, ODP, HTML. Automatische Bild-Klassifizierung: `diagram` → Mermaid-Syntax, `chart` → Datentabelle, `photo` → Beschreibung, `text_scan` → OCR, `decorative` → übersprungen. Ohne diesen Parameter: alle Bilder als `[image]`! |
+| `describe_images` | `false` | Eingebettete Bilder in **allen** Formaten beschreiben: PDF, DOCX, PPTX, ODT, ODP, HTML. Automatische Bild-Klassifizierung: `diagram` → Mermaid-Syntax, `chart` → Datentabelle, `photo` → Beschreibung, `text_scan` → OCR, `decorative` → übersprungen. Ohne diesen Parameter: alle Bilder als `[image]`! **Hinweis:** `mode: "deep"` aktiviert dies automatisch; `mode: "full"` nutzt stattdessen Page-Rendering für PDFs. |
 | `accuracy` | `"standard"` | `"high"` aktiviert OCR-Korrektur + Dual-Pass-Validierung für gescannte PDFs |
 | `classify` | `false` | Dokumenttyp via LLM erkennen → `meta.document_type`, `meta.document_type_confidence` |
 | `auto_extract` | `false` | Alles in einem: Typ erkennen + passendes Template suchen + strukturiert extrahieren → `extracted` |
@@ -94,10 +100,15 @@ Automatische Klassifizierung via Vision AI — kein extra Parameter nötig:
 ### Typische Nutzungsmuster
 
 ```bash
-# Alle Features auf einmal
+# Alle Features + Page-Rendering (schnell, 1 API-Call pro Seite)
 curl -X POST http://localhost:18006/v1/convert \
   -H "Content-Type: application/json" \
   -d '{"path": "/data/doc.pdf", "mode": "full"}'
+
+# Technisches Dokument: Einzelbild-Analyse (Diagramme → Mermaid, Charts → Tabellen)
+curl -X POST http://localhost:18006/v1/convert \
+  -H "Content-Type: application/json" \
+  -d '{"path": "/data/technical-doc.pdf", "mode": "deep"}'
 
 # Gescanntes PDF mit Bildbeschreibung + Klassifizierung
 curl -X POST http://localhost:18006/v1/convert \
@@ -213,7 +224,7 @@ docker compose build daigestr && docker compose up -d daigestr
 docker logs -f daigestr
 ```
 
-**Dev-Mode:** `docker-compose.override.yml` mountet alle Source-Dateien als Volumes. Code-Änderungen sind sofort im Container verfügbar (Container-Restart nötig, aber kein Rebuild). Volume `./data:/data` ist für Nutz-Daten.
+Volume `./data:/data` ist für Nutz-Daten und wird als `/data` im Container gemountet.
 
 ## Tests
 
@@ -230,7 +241,10 @@ cd mcp && python -m pytest tests/test_extract.py -v
 cd mcp && python -m pytest tests/test_extract.py::test_function_name -v
 ```
 
-**Wichtig:** `conftest.py` sichert echtes PIL vor dem Mocking. `load_server_module(use_real_pil=True)` für Tests die echte Bildverarbeitung brauchen.
+**Wichtig:**
+- `conftest.py` sichert echtes PIL vor dem Mocking. `load_server_module(use_real_pil=True)` für Tests die echte Bildverarbeitung brauchen.
+- `load_server_module()` mockt alle schweren Abhängigkeiten (PIL, MarkItDown, Mistral, pdfplumber, etc.) und gibt ein frisch geladenes `server`-Modul zurück. Tests patchen dann auf diesem Modul-Objekt.
+- `run_async(coro)` aus conftest.py für synchrones Ausführen von async Funktionen in Tests (kein asyncio-Plugin nötig).
 
 ## REST-API testen
 
@@ -277,10 +291,6 @@ Wichtigste Variablen:
 - **MarkItDown (Dokumente):** pdf, docx, doc, pptx, ppt, xlsx, xls, odt, ods, odp, html, htm, xml, json, csv, txt, md, rtf, eml
 - **Audio:** mp3, wav, ogg, flac, m4a
 - **Video:** mp4, mkv, webm, avi, mov
-
-## Netzwerk
-
-Container läuft im `shared-network` (Docker external network). Volume `./data` wird als `/data` gemountet.
 
 ## Systemabhängigkeiten im Container
 

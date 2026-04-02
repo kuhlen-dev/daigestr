@@ -95,7 +95,7 @@ class TestModeFieldValidation:
         from models import ConvertRequest
         with pytest.raises(ValidationError) as exc_info:
             ConvertRequest(path="/data/test.pdf", mode="fast")
-        assert "mode must be 'default' or 'full'" in str(exc_info.value)
+        assert "mode must be 'default', 'full' or 'deep'" in str(exc_info.value)
 
     def test_mode_invalid_partial_raises(self):
         """Teilstring eines gültigen Werts → ValidationError."""
@@ -330,3 +330,149 @@ class TestModeFullOverridesIndividualParams:
 
         assert result.chunks is not None
         assert isinstance(result.chunks, list)
+
+
+# ---------------------------------------------------------------------------
+# Tests: mode='deep' Validation (T-DAI-030)
+# ---------------------------------------------------------------------------
+
+
+class TestModeDeepValidation:
+    """mode='deep' ist gültig in ConvertRequest."""
+
+    def test_mode_deep_is_valid(self):
+        from models import ConvertRequest
+        req = ConvertRequest(path="/data/test.pdf", mode="deep")
+        assert req.mode == "deep"
+
+
+# ---------------------------------------------------------------------------
+# Tests: mode='deep' setzt describe_pages UND describe_images (T-DAI-030)
+# ---------------------------------------------------------------------------
+
+
+def _setup_pdf_server_mocks(server_mod, extra_mocks=None):
+    """Gemeinsame Mock-Setup für PDF-basierte convert_auto Tests.
+
+    Setzt alle nötigen Mocks auf dem server_mod damit _get() sie findet.
+    """
+    server_mod.CACHE_ENABLED = False
+    server_mod.detect_mimetype_from_bytes = MagicMock(return_value="application/pdf")
+    server_mod.get_mimetype = MagicMock(return_value="application/pdf")
+    server_mod.convert_with_markitdown = MagicMock(return_value={"markdown": "# Test", "title": "Test", "success": True})
+    server_mod.is_scanned_pdf = MagicMock(return_value=False)
+    server_mod.render_pdf_pages_as_images = MagicMock(return_value=[
+        {"name": "page_1.png", "data": PNG_100x100, "page_number": 1}
+    ])
+    server_mod.describe_page_images = AsyncMock(return_value=[
+        {"name": "page_1.png", "description": "Page 1 content", "page_number": 1, "tokens": 100}
+    ])
+    server_mod.insert_page_descriptions = MagicMock(side_effect=lambda md, descs: md + "\n\nPage desc")
+    server_mod.extract_images_from_pdf = MagicMock(return_value=[
+        {"name": "img1.png", "data": PNG_100x100, "page_number": 1}
+    ])
+    server_mod.describe_embedded_images = AsyncMock(return_value=[
+        {"name": "img1.png", "description": "An image", "tokens": 50, "image_type": "photo"}
+    ])
+    server_mod.insert_image_descriptions = MagicMock(side_effect=lambda md, descs: md + "\n\nImg desc")
+    server_mod.classify_document = AsyncMock(return_value={"document_type": "report", "confidence": 0.95})
+    server_mod.calculate_quality_score = MagicMock(return_value={"quality_grade": "B"})
+    server_mod._apply_auto_extract = AsyncMock(side_effect=lambda response, *a, **kw: response)
+    server_mod.chunk_markdown = MagicMock(return_value=[{"text": "chunk1"}])
+    server_mod.correct_ocr_text = AsyncMock(return_value=("# Test", 0))
+    server_mod.dual_pass_validate = AsyncMock(side_effect=lambda **kw: kw["markdown"])
+    server_mod.render_first_page_as_image = MagicMock(return_value=None)
+    server_mod.cache_get = MagicMock(return_value=None)
+    server_mod.cache_set = MagicMock(return_value=None)
+    if extra_mocks:
+        for name, mock in extra_mocks.items():
+            setattr(server_mod, name, mock)
+    return server_mod
+
+
+class TestModeDeep:
+    """T-DAI-030: mode='deep' setzt describe_pages UND describe_images."""
+
+    def test_mode_deep_sets_describe_pages_and_describe_images(self):
+        _server = load_server_module()
+        _setup_pdf_server_mocks(_server)
+
+        result = run_async(_server.convert_auto(
+            file_data=b"%PDF-fake",
+            filename="test.pdf",
+            source="/data/test.pdf",
+            source_type="file",
+            input_meta={},
+            mode="deep",
+        ))
+        # deep mode: both page rendering AND image extraction should be called
+        assert _server.render_pdf_pages_as_images.called, "Page rendering should be called in deep mode"
+        assert _server.extract_images_from_pdf.called, "Image extraction should be called in deep mode"
+
+
+# ---------------------------------------------------------------------------
+# Tests: mode='full' nutzt Page-Rendering statt Einzelbild-Extraktion (T-DAI-030)
+# ---------------------------------------------------------------------------
+
+
+class TestModeFullPageRendering:
+    """T-DAI-030: mode='full' nutzt Page-Rendering statt Einzelbild-Extraktion für PDFs."""
+
+    def test_mode_full_pdf_uses_page_rendering(self):
+        _server = load_server_module()
+        _setup_pdf_server_mocks(_server, extra_mocks={
+            "extract_images_from_pdf": MagicMock(return_value=[]),
+        })
+
+        result = run_async(_server.convert_auto(
+            file_data=b"%PDF-fake",
+            filename="test.pdf",
+            source="/data/test.pdf",
+            source_type="file",
+            input_meta={},
+            mode="full",
+        ))
+        assert _server.render_pdf_pages_as_images.called, "Page rendering should be called"
+        assert not _server.extract_images_from_pdf.called, \
+            "Individual image extraction should NOT be called in full mode for PDFs"
+
+
+# ---------------------------------------------------------------------------
+# Tests: mode='full' Non-PDF Fallback auf describe_images (T-DAI-030)
+# ---------------------------------------------------------------------------
+
+
+class TestModeFullNonPdfFallback:
+    """T-DAI-030: mode='full' fällt bei Non-PDF auf describe_images zurück."""
+
+    def test_mode_full_docx_uses_describe_images(self):
+        _server = load_server_module()
+        _server.CACHE_ENABLED = False
+        _server.detect_mimetype_from_bytes = MagicMock(return_value="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        _server.get_mimetype = MagicMock(return_value="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        _server.convert_with_markitdown = MagicMock(return_value={"markdown": "# DOCX", "title": "DOCX", "success": True})
+        _server.extract_images_from_docx = MagicMock(return_value=[
+            {"name": "img1.png", "data": PNG_100x100}
+        ])
+        _server.describe_embedded_images = AsyncMock(return_value=[
+            {"name": "img1.png", "description": "An image", "tokens": 50, "image_type": "photo"}
+        ])
+        _server.insert_image_descriptions = MagicMock(side_effect=lambda md, descs: md)
+        _server.classify_document = AsyncMock(return_value={"document_type": "letter", "confidence": 0.9})
+        _server.calculate_quality_score = MagicMock(return_value={"quality_grade": "B"})
+        _server._apply_auto_extract = AsyncMock(side_effect=lambda response, *a, **kw: response)
+        _server.chunk_markdown = MagicMock(return_value=[{"text": "chunk1"}])
+        _server.correct_ocr_text = AsyncMock(return_value=("# DOCX", 0))
+        _server.cache_get = MagicMock(return_value=None)
+        _server.cache_set = MagicMock(return_value=None)
+
+        result = run_async(_server.convert_auto(
+            file_data=b"PK\x03\x04fake-docx",
+            filename="test.docx",
+            source="/data/test.docx",
+            source_type="file",
+            input_meta={},
+            mode="full",
+        ))
+        # For non-PDF, full mode should fall back to describe_images
+        assert _server.describe_embedded_images.called, "describe_images should be called for non-PDF in full mode"

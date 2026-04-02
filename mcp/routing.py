@@ -48,6 +48,7 @@ from settings import (
     MAX_DESCRIBE_IMAGES,
     CONVERT_TIMEOUT_SECONDS,
     BRIX_URL,
+    PAGE_DESCRIBE_MAX_PAGES,
 )
 from utils import (
     _get,
@@ -70,6 +71,9 @@ from converters.images import (
     describe_embedded_images,
     insert_image_descriptions,
     render_first_page_as_image,
+    render_pdf_pages_as_images,
+    describe_page_images,
+    insert_page_descriptions,
 )
 from converters.pdf import (
     is_scanned_pdf,
@@ -159,6 +163,7 @@ async def convert_auto(
     prompt: Optional[str] = None,
     language: str = "de",
     describe_images: bool = False,
+    describe_pages: bool = False,
     classify: bool = False,
     classify_categories: list[str] | None = None,
     extract_schema: Optional[dict] = None,
@@ -188,6 +193,7 @@ async def convert_auto(
         prompt=prompt,
         language=language,
         describe_images=describe_images,
+        describe_pages=describe_pages,
         classify=classify,
         classify_categories=classify_categories,
         extract_schema=extract_schema,
@@ -215,6 +221,7 @@ async def _convert_auto_impl(
     prompt: Optional[str] = None,
     language: str = "de",
     describe_images: bool = False,
+    describe_pages: bool = False,
     classify: bool = False,
     classify_categories: list[str] | None = None,
     extract_schema: Optional[dict] = None,
@@ -278,8 +285,16 @@ async def _convert_auto_impl(
 
     _update_progress("start", filename, 0)
 
-    # T-DAI-015: Mode-Resolution — 'full' enables all features
+    # T-DAI-030: Mode-Resolution — 'full' = page-rendering, 'deep' = full + Einzelbilder
     if mode == "full":
+        describe_pages = True
+        accuracy = "high"
+        classify = True
+        ocr_correct = True
+        auto_extract = True
+        chunk = True
+    elif mode == "deep":
+        describe_pages = True
         describe_images = True
         accuracy = "high"
         classify = True
@@ -300,6 +315,7 @@ async def _convert_auto_impl(
                 "filename": filename,
                 "language": language,
                 "describe_images": describe_images,
+                "describe_pages": describe_pages,
                 "classify": classify,
                 "classify_categories": str(classify_categories),
                 "extract_schema": str(sorted(extract_schema.items()) if extract_schema else None),
@@ -374,6 +390,10 @@ async def _convert_auto_impl(
     _describe_imgs = _get("describe_embedded_images", describe_embedded_images)
     _insert_img_desc = _get("insert_image_descriptions", insert_image_descriptions)
     _render_page = _get("render_first_page_as_image", render_first_page_as_image)
+    _render_pdf_pages = _get("render_pdf_pages_as_images", render_pdf_pages_as_images)
+    _describe_page_imgs = _get("describe_page_images", describe_page_images)
+    _insert_page_desc = _get("insert_page_descriptions", insert_page_descriptions)
+    _max_describe_pages = _get("PAGE_DESCRIBE_MAX_PAGES", PAGE_DESCRIBE_MAX_PAGES)
     _is_scanned = _get("is_scanned_pdf", is_scanned_pdf)
     _convert_scanned = _get("convert_scanned_pdf", convert_scanned_pdf)
     _embed_ocr = _get("embed_ocr_in_pdf", embed_ocr_in_pdf)
@@ -385,6 +405,10 @@ async def _convert_auto_impl(
 
     ext = _get_file_extension(filename)
     mimetype = _detect_mimetype(file_data) or _get_mimetype(Path(filename))
+
+    # T-DAI-030: Non-PDF Fallback — Page-Rendering nur für PDFs, sonst Einzelbilder
+    if describe_pages and ext != ".pdf":
+        describe_images = True
 
     meta = {
         **input_meta,
@@ -862,6 +886,27 @@ async def _convert_auto_impl(
                 markdown = result["markdown"]
                 markitdown_pipeline_steps: list[str] = ["markitdown"]
 
+                # T-DAI-030: Page-Level Vision-Beschreibung für PDFs
+                if describe_pages and ext == ".pdf":
+                    log.info("page_rendering_start", file=filename)
+                    _page_images = _render_pdf_pages(temp_path, page_indices=_page_indices)
+                    if _page_images:
+                        if len(_page_images) > _max_describe_pages:
+                            log.warning("pages_truncated", file=filename, total=len(_page_images), limit=_max_describe_pages)
+                            _page_images = _page_images[:_max_describe_pages]
+                            meta["pages_truncated"] = True
+                        _update_progress("describe_pages", f"{len(_page_images)} pages to describe", 25)
+                        import inspect as _insp_pages
+                        _dp_kwargs: dict = {"language": language}
+                        _dp_sig = _insp_pages.signature(_describe_page_imgs)
+                        if "progress_callback" in _dp_sig.parameters:
+                            _dp_kwargs["progress_callback"] = lambda detail, pct: _update_progress("describe_page", detail, pct)
+                        _page_descs = await _describe_page_imgs(_page_images, **_dp_kwargs)
+                        markdown = _insert_page_desc(markdown, _page_descs)
+                        meta["pages_described"] = len(_page_descs)
+                        markitdown_pipeline_steps.append("page_descriptions")
+                        log.info("page_rendering_done", file=filename, count=len(_page_descs))
+
                 # Eingebettete Bilder beschreiben (DOCX, PPTX, PDF, ODT, ODP, HTML)
                 _DESCRIBE_IMGS_EXTS = {
                     ".docx", ".doc", ".pptx", ".ppt",
@@ -1207,7 +1252,7 @@ def _build_tips_dict() -> dict:
             "chunk_size": {"type": "int", "default": 512, "description": "Approximate chunk size in tokens"},
             "language": {"type": "str", "default": "de", "description": "Language for Vision/OCR responses"},
             "zugferd": {"type": "bool", "default": "auto", "description": "Extract ZUGFeRD/Factur-X e-invoice data from PDF (auto-detected, 100% accuracy, no LLM required)"},
-            "mode": {"values": ["default", "full"], "default": "default", "description": "full enables all features in one call (describe_images, accuracy=high, classify, ocr_correct, auto_extract, chunk)"},
+            "mode": {"values": ["default", "full", "deep"], "default": "default", "description": "full enables page-level rendering for PDFs + all features (accuracy=high, classify, ocr_correct, auto_extract, chunk). deep adds per-image extraction with classification (diagram→Mermaid, chart→table, photo→description)."},
             "prompt": {"type": "str", "default": None, "description": "Custom prompt for Vision analysis (images only)"},
             "classify_categories": {"type": "list", "default": None, "description": "Custom classification categories (requires classify=true)"},
             "output_format": {"values": ["markdown", "html", "text"], "default": "markdown", "description": "Output format. html includes Mermaid rendering, CSS, syntax highlighting. text strips all Markdown syntax."},

@@ -77,6 +77,8 @@ async def mcp_convert(
     To CLASSIFY the document type, add classify=true.
     To DESCRIBE IMAGES in DOCX/PPTX, add describe_images=true.
     For SCANNED PDFs, use accuracy='high' for best results.
+    For mode='full': page-level rendering for PDFs (faster, sees full page context).
+    For mode='deep': like full, plus per-image extraction with classification (best for technical docs).
     To embed OCR text as searchable layer in scanned PDFs, add ocr_embed=true.
 
     Examples:
@@ -110,7 +112,7 @@ async def mcp_convert(
         prompt: Optionaler Custom-Prompt für Vision.
         auto_extract: Wenn True, wird der Dokumenttyp klassifiziert, ein passendes Template gesucht und strukturierte Daten extrahiert — alles in einem Schritt.
         min_confidence: Minimale Klassifizierungs-Konfidenz für auto_extract (Default: 0.7).
-        mode: Processing mode. 'default': use individual parameter settings. 'full': enable all features (describe_images, accuracy=high, classify, ocr_correct, auto_extract, chunk).
+        mode: Processing mode. 'default': use individual parameter settings. 'full': enable all features with page-level rendering for PDFs (faster, sees full page context). Enables: describe_pages, accuracy=high, classify, ocr_correct, auto_extract, chunk. 'deep': like full, plus per-image extraction with classification (diagram->Mermaid, chart->data table, photo->description, text_scan->OCR). Use for technical documents where individual image analysis matters.
         pages: Seitenauswahl für PDFs. Syntax: '1-3', '7,14,22', '10-20,!15'. Null = alle Seiten.
     """
     # Patchable symbols via _get() for test-patchability
@@ -415,7 +417,7 @@ async def mcp_convert_folder(
         prompt: Custom Prompt für Vision-Analyse.
         template: Vordefinierter Template-Name als Alternative zu extract_schema.
         min_confidence: Minimale Klassifizierungs-Konfidenz für auto_extract (Default: 0.7).
-        mode: Optionaler Modus-Hint für zukünftige Erweiterungen.
+        mode: Processing mode. 'default': use individual parameter settings. 'full': enable all features with page-level rendering for PDFs. 'deep': like full, plus per-image extraction with classification.
     """
     _resolve_path = _get("resolve_path", resolve_path)
     _convert_folder = _get("convert_folder_contents", convert_folder_contents)

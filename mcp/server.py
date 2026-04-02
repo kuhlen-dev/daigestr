@@ -89,6 +89,9 @@ from converters.images import (
     describe_embedded_images,
     insert_image_descriptions,
     render_first_page_as_image,
+    render_pdf_pages_as_images,
+    describe_page_images,
+    insert_page_descriptions,
 )
 from converters.pdf import (
     extract_tables_with_pdfplumber,

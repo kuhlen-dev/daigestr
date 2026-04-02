@@ -332,7 +332,7 @@ def extract_images_from_pdf(
                 try:
                     pix = fitz.Pixmap(doc, xref)
                     # Konvertiere zu RGB falls nötig (z.B. CMYK oder Graustufen mit Alpha)
-                    if pix.n > 4:
+                    if pix.n >= 4:
                         pix = fitz.Pixmap(fitz.csRGB, pix)
                     width = pix.width
                     height = pix.height
@@ -680,6 +680,8 @@ async def describe_embedded_images(
     for i, image in enumerate(images):
         name = image["name"]
         data = image["data"]
+        # T-DAI-030: Resize vor Vision-API — spart Tokens und beschleunigt Calls
+        data, _resize_meta = _get("resize_image_if_needed", resize_image_if_needed)(data)
         mimetype = _get("detect_mimetype_from_bytes", detect_mimetype_from_bytes)(data) or "image/png"
         log.info("describing_embedded_image", name=name, size=len(data))
         _progress = int(30 + 40 * i / total) if total else 30
@@ -867,3 +869,181 @@ def render_first_page_as_image(file_path: Path) -> Optional[tuple[bytes, str]]:
     except Exception as e:
         log.warning("render_first_page_failed", error=str(e))
         return None
+
+
+def render_pdf_pages_as_images(
+    file_path: Path,
+    page_indices: Optional[list[int]] = None,
+) -> list[dict]:
+    """Rendert PDF-Seiten als Bilder für Page-Level Vision-Beschreibung.
+
+    Args:
+        file_path: Pfad zur PDF-Datei.
+        page_indices: Optionale Liste von 0-basierten Seiten-Indices. Wenn None, alle Seiten.
+
+    Returns:
+        Liste von Dicts mit 'name', 'data' (bytes), 'page_number'.
+    """
+    results: list[dict] = []
+    try:
+        if not _get("PDF2IMAGE_AVAILABLE", PDF2IMAGE_AVAILABLE):
+            log.warning("render_pdf_pages_skipped_no_pdf2image")
+            return results
+        import fitz  # noqa: PLC0415
+        doc = fitz.open(str(file_path))
+        total_pages = len(doc)
+        doc.close()
+
+        selected = (
+            [p for p in range(total_pages) if p in set(page_indices)]
+            if page_indices is not None
+            else list(range(total_pages))
+        )
+
+        for page_num in selected:
+            try:
+                images = _get("convert_from_path", convert_from_path)(
+                    str(file_path),
+                    dpi=_get("PDF_RENDER_DPI", PDF_RENDER_DPI),
+                    first_page=page_num + 1,  # pdf2image ist 1-basiert
+                    last_page=page_num + 1,
+                )
+                if not images:
+                    continue
+                page_img = images[0]
+                max_w = _get("IMAGE_MAX_WIDTH", IMAGE_MAX_WIDTH)
+                if page_img.width > max_w:
+                    ratio = max_w / page_img.width
+                    new_height = int(page_img.height * ratio)
+                    page_img = page_img.resize((max_w, new_height), Image.Resampling.LANCZOS)
+                buf = io.BytesIO()
+                page_img.save(buf, format="PNG")
+                results.append({
+                    "name": f"page_{page_num + 1}.png",
+                    "data": buf.getvalue(),
+                    "page_number": page_num + 1,
+                })
+            except Exception as e:
+                log.warning("render_pdf_page_failed", page=page_num + 1, error=str(e))
+        log.info("pdf_pages_rendered", file=str(file_path), count=len(results))
+    except Exception as e:
+        log.error("render_pdf_pages_error", file=str(file_path), error=str(e))
+    return results
+
+
+async def describe_page_images(
+    page_images: list[dict],
+    language: str = "de",
+    progress_callback=None,
+) -> list[dict]:
+    """Beschreibt gerenderte PDF-Seiten via Vision API.
+
+    Jede Seite wird als Ganzes an die Vision API gesendet — erfasst Layout,
+    Text und Bilder im Kontext. Deutlich schneller als Einzelbild-Extraktion.
+
+    Args:
+        page_images: Liste von Dicts mit 'name', 'data' (bytes), 'page_number'.
+        language: Antwortsprache ('de' oder 'en').
+        progress_callback: Optional callback(detail, progress_pct).
+
+    Returns:
+        Liste von Dicts mit 'name', 'description', 'page_number', 'tokens'.
+    """
+    results: list[dict] = []
+    total = len(page_images)
+
+    _prompt_de = (
+        "Beschreibe den vollständigen Inhalt dieser PDF-Seite: "
+        "Text, Überschriften, Tabellen, Bilder und Layout. "
+        "Gib eine strukturierte Markdown-Zusammenfassung. "
+        "Wenn Bilder oder Grafiken sichtbar sind, beschreibe deren Inhalt kurz."
+    )
+    _prompt_en = (
+        "Describe the complete content of this PDF page: "
+        "text, headings, tables, images and layout. "
+        "Provide a structured Markdown summary. "
+        "If images or graphics are visible, briefly describe their content."
+    )
+    prompt = _prompt_de if language == "de" else _prompt_en
+
+    for i, page in enumerate(page_images):
+        name = page["name"]
+        data = page["data"]
+        page_num = page.get("page_number", i + 1)
+        mimetype = "image/png"
+
+        _progress = int(30 + 40 * i / total) if total else 30
+        log.info("describe_page", page=page_num, size=len(data))
+        if progress_callback:
+            progress_callback(f"page {page_num}/{total}", _progress)
+
+        try:
+            result = await _get("analyze_with_mistral_vision", analyze_with_mistral_vision)(
+                data, mimetype, prompt, language
+            )
+        except Exception as e:
+            log.warning("describe_page_failed", page=page_num, error=str(e))
+            continue
+
+        if result["success"]:
+            results.append({
+                "name": name,
+                "description": result["markdown"],
+                "page_number": page_num,
+                "tokens": result.get("tokens_total", 0),
+            })
+        else:
+            log.warning("describe_page_vision_failed", page=page_num, error=result.get("error"))
+
+    return results
+
+
+def insert_page_descriptions(markdown: str, page_descriptions: list[dict]) -> str:
+    """Fügt seitenweise Vision-Beschreibungen in den Markdown-Text ein.
+
+    Sucht nach Seitenumbruch-Markern (<!-- Page N --> oder ---) und fügt
+    die Beschreibung danach ein. Fallback: alle Beschreibungen am Ende anhängen.
+
+    Args:
+        markdown: Bestehender Markdown-Text.
+        page_descriptions: Liste von Dicts mit 'description', 'page_number'.
+
+    Returns:
+        Markdown mit eingefügten Seitenbeschreibungen.
+    """
+    if not page_descriptions:
+        return markdown
+
+    # Versuche Seitenbeschreibungen nach Page-Markern einzufügen
+    desc_by_page = {d["page_number"]: d["description"] for d in page_descriptions}
+    result = markdown
+
+    import re  # noqa: PLC0415
+    # Suche nach <!-- Page N --> Markern (von MarkItDown/pdfplumber)
+    page_marker_pattern = re.compile(r"(<!-- Page (\d+) -->)")
+    markers_found = list(page_marker_pattern.finditer(result))
+
+    if markers_found:
+        # Rückwärts einfügen damit Positionen stimmen
+        for match in reversed(markers_found):
+            page_num = int(match.group(2))
+            if page_num in desc_by_page:
+                desc_block = (
+                    f"\n\n> **[Seite {page_num} — Visuelle Beschreibung]**\n"
+                    f"> {desc_by_page[page_num].replace(chr(10), chr(10) + '> ')}\n"
+                )
+                insert_pos = match.end()
+                result = result[:insert_pos] + desc_block + result[insert_pos:]
+                del desc_by_page[page_num]
+
+    # Restliche Beschreibungen (keine Marker gefunden) am Ende anhängen
+    if desc_by_page:
+        appendix = "\n\n---\n\n## Visuelle Seitenbeschreibungen\n"
+        for page_num in sorted(desc_by_page.keys()):
+            appendix += (
+                f"\n### Seite {page_num}\n\n"
+                f"{desc_by_page[page_num]}\n"
+            )
+        result += appendix
+
+    return result

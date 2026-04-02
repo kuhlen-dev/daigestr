@@ -53,6 +53,9 @@ IMAGE_MAX_WIDTH = int(os.getenv("IMAGE_MAX_WIDTH", "2048"))
 # Max. Bilder die bei describe_images beschrieben werden (FIX 3 — T-DAI-024)
 MAX_DESCRIBE_IMAGES = int(os.getenv("MAX_DESCRIBE_IMAGES", "50"))
 
+# Max. Seiten die bei describe_pages gerendert werden (T-DAI-030)
+PAGE_DESCRIBE_MAX_PAGES = int(os.getenv("PAGE_DESCRIBE_MAX_PAGES", "50"))
+
 # Timeout für einzelne convert_auto Aufrufe in Sekunden (FIX 4 — T-DAI-024)
 CONVERT_TIMEOUT_SECONDS = int(os.getenv("CONVERT_TIMEOUT_SECONDS", "300"))
 
