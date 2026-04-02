@@ -15,3 +15,10 @@ services:
     volumes:
       - ./data:/data
       - /root/docker/dev-durst-bewerbung/dev-data:/testdata:ro
+    networks:
+      - shared-network
+      - default
+
+networks:
+  shared-network:
+    external: true
