@@ -4,7 +4,7 @@
 
 Most document-to-Markdown tools work fine until you hand them a real-world file: a scanned invoice, a DOCX full of charts, an Excel with merged cells across 12 sheets, or a meeting recording. Then they silently fail, return empty text, or lose all structure. This service fixes that.
 
-Built on Microsoft's [markitdown](https://github.com/microsoft/markitdown), extended with Mistral OCR-3, Vision AI, audio transcription, a Template Registry with auto-extract, and a hybrid routing engine that picks the best tool for each document — automatically. Two interfaces: **MCP server** (for Claude and AI agents) and **REST API** (for n8n, workflows, and custom integrations). Self-hosted in a single Docker container. Current version: **v5.5.0**.
+Built on Microsoft's [markitdown](https://github.com/microsoft/markitdown), extended with Mistral OCR-3, Vision AI, audio transcription, a Template Registry with auto-extract, and a hybrid routing engine that picks the best tool for each document — automatically. Two interfaces: **MCP server** (for Claude and AI agents) and **REST API** (for n8n, workflows, and custom integrations). Self-hosted in a single Docker container. Current version: **v5.6.0**.
 
 ---
 
@@ -230,6 +230,8 @@ graph TD
 ```
 
 The architecture diagram was converted to Mermaid syntax (renderable in GitHub, Obsidian, and most Markdown viewers). The performance chart was extracted as a data table. The team photo received a descriptive caption.
+
+> **Tip:** For PDFs, `mode: "full"` provides a faster alternative — it renders each page as a screenshot and sends it once to Vision API, seeing full page context (layout + text + images together). Use `mode: "deep"` when you need per-image classification as shown above (diagram→Mermaid, chart→table, etc.). For non-PDF formats like DOCX, both modes fall back to individual image description.
 
 ---
 
@@ -842,7 +844,7 @@ The `pipeline_steps` field in the response metadata lists every stage that ran.
 | `min_confidence` | `float` | `0.7` | Minimum classification confidence for auto_extract to use a template (0.0–1.0) |
 | `chunk` | `bool` | `false` | Split output into RAG-ready chunks |
 | `chunk_size` | `int` | `512` | Approximate chunk size in tokens |
-| `mode` | `"default"` \| `"full"` | `"default"` | `"full"` enables all features in one flag: `describe_images`, `accuracy="high"`, `classify`, `ocr_correct`, `auto_extract`, `chunk` |
+| `mode` | `"default"` \| `"full"` \| `"deep"` | `"default"` | `"full"` enables all features and uses **page-level rendering** for PDFs (each page as screenshot → Vision API, ~15 calls for 15 pages instead of ~58). `"deep"` does everything `"full"` does PLUS per-image extraction with classification (diagram→Mermaid, chart→table, photo→description, text_scan→OCR, decorative→skip). For non-PDF formats, both modes fall back to individual image description. |
 | `output_format` | `"markdown"` \| `"html"` \| `"text"` | `"markdown"` | Output format: `"markdown"` (default), `"html"` (rendered with Mermaid.js + highlight.js), `"text"` (plain text, no Markdown syntax) |
 | `describe_images` | `bool` | `false` | Extract and describe embedded images from **all** supported formats: DOCX, PPTX, PDF, ODT, ODP, HTML. Auto-classifies each image: `diagram` → Mermaid syntax, `chart` → data table, `photo` → description, `text_scan` → OCR, `decorative` → skipped. Without this flag, all images appear as `[image]` placeholders. |
 | `ocr_correct` | `bool` | `false` | Run LLM OCR post-correction |
@@ -1130,6 +1132,7 @@ All settings are controlled via environment variables. Copy `.env.example` to `.
 | `IMAGE_MAX_WIDTH` | `2048` | Max image width before resize (px) |
 | `MAX_RETRIES` | `3` | Retry attempts for API calls |
 | `MAX_DESCRIBE_IMAGES` | `50` | Max embedded images to describe per document (crash prevention) |
+| `PAGE_DESCRIBE_MAX_PAGES` | `50` | Max pages to render for page-level description |
 | `SCAN_THRESHOLD_CHARS` | `50` | Avg chars/page below which a PDF is considered a scan |
 
 ### Token Limits
@@ -1420,6 +1423,7 @@ Test modules:
 
 | Version | Date | Highlights |
 |---------|------|-----------|
+| **5.6.0** | April 2026 | `mode: "deep"` for per-image extraction with classification (diagram→Mermaid, chart→table). `mode: "full"` now uses page-level rendering for PDFs (15 API calls vs 58 for a 15-page document). CMYK colorspace fix — CMYK images properly converted to RGB. Embedded image resize before Vision API. `PAGE_DESCRIBE_MAX_PAGES` ENV. Non-PDF fallback to individual image description. |
 | **5.5.0** | March 2026 | Mistral Batch Integration (`POST /v1/prepare-batch`, `POST /v1/apply-batch-results`). Brix detection: hint in `meta.brix_hint` when >10 images detected. Per-image progress in async jobs (`"image 14/50"`). `JOB_TIMEOUT_SECONDS=900` — async jobs fail-safe after 15 min. `BRIX_URL` ENV for Brix reachability check. `DAIGESTR_VERSION` read from Git tag. `CONVERT_TIMEOUT_SECONDS` removed (no internal timeout in `convert_auto`). |
 | **5.4.0** | March 2026 | Async Job API (`POST /v1/convert/async`, `GET /v1/jobs/{id}`, `GET /v1/jobs/{id}/result`, `DELETE /v1/jobs/{id}`, `GET /v1/jobs`). Webhook callback (`webhook_url` parameter on any convert request). |
 | **5.3.0** | March 2026 | PDF page selection (`pages` parameter). Syntax: ranges (`"1-3"`), individual pages (`"7,14"`), exclusions (`"10-20,!15"`). |
