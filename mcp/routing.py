@@ -144,6 +144,43 @@ async def convert_url(url: str) -> dict[str, Any]:
         }
 
 
+async def _apply_normalizer(
+    response: "ConvertResponse",
+    meta: dict,
+    template_name: Optional[str],
+    compact: bool,
+) -> "ConvertResponse":
+    """
+    Führt die Normalisierung nach der Extraktion durch (T-DAI-055).
+
+    Wird nur aufgerufen wenn:
+    - response.extracted ist nicht None
+    - template_name ist nicht None (aus meta.template_used, meta.document_type oder explizitem Template)
+    """
+    if response.extracted is None:
+        return response
+    if not template_name:
+        return response
+    try:
+        from normalizer import normalize
+        norm_result = await normalize(
+            extracted=response.extracted,
+            template_name=template_name,
+            meta=meta,
+            compact=compact,
+        )
+        if norm_result:
+            response.normalized = norm_result.get("normalized")
+            response.normalized_version = norm_result.get("normalized_version")
+            response.normalized_warnings = norm_result.get("normalized_warnings")
+            response.normalized_trace = norm_result.get("normalized_trace")
+            response.normalized_context = norm_result.get("normalized_context")
+            log.info("normalizer_applied", template=template_name, compact=compact)
+    except Exception as exc:
+        log.warning("normalizer_error", template=template_name, error=str(exc))
+    return response
+
+
 def _apply_output_format(response: "ConvertResponse", output_format: str) -> "ConvertResponse":
     """Wendet output_format-Rendering auf eine erfolgreiche ConvertResponse an."""
     if not response.success or not response.markdown:
@@ -182,6 +219,8 @@ async def convert_auto(
     output_format: str = "markdown",
     pages: Optional[str] = None,
     no_cache: bool = False,
+    compact: bool = False,
+    template: Optional[str] = None,
 ) -> ConvertResponse:
     """
     Intelligente Konvertierung basierend auf Dateityp.
@@ -212,6 +251,8 @@ async def convert_auto(
         output_format=output_format,
         pages=pages,
         no_cache=no_cache,
+        compact=compact,
+        template=template,
     )
 
 
@@ -240,6 +281,8 @@ async def _convert_auto_impl(
     output_format: str = "markdown",
     pages: Optional[str] = None,
     no_cache: bool = False,
+    compact: bool = False,
+    template: Optional[str] = None,
 ) -> ConvertResponse:
     """
     Eigentliche Konvertierungslogik.
@@ -609,6 +652,9 @@ async def _convert_auto_impl(
                         })
                 else:
                     log.warning("extract_structured_data_failed_vision", error=extraction.get("error"))
+            # T-DAI-055: Normalisierung nach Extraktion
+            _norm_template = meta.get("template_used") or template or meta.get("document_type")
+            response = await _apply_normalizer(response, meta, _norm_template, compact)
             # FR-MKIT-011: Smart Chunking für RAG
             if chunk:
                 response.chunks = _chunk_md(markdown, chunk_size=chunk_size, source=source)
@@ -711,6 +757,9 @@ async def _convert_auto_impl(
                 else:
                     log.warning("extract_structured_data_failed_audio", error=extraction.get("error"))
 
+            # T-DAI-055: Normalisierung nach Extraktion
+            _norm_template = meta.get("template_used") or template or meta.get("document_type")
+            response = await _apply_normalizer(response, meta, _norm_template, compact)
             # FR-MKIT-011: Smart Chunking für RAG
             if chunk:
                 response.chunks = _chunk_md(markdown, chunk_size=chunk_size, source=source)
@@ -859,6 +908,9 @@ async def _convert_auto_impl(
                                 })
                         else:
                             log.warning("extract_structured_data_failed_scanned_pdf", error=extraction.get("error"))
+                    # T-DAI-055: Normalisierung nach Extraktion
+                    _norm_template = meta.get("template_used") or template or meta.get("document_type")
+                    response = await _apply_normalizer(response, meta, _norm_template, compact)
                     # FR-MKIT-011: Smart Chunking für RAG
                     if chunk:
                         _update_progress("chunk", filename, 90)
@@ -1094,6 +1146,9 @@ async def _convert_auto_impl(
                             })
                     else:
                         log.warning("extract_structured_data_failed_markitdown", error=extraction.get("error"))
+                # T-DAI-055: Normalisierung nach Extraktion
+                _norm_template = meta.get("template_used") or template or meta.get("document_type")
+                response = await _apply_normalizer(response, meta, _norm_template, compact)
                 # FR-MKIT-011: Smart Chunking für RAG
                 if chunk:
                     _update_progress("chunk", filename, 90)

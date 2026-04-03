@@ -80,6 +80,7 @@ from routing import (
     _build_tips_dict,
 )
 from api_rest_audit import audit_router
+from api_rest_normalize import normalize_router, corrections_router, batch_router
 
 log = structlog.get_logger()
 
@@ -135,6 +136,10 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 # Audit Router einbinden
 app.include_router(audit_router)
+# Normalization Admin Routers (T-DAI-056)
+app.include_router(normalize_router)
+app.include_router(corrections_router)
+app.include_router(batch_router)
 
 
 @app.post("/v1/convert", response_model=ConvertResponse)
@@ -218,6 +223,8 @@ async def _api_convert_impl(request: ConvertRequest) -> ConvertResponse:
             output_format=request.output_format,
             pages=request.pages,
             no_cache=request.no_cache,
+            compact=request.compact,
+            template=request.template,
         )
 
     # Base64
@@ -260,6 +267,8 @@ async def _api_convert_impl(request: ConvertRequest) -> ConvertResponse:
             output_format=request.output_format,
             pages=request.pages,
             no_cache=request.no_cache,
+            compact=request.compact,
+            template=request.template,
         )
 
     # URL — T-MKIT-022: durch convert_auto() routen für vollständige Pipeline
@@ -318,6 +327,10 @@ async def _api_convert_impl(request: ConvertRequest) -> ConvertResponse:
                         response.extracted = extraction["extracted"]
                     else:
                         log.warning("extract_structured_data_failed_url_html", error=extraction.get("error"))
+                # T-DAI-055: Normalisierung nach URL-HTML-Extraktion
+                from routing import _apply_normalizer as _url_normalizer
+                _url_norm_template = meta.get("template_used") or request.template or meta.get("document_type")
+                response = await _url_normalizer(response, meta, _url_norm_template, getattr(request, "compact", False))
                 if request.chunk:
                     response.chunks = _chunk_md(markdown_text, chunk_size=request.chunk_size, source=request.url)
                 return response
@@ -373,6 +386,8 @@ async def _api_convert_impl(request: ConvertRequest) -> ConvertResponse:
                     mode=request.mode,
                     output_format=request.output_format,
                     pages=request.pages,
+                    compact=request.compact,
+                    template=request.template,
                 )
             finally:
                 temp_path.unlink(missing_ok=True)
@@ -900,6 +915,8 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
                     output_format=request.output_format,
                     pages=request.pages,
                     no_cache=request.no_cache,
+                    compact=getattr(request, "compact", False),
+                    template=getattr(request, "template", None),
                 ),
                 timeout=float(_job_timeout),
             )

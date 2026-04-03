@@ -195,6 +195,11 @@ from settings import (  # noqa: F401
 )
 from api_rest_audit import audit_router  # noqa: F401 — re-exported for test patchability
 
+# Re-export normalize routers and normalizer (T-DAI-055/T-DAI-056)
+from api_rest_normalize import normalize_router, corrections_router, batch_router  # noqa: F401
+from normalizer import normalize  # noqa: F401
+from normalizer_cache import cache_reset as normalizer_cache_reset  # noqa: F401
+
 # Re-export templates_db functions for backwards-compatibility
 from templates_db import (  # noqa: F401
     init_templates_db,

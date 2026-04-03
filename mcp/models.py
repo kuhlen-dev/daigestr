@@ -144,6 +144,13 @@ class ConvertResponse(BaseModel):
     chunks: Optional[list[dict[str, Any]]] = Field(None, description="RAG-Chunks (nur wenn chunk=True gesetzt, FR-MKIT-011)")
     enriched_pdf: Optional[str] = Field(None, description="Base64-encoded searchable PDF with embedded OCR text layer. Only present when ocr_embed=true and the document is a scanned PDF.")
 
+    # Normalisierungs-Felder (T-DAI-055)
+    normalized: Optional[dict[str, Any]] = Field(None, description="Normalisierte Felder aus der Extraktion (nur wenn Template verwendet und Normalisierungs-Mapping vorhanden)")
+    normalized_version: Optional[str] = Field(None, description="Version-Hash der Normalisierungs-Regeln")
+    normalized_warnings: Optional[list[str]] = Field(None, description="Warnungen aus der Normalisierung (fehlende Felder, Validierungsfehler, etc.)")
+    normalized_trace: Optional[list[dict[str, Any]]] = Field(None, description="Trace-Log der Normalisierungsschritte (Feld → Regel → Konfidenz)")
+    normalized_context: Optional[dict[str, Any]] = Field(None, description="Kontext aus der Normalisierung (vendor_country, recipient_country, tax_country)")
+
 
 class HealthResponse(BaseModel):
     """Antwort für Health-Check Endpoint."""
@@ -247,6 +254,9 @@ class ConvertRequest(BaseModel):
 
     # Cache control
     no_cache: bool = Field(False, description="When true, bypass cache and force fresh conversion. Result is still cached for future requests.")
+
+    # Normalisierung (T-DAI-055)
+    compact: bool = Field(False, description="When true, removes null fields from the normalized output to reduce response size.")
 
 
 class ExtractRequest(BaseModel):
