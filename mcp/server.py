@@ -259,13 +259,13 @@ if __name__ == "__main__":
     from settings import (
         VERSION, DATA_DIR, MISTRAL_VISION_MODEL, MISTRAL_API_KEY,
         MCP_PORT, REST_PORT, MAX_FILE_SIZE_MB, IMAGE_MAX_WIDTH, MAX_RETRIES,
-        TEMPLATES_DB_PATH,
+        DATABASE_URL,
     )
 
-    # Initialize Template Registry DB (T-MKIT-035)
+    # Initialize Template Registry DB (PostgreSQL — T-DAI-038)
     try:
         init_templates_db()
-        log.info("template_registry_initialized", db_path=str(TEMPLATES_DB_PATH))
+        log.info("template_registry_initialized", database_url=DATABASE_URL)
     except Exception as _db_init_err:
         log.warning("template_registry_init_failed", error=str(_db_init_err))
 

@@ -29,7 +29,7 @@ This service wraps markitdown and routes each document through the best availabl
 - **Document Intelligence** — classify document type with confidence score, extract structured fields against any JSON Schema, quality scoring on every response.
 - **High-Accuracy Pipeline** — OCR-3 → LLM correction → dual-pass Vision cross-validation → schema extraction. The original image goes back to the Vision model alongside the OCR output so structural errors and column misalignments get caught and fixed.
 - **Audio and video** — faster-whisper with automatic language detection, ffmpeg audio extraction, model caching.
-- **Template Registry with Auto-Extract.** SQLite-backed template database with CRUD API. `auto_extract: true` classifies the document, finds the matching template, and extracts structured data — one call, zero configuration. Every extraction includes a `_meta` block with tax relevance.
+- **Template Registry with Auto-Extract.** PostgreSQL-backed template database with CRUD API. `auto_extract: true` classifies the document, finds the matching template, and extracts structured data — one call, zero configuration. Every extraction includes a `_meta` block with tax relevance.
 - **37 configurable ENV variables.** Nothing is hardcoded. Model selection, timeouts, thresholds, chunk sizes — all adjustable without touching source code.
 
 ---
@@ -247,7 +247,7 @@ The architecture diagram was converted to Mermaid syntax (renderable in GitHub, 
 | Document classification | No | Partial | Yes | Yes (configurable categories) |
 | Schema extraction | No | No | Partial | Yes (any JSON Schema + Template Registry) |
 | Auto-extract (classify + extract) | No | No | Partial | Yes (one call, zero config) |
-| Template Registry (CRUD API) | No | No | No | Yes (SQLite + bulk import) |
+| Template Registry (CRUD API) | No | No | No | Yes (PostgreSQL + bulk import) |
 | Async jobs + webhook | No | No | Yes | Yes (job queue + webhook callback) |
 | PDF page selection | No | No | Partial | Yes (ranges, exclusions: `"1-3,!2"`) |
 | Request-level cache | No | No | No | Yes (configurable TTL, clearable via API) |
@@ -384,7 +384,7 @@ curl -X POST http://localhost:18006/v1/convert \
 
 ### Docker Compose Configuration
 
-The `docker-compose.yml` is minimal by design:
+The `docker-compose.yml` defines two services:
 
 ```yaml
 services:
@@ -396,10 +396,19 @@ services:
       - "18005:8080"        # MCP Server (SSE)
       - "18006:8081"        # REST API (Swagger at /docs)
     volumes:
-      - ./data:/data        # Document storage + Template Registry DB
+      - ./data:/data        # Document storage
+
+  daigestr-postgres:
+    image: postgres:16
+    env_file: .env          # POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+    ports:
+      - "${POSTGRES_HOST_PORT:-15432}:5432"
+    volumes:
+      - daigestr-pgdata:/var/lib/postgresql/data
+      - ./mcp/seed.sql:/docker-entrypoint-initdb.d/seed.sql
 ```
 
-The Template Registry database (`templates.db`) is stored in the `/data` volume and persists across container restarts. On first start, `seed.sql` populates the database with default templates. All server settings are controlled through `.env`. See `.env.example` for the complete list of available variables with descriptions.
+The Template Registry, request cache, and async jobs are stored in the `daigestr-postgres` PostgreSQL container and persist across restarts via the `daigestr-pgdata` volume. On first start, `seed.sql` seeds the database with default templates. All server settings are controlled through `.env`. See `.env.example` for the complete list of available variables with descriptions.
 
 ### Dev Mode
 
@@ -957,7 +966,7 @@ On error:
 
 ## Template Registry
 
-Templates live in a **SQLite database** — not hardcoded. The registry ships with 3 seed templates (`invoice`, `cv`, `contract`) and can be extended to 100+ templates via the CRUD API. Each template contains a JSON Schema for extraction, classification keywords, and optional tax relevance metadata.
+Templates live in a **PostgreSQL database** (`daigestr-postgres` container) — not hardcoded. The registry ships with 3 seed templates (`invoice`, `cv`, `contract`) and can be extended to 100+ templates via the CRUD API. Each template contains a JSON Schema for extraction, classification keywords, and optional tax relevance metadata.
 
 ### How It Works
 
@@ -965,7 +974,7 @@ Templates live in a **SQLite database** — not hardcoded. The registry ships wi
 2. **Explicit Template** (`template: "telecom_bill"`): Skip classification and use a specific template directly.
 3. **Custom Schema** (`extract_schema: {...}`): Pass any JSON Schema for ad-hoc extraction without a registered template.
 
-### Template Schema (SQLite)
+### Template Schema (PostgreSQL)
 
 Each template in the registry has these fields:
 
@@ -1291,7 +1300,7 @@ The service runs as a **single Docker container** (`daigestr`) with a modular Py
 | `converters/office.py` | markitdown wrapper (Excel formulas, DOCX extras) |
 | `converters/audio.py` | ffmpeg extraction + faster-whisper transcription |
 | `converters/email.py` | EML parsing, routing metadata, calendar events |
-| `templates_db.py` | SQLite: templates, prompts, scoring weights, request cache |
+| `templates_db.py` | PostgreSQL (psycopg2): templates, prompts, scoring weights, request cache, async jobs |
 | `api_rest.py` | FastAPI app, all REST endpoints |
 | `api_mcp.py` | FastMCP instance, all MCP tools |
 | `renderers/html.py` | Markdown → full HTML (Mermaid.js, highlight.js, CSS) |
@@ -1346,7 +1355,7 @@ The service runs as a **single Docker container** (`daigestr`) with a modular Py
 │          ┌────────────────────────┐                 │
 │          │  templates_db.py       │                 │
 │          │  Template Registry     │                 │
-│          │  (SQLite + CRUD API)   │                 │
+│          │  (PostgreSQL + CRUD)   │                 │
 │          │  seed.sql → 3 default  │                 │
 │          │  + bulk import → 100+  │                 │
 │          │  Request Cache (TTL)   │                 │
@@ -1425,6 +1434,8 @@ Test modules:
 |---------|------|-----------|
 | **5.6.0** | April 2026 | `mode: "deep"` for per-image extraction with classification (diagram→Mermaid, chart→table). `mode: "full"` now uses page-level rendering for PDFs (15 API calls vs 58 for a 15-page document). CMYK colorspace fix — CMYK images properly converted to RGB. Embedded image resize before Vision API. `PAGE_DESCRIBE_MAX_PAGES` ENV. Non-PDF fallback to individual image description. |
 | **5.5.0** | March 2026 | Mistral Batch Integration (`POST /v1/prepare-batch`, `POST /v1/apply-batch-results`). Brix detection: hint in `meta.brix_hint` when >10 images detected. Per-image progress in async jobs (`"image 14/50"`). `JOB_TIMEOUT_SECONDS=900` — async jobs fail-safe after 15 min. `BRIX_URL` ENV for Brix reachability check. `DAIGESTR_VERSION` read from Git tag. `CONVERT_TIMEOUT_SECONDS` removed (no internal timeout in `convert_auto`). |
+| **5.9.0** | April 2026 | PostgreSQL migration — Template Registry, request cache, and async jobs migrated from SQLite to PostgreSQL (`daigestr-postgres` container). `DATABASE_URL`, `DB_POOL_MIN`, `DB_POOL_MAX` ENV variables. psycopg2 connection pool. Zero-downtime migration via `seed.sql` + `init_templates_db()`. |
+| **5.5.0** | March 2026 | Mistral Batch Integration (`/v1/prepare-batch`, `/v1/apply-batch-results`). Async job progress updates at every pipeline step. Per-image progress callback. 60s vision timeout. Job timeout (`JOB_TIMEOUT_SECONDS`). |
 | **5.4.0** | March 2026 | Async Job API (`POST /v1/convert/async`, `GET /v1/jobs/{id}`, `GET /v1/jobs/{id}/result`, `DELETE /v1/jobs/{id}`, `GET /v1/jobs`). Webhook callback (`webhook_url` parameter on any convert request). |
 | **5.3.0** | March 2026 | PDF page selection (`pages` parameter). Syntax: ranges (`"1-3"`), individual pages (`"7,14"`), exclusions (`"10-20,!15"`). |
 | **5.2.2** | March 2026 | Crash recovery: global exception handler, REST-thread watchdog, `MAX_DESCRIBE_IMAGES=50` limit, `CONVERT_TIMEOUT_SECONDS=300` global timeout. |
