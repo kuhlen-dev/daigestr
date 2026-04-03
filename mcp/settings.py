@@ -203,3 +203,12 @@ DB_POOL_MAX = int(os.getenv("DB_POOL_MAX", "5"))
 AUDIT_ENABLED = os.getenv("AUDIT_ENABLED", "true").lower() == "true"
 AUDIT_RETENTION_DAYS = int(os.getenv("AUDIT_RETENTION_DAYS", "30"))
 AUDIT_API_ENABLED = os.getenv("AUDIT_API_ENABLED", "true").lower() == "true"
+
+# =============================================================================
+# Normalization — T-DAI-052
+# =============================================================================
+
+NORMALIZE_CACHE_TTL_SECONDS = int(os.getenv("NORMALIZE_CACHE_TTL_SECONDS", "60"))
+NORMALIZE_CACHE_ENABLED = os.getenv("NORMALIZE_CACHE_ENABLED", "true").lower() == "true"
+NORMALIZE_FALLBACK_COUNTRY = os.getenv("NORMALIZE_FALLBACK_COUNTRY", "DE")
+NORMALIZE_PLAUSIBILITY_TOLERANCE = float(os.getenv("NORMALIZE_PLAUSIBILITY_TOLERANCE", "0.01"))

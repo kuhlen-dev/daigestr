@@ -174,6 +174,11 @@ try:
 except ImportError:
     convert_from_path = None  # type: ignore[assignment]
 
+# Re-export normalizer_db for backwards-compatibility (T-DAI-050)
+from normalizer_db import (  # noqa: F401
+    init_normalization_db,
+)
+
 # Re-export audit_db functions and settings for backwards-compatibility (T-DAI-070)
 from audit_db import (  # noqa: F401
     init_audit_db,
@@ -291,6 +296,13 @@ if __name__ == "__main__":
         log.info("audit_db_initialized", database_url=DATABASE_URL)
     except Exception as _audit_init_err:
         log.warning("audit_db_init_failed", error=str(_audit_init_err))
+
+    # Initialize Normalization DB (T-DAI-050)
+    try:
+        init_normalization_db()
+        log.info("normalization_db_initialized", database_url=DATABASE_URL)
+    except Exception as _norm_init_err:
+        log.warning("normalization_db_init_failed", error=str(_norm_init_err))
 
     log.info("server_starting",
              version=VERSION,
