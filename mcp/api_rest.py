@@ -561,7 +561,6 @@ async def api_bulk_templates(request: dict) -> dict:
 @app.post("/v1/templates")
 async def api_create_template(request: dict) -> dict:
     """Erstellt ein neues Template (T-MKIT-035)."""
-    import sqlite3 as _sqlite3  # noqa: F401
     if "id" not in request or "schema" not in request:
         raise HTTPException(status_code=400, detail="'id' and 'schema' are required")
     conn = get_db_connection()
