@@ -1,4 +1,24 @@
 services:
+  daigestr-postgres:
+    image: postgres:16-alpine
+    container_name: daigestr-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-daigestr}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-daigestr}
+      POSTGRES_DB: ${POSTGRES_DB:-daigestr}
+    ports:
+      - "${POSTGRES_HOST_PORT:-15432}:5432"
+    volumes:
+      - daigestr-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-daigestr}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
+
   daigestr:
     build:
       context: ./mcp
@@ -7,17 +27,22 @@ services:
     container_name: daigestr
     restart: unless-stopped
     env_file: .env
-    ports:
-      - "18005:8080"
-      - "18006:8081"
+    # Ports in docker-compose.override.yml (localhost-only)
     environment:
-      - DAIGESTR_VERSION=5.6.0
+      - DAIGESTR_VERSION=${DAIGESTR_VERSION:-dev}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-daigestr}:${POSTGRES_PASSWORD:-daigestr}@daigestr-postgres:5432/${POSTGRES_DB:-daigestr}
+    depends_on:
+      daigestr-postgres:
+        condition: service_healthy
     volumes:
       - ./data:/data
       - /root/docker/dev-durst-bewerbung/dev-data:/testdata:ro
     networks:
       - shared-network
       - default
+
+volumes:
+  daigestr-pgdata:
 
 networks:
   shared-network:
