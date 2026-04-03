@@ -156,3 +156,48 @@ def load_server_module(use_real_pil: bool = False, extra_patches: dict | None = 
 def run_async(coro):
     """Führt eine Coroutine synchron aus (für Pytest ohne asyncio-Plugin)."""
     return asyncio.get_event_loop().run_until_complete(coro)
+
+
+# ---------------------------------------------------------------------------
+# sys.modules Isolation: verhindert Mock-Verschmutzung zwischen Test-Modulen
+# ---------------------------------------------------------------------------
+
+# Die Namen aller Module die load_server_module() in sys.modules setzt
+# (Stubs + Server-Submodule). Diese müssen nach jedem Test-Modul
+# aus sys.modules entfernt werden, damit das nächste Modul sauber startet.
+_SERVER_MODULE_NAMES = (
+    "uvloop", "magic", "markitdown", "fastmcp",
+    "uvicorn", "httpx", "tenacity",
+    "structlog", "fastapi", "fastapi.exceptions", "fastapi.responses",
+    "pdfplumber", "pdf2image", "PIL", "PIL.Image",
+    "server", "settings", "logging_setup",
+    "utils", "mistral_client",
+    "converters", "converters.images", "converters.pdf", "converters.office",
+    "converters.audio", "converters.email", "intelligence",
+    "templates_db", "routing", "api_rest", "api_mcp",
+    "models", "renderers", "renderers.html", "renderers.text",
+)
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _restore_sys_modules():
+    """
+    Snapshot der Server-/Stub-Module VOR dem Test-Modul — Restore DANACH.
+
+    Verhindert, dass Mock-Einträge aus load_server_module() eines Moduls
+    in nachfolgende Test-Module durchsickern.
+
+    scope="module" → einmal pro Test-Datei, nicht pro Test-Funktion.
+    autouse=True → gilt automatisch für alle Test-Module.
+    """
+    # Snapshot: Welche dieser Modul-Namen waren VOR diesem Test-Modul gesetzt?
+    snapshot = {name: sys.modules.get(name) for name in _SERVER_MODULE_NAMES}
+    yield
+    # Restore: Jeden gespeicherten Eintrag wiederherstellen
+    for name, original_val in snapshot.items():
+        if original_val is None:
+            # War nicht gesetzt → entfernen falls jetzt gesetzt
+            sys.modules.pop(name, None)
+        else:
+            # War gesetzt → Originalwert wiederherstellen
+            sys.modules[name] = original_val
