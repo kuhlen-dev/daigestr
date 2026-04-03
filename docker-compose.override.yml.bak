@@ -1,0 +1,27 @@
+# Local override — adds shared-network, localhost binding, dev-mode volumes
+services:
+  daigestr:
+    ports:
+      - "127.0.0.1:18005:8080"
+      - "127.0.0.1:18006:8081"
+    volumes:
+      - ./mcp/server.py:/app/server.py
+      - ./mcp/settings.py:/app/settings.py
+      - ./mcp/logging_setup.py:/app/logging_setup.py
+      - ./mcp/utils.py:/app/utils.py
+      - ./mcp/mistral_client.py:/app/mistral_client.py
+      - ./mcp/intelligence.py:/app/intelligence.py
+      - ./mcp/templates_db.py:/app/templates_db.py
+      - ./mcp/routing.py:/app/routing.py
+      - ./mcp/api_rest.py:/app/api_rest.py
+      - ./mcp/api_mcp.py:/app/api_mcp.py
+      - ./mcp/models.py:/app/models.py
+      - ./mcp/seed.sql:/app/seed.sql
+      - ./mcp/converters:/app/converters
+      - ./mcp/renderers:/app/renderers
+    networks:
+      - shared-network
+
+networks:
+  shared-network:
+    external: true
