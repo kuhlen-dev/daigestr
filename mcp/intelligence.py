@@ -17,7 +17,6 @@ Enthält LLM-gestützte Analyse-Funktionen:
 import copy
 import json
 import re
-import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -39,7 +38,6 @@ from settings import (
     OCR_CORRECT_MAX_TOKENS,
     CLASSIFY_MAX_CHARS,
     EXTRACT_MAX_CHARS,
-    TEMPLATES_DB_PATH,
     DEFAULT_CLASSIFY_CATEGORIES,
     _classify_categories_cache,
     _CLASSIFY_CACHE_TTL,
@@ -113,28 +111,10 @@ Datentyp-Konventionen für die Extraktion:
 
 
 # =============================================================================
-# DB Helpers (benötigt von classify, find_matching_template, _apply_auto_extract)
+# DB Helpers — importiert aus templates_db (T-DAI-034)
 # =============================================================================
 
-def get_db_connection() -> sqlite3.Connection:
-    _db_path = _get("TEMPLATES_DB_PATH", TEMPLATES_DB_PATH)
-    conn = sqlite3.connect(str(_db_path))
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def get_template_by_id(template_id: str) -> Optional[dict]:
-    """Lädt ein Template aus der DB. Gibt None zurück wenn nicht gefunden oder disabled."""
-    conn = _get("get_db_connection", get_db_connection)()
-    row = conn.execute("SELECT * FROM template WHERE id = ? AND enabled = 1", (template_id,)).fetchone()
-    conn.close()
-    if not row:
-        return None
-    result = dict(row)
-    result["schema"] = json.loads(result["schema"])
-    if result.get("field_descriptions"):
-        result["field_descriptions"] = json.loads(result["field_descriptions"])
-    return result
+from templates_db import get_db_connection, get_template_by_id  # noqa: E402
 
 
 # =============================================================================
@@ -156,12 +136,17 @@ def get_classify_categories_from_db() -> list[str]:
         return cache["categories"]
 
     try:
+        from templates_db import _return_conn
         _get_db_connection = _get("get_db_connection", get_db_connection)
         conn = _get_db_connection()
-        rows = conn.execute(
-            "SELECT id, display_name FROM template WHERE enabled = 1 ORDER BY priority DESC, id"
-        ).fetchall()
-        conn.close()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT id, display_name FROM template WHERE enabled = 1 ORDER BY priority DESC, id"
+            )
+            rows = cur.fetchall()
+        finally:
+            _return_conn(conn)
         if rows:
             categories = [f"{r['id']}: {r['display_name']}" for r in rows]
             cache["categories"] = categories
@@ -1166,6 +1151,7 @@ def find_matching_template(document_type: str, markdown: str) -> Optional[dict]:
     Returns:
         Template-Dict (mit geparstem 'schema') oder None.
     """
+    from templates_db import _return_conn
     _get_template_by_id = _get("get_template_by_id", get_template_by_id)
     _get_db_connection = _get("get_db_connection", get_db_connection)
 
@@ -1177,10 +1163,14 @@ def find_matching_template(document_type: str, markdown: str) -> Optional[dict]:
     # Schritt 2: Keyword-Match
     try:
         conn = _get_db_connection()
-        rows = conn.execute(
-            "SELECT * FROM template WHERE enabled = 1 AND classify_keywords IS NOT NULL"
-        ).fetchall()
-        conn.close()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT * FROM template WHERE enabled = 1 AND classify_keywords IS NOT NULL"
+            )
+            rows = cur.fetchall()
+        finally:
+            _return_conn(conn)
     except Exception:
         return None
 

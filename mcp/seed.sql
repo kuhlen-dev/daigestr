@@ -1,10 +1,10 @@
--- Daigestr Template Registry — Seed Data (143 Templates)
--- Automatisch generiert aus der Produktions-DB.
+-- Daigestr Template Registry — Seed Data (186 Templates, PostgreSQL)
+-- PostgreSQL version: INSERT INTO ... ON CONFLICT (id) DO UPDATE SET ...
 -- Wird beim ersten Start geladen wenn die DB leer ist.
 -- Neue Templates hier einfügen oder per API /v1/templates importieren.
 
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'annual_bank_statement',
     'A. Finanzen & Rechnungen',
     'Jahreskontoauszug',
@@ -19,9 +19,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'bank_statement',
     'A. Finanzen & Rechnungen',
     'Kontoauszug',
@@ -36,9 +37,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Unterscheide: laufender Kontoauszug vs. Jahreskontoauszug (annual_bank_statement) vs. Kreditkartenabrechnung (credit_card_statement).'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'building_savings_contract',
     'A. Finanzen & Rechnungen',
     'Bausparvertrag',
@@ -53,9 +55,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'building_savings_statement',
     'A. Finanzen & Rechnungen',
     'Bauspar-Kontoauszug',
@@ -70,9 +73,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'claim',
     'A. Finanzen & Rechnungen',
     'Forderung/Forderungsaufstellung',
@@ -87,9 +91,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'cost_statement',
     'A. Finanzen & Rechnungen',
     'Kostenaufstellung',
@@ -104,9 +109,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'craftsman_bill',
     'A. Finanzen & Rechnungen',
     'Handwerkerrechnung',
@@ -121,9 +127,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'credit_card_statement',
     'A. Finanzen & Rechnungen',
     'Kreditkartenabrechnung',
@@ -138,9 +145,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'credit_note',
     'A. Finanzen & Rechnungen',
     'Gutschrift',
@@ -155,9 +163,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'dunning_notice',
     'A. Finanzen & Rechnungen',
     'Mahnung',
@@ -172,9 +181,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'electricity_bill',
     'A. Finanzen & Rechnungen',
     'Stromrechnung',
@@ -189,9 +199,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'ev_charging',
     'A. Finanzen & Rechnungen',
     'E-Auto Laderechnung',
@@ -206,9 +217,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'claude',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'fuel_receipt',
     'A. Finanzen & Rechnungen',
     'Tankquittung/Kraftstoff-Rechnung',
@@ -223,9 +235,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'claude',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'gas_bill',
     'A. Finanzen & Rechnungen',
     'Gasrechnung',
@@ -240,9 +253,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'heating_bill',
     'A. Finanzen & Rechnungen',
     'Heizkostenabrechnung',
@@ -257,9 +271,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'heating_oil_invoice',
     'A. Finanzen & Rechnungen',
     'Heizoelrechnung',
@@ -274,9 +289,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'claude',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'internet_bill',
     'A. Finanzen & Rechnungen',
     'Internet/Breitband-Rechnung',
@@ -291,9 +307,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'invoice',
     'A. Finanzen & Rechnungen',
     'Rechnung',
@@ -308,9 +325,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Generisches Template — prüfe ob spezialisiertes besser passt: craftsman_bill, supplier_invoice, electricity_bill, lawyer_invoice etc.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'loan_statement',
     'A. Finanzen & Rechnungen',
     'Darlehens-Kontoauszug',
@@ -325,9 +343,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'payment_demand',
     'A. Finanzen & Rechnungen',
     'Zahlungsaufforderung',
@@ -342,9 +361,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'purchase_order',
     'A. Finanzen & Rechnungen',
     'Bestellung/Auftragsbestätigung',
@@ -359,9 +379,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'pv_statement',
     'A. Finanzen & Rechnungen',
     'PV/Solar-Abrechnung',
@@ -376,9 +397,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'claude',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'quote',
     'A. Finanzen & Rechnungen',
     'Angebot/Kostenvoranschlag',
@@ -393,9 +415,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Verwechslungsgefahr: Angebot vs. Auftragsbestätigung (purchase_order) vs. Rechnung (invoice). Angebot hat immer ''gültig bis''.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'receipt',
     'A. Finanzen & Rechnungen',
     'Quittung',
@@ -410,9 +433,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'savings_exemption',
     'A. Finanzen & Rechnungen',
     'Freistellungsauftrag',
@@ -427,9 +451,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'securities_statement',
     'A. Finanzen & Rechnungen',
     'Depotauszug/Wertpapierabrechnung',
@@ -444,9 +469,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'securities_transaction',
     'A. Finanzen & Rechnungen',
     'Wertpapierkauf/-verkauf',
@@ -461,9 +487,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'supplier_invoice',
     'A. Finanzen & Rechnungen',
     'Lieferantenrechnung',
@@ -478,9 +505,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'tax_cert_bank',
     'A. Finanzen & Rechnungen',
     'Jahressteuerbescheinigung Bank',
@@ -495,9 +523,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'telecom_bill',
     'A. Finanzen & Rechnungen',
     'Telefonrechnung',
@@ -512,9 +541,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'tv_radio_bill',
     'A. Finanzen & Rechnungen',
     'Rundfunk/Kabel/Streaming',
@@ -529,9 +559,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'waste_bill',
     'A. Finanzen & Rechnungen',
     'Müllgebühren',
@@ -546,9 +577,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Müllgebührenabrechnungen werden oft mit Wasser- oder Abwassergebühren verwechselt, da diese ebenfalls von kommunalen Betrieben stammen. Achte auf die spezifischen Begriffe wie ''Tonnengröße'', ''Leerungen'' oder ''Abfallfraktionen''. Sonderfälle: Manche Kommunen berechnen separate Gebühren für Sondermüll oder Sperrmüll, die nicht in diesem Template abgebildet sind. In einigen Fällen sind Müllgebühren in den Nebenkostenabrechnungen des Vermieters enthalten – hier ist eine separate Rechnung nicht zu erwarten.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'water_bill',
     'A. Finanzen & Rechnungen',
     'Wasserrechnung',
@@ -563,9 +595,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'cancellation_letter',
     'B. Verträge & Vereinbarungen',
     'Kündigung',
@@ -580,9 +613,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Kündigungen werden oft mit Mahnungen oder Vertragsänderungen verwechselt, da sie ähnliche Felder wie Vertragsnummern enthalten. Achte auf Formulierungen wie ''hiermit kündige ich'' oder ''wir bestätigen die Kündigung''. Sonderfälle: Bei außerordentlichen Kündigungen (z. B. aus wichtigem Grund) fehlt oft das Feld ''wirksam_zum'', da die Kündigung sofort wirksam wird. Tipp: Kündigungen sind oft kurz und prägnant, während Vertragsänderungen oder -verlängerungen detailliertere Bedingungen enthalten.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'contract',
     'B. Verträge & Vereinbarungen',
     'Vertrag',
@@ -597,9 +631,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Verträge können mit anderen rechtlichen Dokumenten wie AGBs, Angeboten oder Bestätigungen verwechselt werden. Verträge zeichnen sich jedoch durch wechselseitige Verpflichtungen und Unterschriften aus. Sonderfälle: Bei befristeten Verträgen kann das Enddatum fehlen (z. B. ''bis auf weiteres''). Bei Mietverträgen oder Arbeitsverträgen sind oft zusätzliche Felder wie ''Mietzins'' oder ''Gehaltsangaben'' relevant, die in diesem generischen Template nicht abgebildet sind. Tipp: Achte auf Formulierungen wie ''hiermit vereinbaren'' oder ''verpflichten sich'' sowie auf Unterschriftenfelder.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'employment_contract',
     'B. Verträge & Vereinbarungen',
     'Arbeitsvertrag',
@@ -614,9 +649,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'energy_contract',
     'B. Verträge & Vereinbarungen',
     'Energievertrag',
@@ -631,9 +667,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen treten mit Energieabrechnungen oder -rechnungen auf, die jedoch konkrete Verbrauchsdaten und Kostenaufstellungen enthalten. Energieverträge sind oft längerfristige Dokumente mit allgemeinen Bedingungen, während Rechnungen monatlich oder jährlich ausgestellt werden. Achte auf Formulierungen wie ''Vertragsbedingungen'', ''Liefervertrag'' oder ''Allgemeine Geschäftsbedingungen (AGB)'' zur Unterscheidung.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'loan_contract',
     'B. Verträge & Vereinbarungen',
     'Darlehensvertrag',
@@ -648,9 +685,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'rental_contract',
     'B. Verträge & Vereinbarungen',
     'Mietvertrag',
@@ -665,9 +703,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'subscription',
     'B. Verträge & Vereinbarungen',
     'Abo/Mitgliedschaft',
@@ -682,9 +721,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'benefit_notification',
     'C. Versicherungen',
     'Leistungsmitteilung',
@@ -699,9 +739,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'insurance_claim',
     'C. Versicherungen',
     'Schadensmeldung',
@@ -716,9 +757,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'insurance_policy',
     'C. Versicherungen',
     'Versicherungspolice/-schein',
@@ -733,9 +775,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'reimbursement_notice',
     'C. Versicherungen',
     'Beihilfebescheid',
@@ -750,9 +793,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'application',
     'D. Steuern & Behörden',
     'Antrag',
@@ -767,9 +811,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Anträge können mit Bescheiden (z.B. Bewilligungsbescheid) oder Bescheinigungen (z.B. Steuerbescheinigung) verwechselt werden, da diese oft ähnliche Inhalte haben. Ein Antrag ist jedoch immer vom Bürger verfasst und richtet sich an eine Behörde, während Bescheide und Bescheinigungen von Behörden an Bürger gerichtet sind. Tipp: Achte auf Formulierungen wie ''hiermit beantrage ich'' oder ''ich stelle Antrag auf'', die typisch für Anträge sind.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'court_decision',
     'D. Steuern & Behörden',
     'Gerichtsbeschluss',
@@ -784,9 +829,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Gerichtsbeschlüsse können mit Urteilen verwechselt werden, sind aber oft kürzer und ohne mündliche Verhandlung ergangen. Auch Vergleiche oder Verfügungen können ähnlich aussehen, enthalten aber keine verbindliche Entscheidung. Sonderfälle: Beschlüsse in Eilverfahren (z. B. einstweilige Anordnungen) oder Zwischenentscheidungen (z. B. Beweisbeschlüsse) haben oft spezifische Formulierungen. Tipp: Achten Sie auf die Begriffe ''Beschluss'', ''Tenor'' und ''Rechtsmittelbelehrung'' zur eindeutigen Identifikation.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'court_judgment',
     'D. Steuern & Behörden',
     'Urteil',
@@ -801,9 +847,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'court_order',
     'D. Steuern & Behörden',
     'Mahnbescheid',
@@ -818,9 +865,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'ACHTUNG: Widerspruchsfrist beachten! Nach Ablauf → Vollstreckungsbescheid. Verwechslungsgefahr: dunning_notice (außergerichtlich), enforcement_order (nach Fristablauf).'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'court_summons',
     'D. Steuern & Behörden',
     'Ladung/Terminbestimmung',
@@ -835,9 +883,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: 1) Mit bloßen Anhörungseinladungen von Behörden (z. B. Finanzamt, Ordnungsamt), die keine rechtliche Bindung haben. 2) Mit Fristsetzungen oder Aufforderungen zur Stellungnahme, die keine mündliche Verhandlung vorsehen. 3) Mit Strafbefehlen oder Urteilen, die bereits eine Entscheidung enthalten. Tipp: Ladungen enthalten immer ein konkretes Datum, eine Uhrzeit und einen Ort für eine mündliche Verhandlung sowie das Wort ''Ladung'' oder ''Terminbestimmung''. Bei Unsicherheit über die Rechtsfolgen eines Nichterscheinens sollte rechtlicher Rat eingeholt werden.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'enforcement_order',
     'D. Steuern & Behörden',
     'Vollstreckungsbescheid',
@@ -852,9 +901,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufig wird der Vollstreckungsbescheid mit einem Mahnbescheid verwechselt. Der entscheidende Unterschied ist, dass der Vollstreckungsbescheid bereits ein vollstreckbarer Titel ist, während der Mahnbescheid erst nach Widerspruch oder Fristablauf zum Vollstreckungsbescheid wird. Achten Sie auf Formulierungen wie ''Vollstreckungsbescheid'' oder ''vollstreckbarer Titel'' im Dokument. Bei Erhalt sollte umgehend gehandelt werden, da sonst Pfändungen oder andere Zwangsmaßnahmen drohen. Im Zweifel rechtlichen Rat einholen.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'enforcement_title',
     'D. Steuern & Behörden',
     'Vollstreckbarer Titel',
@@ -869,9 +919,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen können mit Mahnbescheiden oder einfachen Rechnungen auftreten, die jedoch keine Vollstreckungsklausel enthalten. Ein vollstreckbarer Titel ist erst mit der Vollstreckungsklausel wirksam. Achten Sie auf Formulierungen wie ''zum Zwecke der Zwangsvollstreckung'' oder ''Vollstreckungsklausel''. Sonderfälle sind Titel aus dem Ausland, die ggf. einer Vollstreckbarerklärung in Deutschland bedürfen.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'fee_notice',
     'D. Steuern & Behörden',
     'Gebührenbescheid',
@@ -886,9 +937,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'fine_notice',
     'D. Steuern & Behörden',
     'Bußgeldbescheid/Knöllchen',
@@ -903,9 +955,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'garnishment_order',
     'D. Steuern & Behörden',
     'Pfändungsbeschluss',
@@ -920,9 +973,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Pfändungsbeschlüsse werden oft mit Mahnbescheiden oder Vollstreckungsbescheiden verwechselt – letztere sind jedoch Vorstufen und enthalten keine konkrete Pfändungsanordnung. Sonderfälle: Bei Lohnpfändungen muss der Arbeitgeber als Drittschuldner informiert werden; bei Kontopfändungen die Bank. Tipp: Pfändungsbeschlüsse sind immer an den Schuldner **und** den Drittschuldner adressiert. Bei Unklarheiten sollte umgehend eine Schuldnerberatung oder ein Anwalt kontaktiert werden, da Fristen für Widersprüche kurz sein können.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'lawyer_invoice',
     'D. Steuern & Behörden',
     'Anwaltsrechnung',
@@ -937,9 +991,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'legal_brief',
     'D. Steuern & Behörden',
     'Schriftsatz',
@@ -954,9 +1009,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Schriftsätze können mit behördlichen Bescheiden (z. B. vom Finanzamt) oder privaten Rechtsdokumenten (z. B. Mahnungen) verwechselt werden. Typische Erkennungsmerkmale sind die Nennung eines Gerichts, eines Aktenzeichens und die formelle Sprache mit juristischen Fachbegriffen. Sonderfälle: Schriftsätze können auch in außergerichtlichen Verfahren (z. B. Mahnverfahren) oder in Verwaltungsverfahren (z. B. Widerspruch gegen einen Bescheid) vorkommen. Achte auf die Absenderangabe (meist eine Anwaltskanzlei) und die typische Struktur mit Rubrum (Parteien, Gericht, Aktenzeichen).'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'objection',
     'D. Steuern & Behörden',
     'Widerspruch/Einspruch',
@@ -971,9 +1027,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'official_notice',
     'D. Steuern & Behörden',
     'Bescheid',
@@ -988,9 +1045,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'settlement',
     'D. Steuern & Behörden',
     'Vergleich',
@@ -1005,9 +1063,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'tax_assessment',
     'D. Steuern & Behörden',
     'Steuerbescheid',
@@ -1022,9 +1081,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'witness_summons',
     'D. Steuern & Behörden',
     'Zeugenladung',
@@ -1039,9 +1099,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Zeugenladungen werden oft mit Vorladungen als Beschuldigter (z. B. im Strafverfahren) oder mit einfachen Terminmitteilungen (z. B. für Parteien in Zivilverfahren) verwechselt. Eine Zeugenladung enthält stets den Hinweis auf die Zeugenrolle und die Aussagepflicht. Sonderfall: Bei Nichterscheinen kann ein Ordnungsgeld oder zwangsweise Vorführung drohen (§51 StPO). Reisekosten oder Verdienstausfall können unter Umständen erstattet werden – hierfür sollte die Ladung aufbewahrt werden. Tipp: Prüfen, ob eine Aussageverweigerung (z. B. bei nahen Angehörigen) möglich ist.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'freelance_invoice',
     'E. Arbeit & Einkommen',
     'Freiberufler-Rechnung',
@@ -1056,9 +1117,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'insurance_deduction_cert',
     'E. Arbeit & Einkommen',
     'Bescheinigung Vorsorgeaufwendungen',
@@ -1073,9 +1135,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'payslip',
     'E. Arbeit & Einkommen',
     'Lohn-/Gehaltsabrechnung',
@@ -1090,9 +1153,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'pension_notice',
     'E. Arbeit & Einkommen',
     'Rentenbescheid',
@@ -1107,9 +1171,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'salary_statement',
     'E. Arbeit & Einkommen',
     'Bezügemitteilung',
@@ -1124,9 +1189,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'severance_agreement',
     'E. Arbeit & Einkommen',
     'Aufhebungsvertrag',
@@ -1141,9 +1207,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'tax_certificate',
     'E. Arbeit & Einkommen',
     'Lohnsteuerbescheinigung',
@@ -1158,9 +1225,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'tax_table',
     'E. Arbeit & Einkommen',
     'Lohnsteuertabelle',
@@ -1175,9 +1243,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'timesheet',
     'E. Arbeit & Einkommen',
     'Arbeitszeitnachweis/Stundenzettel',
@@ -1192,9 +1261,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'travel_expense',
     'E. Arbeit & Einkommen',
     'Reisekostenabrechnung',
@@ -1209,9 +1279,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'warning_letter',
     'E. Arbeit & Einkommen',
     'Abmahnung',
@@ -1226,9 +1297,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen mit einfachen Rügen oder Feedbackgesprächsprotokollen. Eine Abmahnung muss immer schriftlich erfolgen und eine klare Konsequenzandrohung enthalten. Sonderfälle: Abmahnungen können auch bei leichteren Verstößen ausgesprochen werden, wenn diese wiederholt auftreten. Tipp: Achten Sie auf Formulierungen wie ''Abmahnung'' oder ''Kündigungsandrohung'' im Dokument.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'work_hours_overview',
     'E. Arbeit & Einkommen',
     'Arbeitszeitübersicht',
@@ -1243,9 +1315,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufig wird die Arbeitszeitübersicht mit der Lohnabrechnung verwechselt, da beide Dokumente vom Arbeitgeber stammen und ähnliche Informationen enthalten können. Die Arbeitszeitübersicht fokussiert sich jedoch auf die detaillierte Aufschlüsselung der Arbeitszeiten und Abwesenheiten, während die Lohnabrechnung die finanziellen Aspekte (Gehalt, Abzüge etc.) behandelt. Achte auf Begriffe wie ''Soll-Stunden'', ''Ist-Stunden'' oder ''Überstundenkonto'', die typisch für dieses Template sind. Bei Teilzeitkräften oder flexiblen Arbeitszeitmodellen können die Felder ''soll_stunden'' und ''ist_stunden'' stark variieren.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'co2_statement',
     'F. Wohnen & Immobilien',
     'CO2-Kostenaufteilung',
@@ -1260,9 +1333,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'claude',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'condo_protocol',
     'F. Wohnen & Immobilien',
     'WEG-Eigentümerversammlungs-Protokoll',
@@ -1277,9 +1351,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'declaration_of_division',
     'F. Wohnen & Immobilien',
     'Teilungserklärung',
@@ -1294,9 +1369,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'deposit_settlement',
     'F. Wohnen & Immobilien',
     'Kautionsabrechnung',
@@ -1311,9 +1387,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'energy_bill',
     'F. Wohnen & Immobilien',
     'Energierechnung',
@@ -1328,9 +1405,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'energy_certificate',
     'F. Wohnen & Immobilien',
     'Energieausweis',
@@ -1345,9 +1423,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'claude',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'land_register',
     'F. Wohnen & Immobilien',
     'Grundbuchauszug',
@@ -1362,9 +1441,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'municipal_bill',
     'F. Wohnen & Immobilien',
     'Kommunale Rechnung',
@@ -1379,9 +1459,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'notary_contract',
     'F. Wohnen & Immobilien',
     'Notarvertrag',
@@ -1396,9 +1477,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'property_tax',
     'F. Wohnen & Immobilien',
     'Grundsteuerbescheid',
@@ -1413,9 +1495,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'rent_increase',
     'F. Wohnen & Immobilien',
     'Mieterhöhung',
@@ -1430,9 +1513,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'utility_bill',
     'F. Wohnen & Immobilien',
     'Nebenkostenabrechnung',
@@ -1447,9 +1531,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'utility_statement',
     'F. Wohnen & Immobilien',
     'Nebenkostenaufstellung',
@@ -1464,9 +1549,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'care_assessment',
     'G. Gesundheit & Pflege',
     'Pflegegutachten',
@@ -1481,9 +1567,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'care_notice',
     'G. Gesundheit & Pflege',
     'Pflegebescheid',
@@ -1498,9 +1585,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'lab_report',
     'G. Gesundheit & Pflege',
     'Laborbericht',
@@ -1515,9 +1603,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'medical_certificate',
     'G. Gesundheit & Pflege',
     'Attest/ärztliche Bescheinigung',
@@ -1532,9 +1621,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Atteste werden oft mit Rezepten oder Überweisungen verwechselt, enthalten aber im Gegensatz zu diesen konkrete Angaben zur Arbeitsunfähigkeit. Sonderfälle: Atteste für Kinder (z. B. für Schulbefreiung) oder für spezielle Zwecke (z. B. Sportbefreiung) können abweichen. Bei digitalen AU-Bescheinigungen (eAU) können Felder wie ''Krankenkasse'' oder ''Arbeitgeber'' zusätzlich vorkommen.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'prescription',
     'G. Gesundheit & Pflege',
     'Rezept',
@@ -1549,9 +1639,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'care_directive',
     'H. Recht & Vollmachten',
     'Betreuungsverfügung',
@@ -1566,9 +1657,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufig wird die Betreuungsverfügung mit einer Vorsorgevollmacht verwechselt. Während die Vorsorgevollmacht sofortige Handlungsbefugnis erteilt, ist die Betreuungsverfügung nur eine Empfehlung für das Betreuungsgericht und tritt erst bei gerichtlicher Betreuerbestellung in Kraft. Das Dokument sollte handschriftlich unterschrieben und datiert sein, um rechtlich wirksam zu sein. Es empfiehlt sich, die Betreuungsverfügung regelmäßig zu aktualisieren, insbesondere bei Änderungen der persönlichen Verhältnisse oder des Betreuerwunsches.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'inheritance_cert',
     'H. Recht & Vollmachten',
     'Erbschein',
@@ -1583,9 +1675,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'living_will',
     'H. Recht & Vollmachten',
     'Patientenverfügung',
@@ -1600,9 +1693,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Patientenverfügung vs. Vorsorgevollmacht (letztere bevollmächtigt eine Person, erstere regelt konkrete Maßnahmen). Eine Patientenverfügung sollte regelmäßig (z. B. alle 2 Jahre) aktualisiert und neu unterschrieben werden, um Zweifel an der Aktualität des Willens zu vermeiden. Tipp: Kombiniert mit einer Vorsorgevollmacht und Betreuungsverfügung hinterlegen, um alle Vorsorgeaspekte abzudecken. Ärzte sind verpflichtet, die Patientenverfügung zu beachten, sofern sie auf die aktuelle Situation zutrifft.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'power_of_attorney',
     'H. Recht & Vollmachten',
     'Vollmacht',
@@ -1617,9 +1711,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Vorsorgevollmachten werden oft mit Patientenverfügungen verwechselt, obwohl sie unterschiedliche Zwecke haben (Vertretungsbefugnis vs. medizinische Wünsche). Notariell beglaubigte Vollmachten sind besonders wichtig für Rechtsgeschäfte wie Grundstückskäufe oder bestimmte Banktransaktionen. Bei Vollmachten ohne Notar sollte geprüft werden, ob sie für den vorgesehenen Zweck ausreichen. Tipp: Achten Sie auf Formulierungen wie ''hiermit bevollmächtige ich'' oder ''Vertretungsbefugnis'' zur Erkennung.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'will',
     'H. Recht & Vollmachten',
     'Testament',
@@ -1634,9 +1729,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'birth_certificate',
     'I. Urkunden & Bescheinigungen',
     'Geburtsurkunde',
@@ -1651,9 +1747,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'certificate',
     'I. Urkunden & Bescheinigungen',
     'Bescheinigung',
@@ -1668,9 +1765,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Bescheinigungen können mit ähnlichen Dokumenten wie Urkunden (z. B. Geburtsurkunde) oder Zeugnissen (z. B. Schulzeugnis) verwechselt werden. Urkunden sind jedoch oft einmalige Dokumente mit hoheitlichem Charakter (z. B. Geburts-, Heiratsurkunde), während Bescheinigungen häufiger wiederkehrend oder temporär sind. Zeugnisse enthalten in der Regel Bewertungen oder Leistungsnachweise, während Bescheinigungen reine Tatsachenbestätigungen sind. Tipp: Achte auf Formulierungen wie ''bescheinigt hiermit'' oder ''bestätigt'', die typisch für Bescheinigungen sind.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'death_certificate',
     'I. Urkunden & Bescheinigungen',
     'Sterbeurkunde',
@@ -1685,9 +1783,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'diploma',
     'I. Urkunden & Bescheinigungen',
     'Zeugnis/Diplom/Urkunde',
@@ -1702,9 +1801,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen können mit einfachen Teilnahmebescheinigungen, Zertifikaten für Fortbildungen oder Sprachkursen auftreten, die keinen formalen Abschluss darstellen. Diplome/Zeugnisse sind oft auf hochwertigem Papier gedruckt, enthalten offizielle Siegel oder Stempel der Institution und sind unterzeichnet von Rektoren, Dekanen oder Schulleitern. Bei ausländischen Abschlüssen können zusätzliche Felder wie ''Anerkennungsvermerk'' oder ''Umrechnung der Note'' relevant sein, die jedoch nicht im Standard-Schema enthalten sind.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'divorce_certificate',
     'I. Urkunden & Bescheinigungen',
     'Scheidungsurkunde',
@@ -1719,9 +1819,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'family_register',
     'I. Urkunden & Bescheinigungen',
     'Stammbuch/Familienbuch',
@@ -1736,9 +1837,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufig wird das Stammbuch mit einzelnen Urkunden wie Geburts- oder Heiratsurkunden verwechselt. Ein Stammbuch erkennt man daran, dass es mehrere familienrechtliche Ereignisse in einem Dokument zusammenfasst und oft eine fortlaufende Registernummer oder ein Siegel des Standesamts trägt. Sonderfälle: Bei Adoptionen oder Scheidungen können zusätzliche Einträge oder Vermerke im Stammbuch vorgenommen werden. Das Stammbuch ist kein Ersatz für beglaubigte Abschriften einzelner Urkunden, die für bestimmte behördliche Vorgänge benötigt werden.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'marriage_certificate',
     'I. Urkunden & Bescheinigungen',
     'Heiratsurkunde',
@@ -1753,9 +1855,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslung mit der ''beglaubigten Abschrift aus dem Eheregister'', die zusätzliche Informationen wie Geburtsdaten der Eltern oder frühere Ehen enthält. Die Heiratsurkunde ist oft kürzer und enthält nur die wesentlichen Daten der Eheschließung. Bei internationalen Ehen kann die Urkunde mehrsprachig ausgestellt sein. Für steuerliche Zwecke ist das Datum der Eheschließung besonders relevant, da es den Zeitpunkt für die Anwendung des Splittingtarifs oder Steuerklassenwechsels bestimmt.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'vehicle_reg_part1',
     'I. Urkunden & Bescheinigungen',
     'KFZ-Schein',
@@ -1770,9 +1873,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'vehicle_reg_part2',
     'I. Urkunden & Bescheinigungen',
     'KFZ-Brief',
@@ -1787,9 +1891,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Wertdokument — bei Verlust Aufgebotsverfahren nötig. Bei Finanzierung liegt Brief bei der Bank. Teil I = KFZ-Schein (mitführungspflichtig), Teil II = Brief (Eigentum).'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'work_reference',
     'I. Urkunden & Bescheinigungen',
     'Arbeitszeugnis',
@@ -1804,9 +1909,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Arbeitszeugnisse werden oft mit Arbeitsbescheinigungen (z. B. für das Arbeitsamt) oder Zwischenzeugnissen verwechselt. Ein Arbeitszeugnis enthält immer eine Bewertung, während eine Arbeitsbescheinigung nur Fakten wie Beschäftigungsdauer und Position auflistet. Achte auf typische Formulierungen wie ''stets zu unserer vollsten Zufriedenheit'' oder ''hat sich bemüht'', die auf die Bewertung hinweisen. Sonderfall: Ein ''einfaches Zeugnis'' enthält keine Bewertung, sondern nur Fakten – dies ist jedoch selten und sollte nicht mit einer Arbeitsbescheinigung verwechselt werden.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'accident_report',
     'J. Protokolle & Berichte',
     'Unfallbericht',
@@ -1821,9 +1927,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Unfallberichte werden oft mit reinen Schadensmeldungen (z.B. an die Versicherung) verwechselt, die weniger detailliert sind. Ein Unfallbericht enthält typischerweise polizeiliche Feststellungen oder detaillierte Angaben zum Hergang. Sonderfälle: Bei Unfällen mit Personenschaden oder hohem Sachschaden ist fast immer ein polizeilicher Unfallbericht vorhanden. Tipp: Achten Sie auf das Vorhandensein eines Polizei-Aktenzeichens oder einer detaillierten Beschreibung des Unfallhergangs, um den Bericht von einer einfachen Schadensmeldung zu unterscheiden.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'expert_opinion',
     'J. Protokolle & Berichte',
     'Gutachten',
@@ -1838,9 +1945,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'inspection_protocol',
     'J. Protokolle & Berichte',
     'Prüfprotokoll',
@@ -1855,9 +1963,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'protocol',
     'J. Protokolle & Berichte',
     'Protokoll',
@@ -1872,9 +1981,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Protokolle werden oft mit *Berichten* (z. B. Tätigkeitsberichten) oder *Einladungen* verwechselt, die jedoch keine Beschlüsse oder Teilnehmerlisten enthalten. Sonderfälle: Bei Eigentümerversammlungen können Protokolle rechtliche Bindungswirkung entfalten (z. B. für Beschlüsse zur Hausgeldabrechnung). Bei Vereinen sind Protokolle oft satzungsrelevant (z. B. für Vorstandswahlen). Tipp: Achte auf formale Merkmale wie ''TOP'', ''Beschluss'', ''Abstimmung'' oder ''Protokollant'' zur Erkennung.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'tuev_report',
     'J. Protokolle & Berichte',
     'TÜV-Bescheid/HU-Bericht',
@@ -1889,9 +1999,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslung mit der Abgasuntersuchung (AU), die oft zeitgleich durchgeführt wird, aber ein separates Dokument darstellt. Der HU-Bericht enthält keine Kostenangaben – diese finden sich auf der separaten Rechnung. Bei ''nicht_bestanden'' ist eine Nachprüfung innerhalb einer Frist (meist 1 Monat) erforderlich. Tipp: Das Dokument ist oft mit einer Prüfplakette (Farbe kodiert das Jahr der nächsten HU) verbunden, die auf dem Kennzeichen angebracht wird.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'vehicle_deregistration',
     'J. Protokolle & Berichte',
     'KFZ-Abmeldung',
@@ -1906,9 +2017,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'delivery_note',
     'K. Handel & Versand',
     'Lieferschein',
@@ -1923,9 +2035,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'product_instruction',
     'K. Handel & Versand',
     'Produktbeschreibung/Anleitung',
@@ -1940,9 +2053,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Dieses Template wird oft mit Garantieunterlagen oder Rechnungen verwechselt, da diese Dokumente oft zusammen mit der Produktbeschreibung geliefert werden. Produktanleitungen enthalten jedoch keine Kauf- oder Garantieinformationen, sondern ausschließlich Hinweise zur Nutzung. Tipp: Achte auf Schlüsselwörter wie ''Bedienungsanleitung'', ''Gebrauchsanweisung'' oder ''Sicherheitshinweise'', um das Dokument korrekt zuzuordnen. Bei elektronischen Geräten sind oft auch CE-Kennzeichnungen oder Warnsymbole enthalten.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'return_label',
     'K. Handel & Versand',
     'Retourenlabel',
@@ -1957,9 +2071,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslung mit regulären Versandlabels oder Paketaufklebern, die nicht für Retouren bestimmt sind. Retourenlabels sind oft mit dem Hinweis ''Retoure'' oder ''Rücksendung'' gekennzeichnet und enthalten eine explizite Gültigkeitsdauer. Bei manchen Händlern ist das Retourenlabel direkt in die Rechnung oder den Lieferschein integriert. Achte auf die typischen Begriffe wie ''Retourenlabel'', ''Rücksendeetikett'' oder ''prepaid return label''.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'warranty_certificate',
     'K. Handel & Versand',
     'Garantieurkunde',
@@ -1974,9 +2089,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufig wird die Garantieurkunde mit der gesetzlichen Gewährleistung verwechselt, die unabhängig vom Hersteller gilt. Die Garantie ist eine freiwillige Leistung des Herstellers oder Händlers. Achte auf Formulierungen wie ''Herstellergarantie'' oder ''Garantieerklärung'', um das Dokument von anderen Kaufunterlagen zu unterscheiden. Bei hochpreisigen Produkten (z. B. Elektronik, Haushaltsgeräte) ist die Garantieurkunde besonders relevant und sollte sorgfältig aufbewahrt werden.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'consent_form',
     'L. Rechtliche Dokumente (Beilagen)',
     'Einwilligungserklärung',
@@ -1991,9 +2107,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen mit Datenschutzerklärungen (die keine aktive Einwilligung erfordern) oder Verträgen (die weitergehende Regelungen enthalten). Einwilligungserklärungen sind oft kürzer und fokussieren sich auf die Zustimmung zur Datenverarbeitung. Achte auf Formulierungen wie ''Ich willige ein'' oder ''Ich stimme zu''.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'privacy_policy',
     'L. Rechtliche Dokumente (Beilagen)',
     'Datenschutzerklärung',
@@ -2008,9 +2125,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen mit AGB oder Impressum, da alle drei Dokumente oft auf Websites gemeinsam verlinkt werden. Datenschutzerklärungen sind jedoch spezifisch an die DSGVO angelehnt und enthalten typischerweise Abschnitte zu Betroffenenrechten (z. B. Auskunft, Löschung), Datenkategorien und Rechtsgrundlagen. Tipp: Achte auf Formulierungen wie ''Verantwortlicher'', ''Rechtsgrundlage'' oder ''Ihre Rechte gemäß DSGVO''. Sonderfall: Bei Cookies oder Tracking-Technologien wird oft auf eine separate Cookie-Richtlinie verwiesen, die jedoch Teil der Datenschutzerklärung sein kann.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'terms_and_conditions',
     'L. Rechtliche Dokumente (Beilagen)',
     'AGB',
@@ -2025,9 +2143,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: AGB werden oft mit individuellen Verträgen (z. B. Mietverträgen oder Arbeitsverträgen) oder Datenschutzerklärungen verwechselt. AGB sind jedoch standardisiert und gelten für eine Vielzahl von Verträgen. Tipp: AGB enthalten typischerweise Abschnitte wie ''Geltungsbereich'', ''Zahlungsbedingungen'' oder ''Kündigung'' und sind oft als separates Dokument oder als Anhang zu einem Vertrag beigefügt. Bei Online-Shops sind sie meist über einen Link im Footer der Website erreichbar.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'withdrawal_instruction',
     'L. Rechtliche Dokumente (Beilagen)',
     'Widerrufsbelehrung',
@@ -2042,9 +2161,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Widerrufsbelehrungen werden oft mit Rückgabebedingungen (z. B. bei stationärem Handel) oder AGB verwechselt. Eine Widerrufsbelehrung ist jedoch spezifisch für Fernabsatzverträge und enthält immer eine klare Fristangabe (meist 14 Tage) sowie Hinweise auf das Widerrufsrecht. Sonderfälle: Bei digitalen Inhalten (z. B. E-Books, Software) kann die Widerrufsfrist entfallen, sobald der Download beginnt. Tipp: Achte auf Formulierungen wie ''Sie haben das Recht, binnen 14 Tagen ohne Angabe von Gründen diesen Vertrag zu widerrufen.'''
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'bafoeg_notice',
     'M. Sonstiges',
     'BAföG-Bescheid',
@@ -2059,9 +2179,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'boarding_pass',
     'M. Sonstiges',
     'Boarding Pass/Fahrkarte',
@@ -2076,9 +2197,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Boarding Passes werden oft mit Buchungsbestätigungen oder Rechnungen verwechselt. Ein Boarding Pass enthält immer konkrete Reiseinformationen wie Sitzplatz und Abflugzeit, während eine Buchungsbestätigung allgemeiner ist. Bei beruflichen Reisen kann der Boarding Pass als Nachweis für Reisekosten dienen (z. B. für Flugtickets oder Bahnfahrten), ist aber allein nicht ausreichend – hierfür wird zusätzlich eine Rechnung oder ein Ticket benötigt. Digitale Boarding Passes (z. B. als PDF oder in Apps) sind ebenso gültig wie gedruckte Versionen.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'broadcasting_fee',
     'M. Sonstiges',
     'Rundfunkbeitrag',
@@ -2093,9 +2215,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslung mit alten GEZ-Bescheiden (vor 2013), die geräteabhängig waren. Der Rundfunkbeitrag ist seit 2013 eine pauschale Haushaltsabgabe. Sonderfälle: Befreiungen oder Ermäßigungen (z. B. für Sozialhilfeempfänger) werden separat bescheinigt. Tipp: Der Bescheid enthält oft einen QR-Code für Online-Zahlungen oder Kontenverwaltung. Nicht mit Rechnungen für private Streaming-Dienste verwechseln.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'church_tax_notice',
     'M. Sonstiges',
     'Kirchensteuerbescheid',
@@ -2110,9 +2233,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Der Kirchensteuerbescheid wird oft mit dem Einkommensteuerbescheid verwechselt, da beide vom Finanzamt stammen können. Der Unterschied liegt darin, dass der Kirchensteuerbescheid ausschließlich die Kirchensteuer betrifft und Angaben zur Konfession enthält. Sonderfälle: In einigen Bundesländern (z.B. Bayern, Baden-Württemberg) wird die Kirchensteuer direkt von der Kirche festgesetzt und erhoben, nicht vom Finanzamt. In diesen Fällen kann der Absender eine kirchliche Steuerstelle sein. Tipp: Kirchensteuerbescheide sind besonders relevant für Steuererklärungen, da die gezahlte Kirchensteuer in voller Höhe als Sonderausgabe absetzbar ist.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'cv',
     'M. Sonstiges',
     'Lebenslauf/CV',
@@ -2127,9 +2251,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'disability_card',
     'M. Sonstiges',
     'Schwerbehindertenausweis/-bescheid',
@@ -2144,9 +2269,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'donation_receipt',
     'M. Sonstiges',
     'Spendenquittung',
@@ -2161,9 +2287,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'fallback',
     'M. Sonstiges',
     'Unbekanntes Dokument',
@@ -2178,9 +2305,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'insurance_card',
     'M. Sonstiges',
     'Versicherungskarte (eVB)',
@@ -2195,9 +2323,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslung mit der Kfz-Versicherungspolice oder Beitragsrechnung: Die eVB ist *kein* dauerhafter Versicherungsnachweis, sondern nur ein temporäres Dokument für die Zulassung. Sie enthält keine Informationen zu Prämien oder Leistungen. Achte auf die typische 7-stellige eVB-Nummer und die kurze Gültigkeitsdauer (meist 4–6 Wochen). Bei älteren Dokumenten kann die eVB auch als ''Doppelkarte'' bezeichnet werden.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'kindergeld_notice',
     'M. Sonstiges',
     'Kindergeldbescheid',
@@ -2212,9 +2341,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'letter',
     'M. Sonstiges',
     'Brief',
@@ -2229,9 +2359,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Briefe können leicht mit formellen Schreiben wie Mahnungen oder behördlichen Bescheiden verwechselt werden, wenn der Betreff oder Inhalt nicht eindeutig ist. Sonderfälle: Persönliche Briefe ohne formelle Struktur (z. B. handschriftliche Notizen) sind schwer automatisch zu klassifizieren. Tipp: Achte auf typische Briefmerkmale wie Anrede, Grußformel und Unterschrift, um sie von anderen Dokumenten zu unterscheiden.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'membership_card',
     'M. Sonstiges',
     'Mitgliedsausweis/-bestätigung',
@@ -2246,9 +2377,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'moving_confirmation',
     'M. Sonstiges',
     'Meldebestätigung/Ummeldung',
@@ -2263,9 +2395,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'newsletter',
     'M. Sonstiges',
     'Newsletter/Werbung',
@@ -2280,9 +2413,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Newsletter können mit Rechnungen oder Bestellbestätigungen verwechselt werden, wenn sie ähnliche Betreffzeilen verwenden (z. B. ''Ihre Bestellung bei uns''). Typische Erkennungsmerkmale sind jedoch das Fehlen von Rechnungsnummern, Bestelldetails oder Zahlungsaufforderungen. Newsletter enthalten oft auffällige Grafiken, Call-to-Action-Buttons und wiederholte Werbeinhalte. Sonderfall: Manche Newsletter enthalten personalisierte Angebote (z. B. Geburtstagsrabatte), die jedoch keine steuerliche Relevanz haben.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'parental_allowance',
     'M. Sonstiges',
     'Elterngeldbescheid',
@@ -2297,9 +2431,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'parking_ticket',
     'M. Sonstiges',
     'Parkschein/-quittung',
@@ -2314,9 +2449,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen können mit Strafzetteln (z. B. ''Knöllchen'') oder Mahnungen für nicht bezahlte Parkgebühren auftreten. Parkscheine sind jedoch reguläre Zahlungsbestätigungen ohne Sanktionscharakter. Bei beruflicher Nutzung (z. B. Dienstreisen) können Parkgebühren unter Umständen als Werbungskosten (§9 EStG) oder Betriebsausgaben abgesetzt werden, sofern sie nicht vom Arbeitgeber erstattet werden. In solchen Fällen sollte das Dokument zusammen mit anderen Reisekostenbelegen aufbewahrt werden.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'photo_id_copy',
     'M. Sonstiges',
     'Ausweiskopie',
@@ -2331,9 +2467,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Wird oft mit Führerscheinkopien oder Aufenthaltstiteln verwechselt, die jedoch andere Felder (z. B. Führerscheinklassen oder Aufenthaltstitel-Nummer) enthalten. Ausweiskopien enthalten typischerweise eine MRZ (Machine Readable Zone) und behördliche Sicherheitsmerkmale wie Hologramme. Tipp: Achte auf das Vorhandensein eines Fotos und der typischen Felder wie Ausweisnummer und Gültigkeitsdatum. Bei digitalen Kopien (z. B. Scans) können Wasserzeichen oder Stempel der anfordernden Stelle (z. B. Bank) vorhanden sein.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'school_report',
     'M. Sonstiges',
     'Schulzeugnis',
@@ -2348,9 +2485,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslungen: Schulzeugnisse werden oft mit Zwischenberichten oder reinen Notenübersichten verwechselt, die jedoch keine rechtsverbindliche Versetzungsentscheidung enthalten. Sonderfälle: Zeugnisse von Grundschulen enthalten oft verbale Bewertungen statt Noten; internationale Schulen verwenden ggf. andere Notenskalen (z. B. A-F). Bei Zeugnissen mit ''nicht versetzt'' oder ''Wiederholung der Klasse'' sollte das Folgezeugnis besonders beachtet werden. Tipp: Achte auf Unterschrift und Stempel der Schule – diese sind für die Gültigkeit essenziell.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'social_security_notice',
     'M. Sonstiges',
     'Sozialversicherungsnachweis',
@@ -2365,9 +2503,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufig wird der Sozialversicherungsnachweis mit dem Rentenbescheid verwechselt, der jedoch konkrete Rentenansprüche und -höhen ausweist. Der Nachweis enthält keine finanziellen Bewertungen, sondern nur zeitliche Daten. Bei Unstimmigkeiten (z. B. fehlende Zeiten) sollte umgehend die DRV kontaktiert werden, da dies später die Rentenhöhe beeinflussen kann. Für die Steuererklärung ist das Dokument in der Regel nicht relevant, kann aber bei Nachfragen des Finanzamts zu Versicherungszeiten als Nachweis dienen.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'trade_registration',
     'M. Sonstiges',
     'Gewerbeanmeldung/-abmeldung',
@@ -2382,9 +2521,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'travel_booking',
     'M. Sonstiges',
     'Reisebuchung/-bestätigung',
@@ -2399,9 +2539,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'unemployment_notice',
     'M. Sonstiges',
     'Arbeitslosengeldbescheid',
@@ -2416,9 +2557,10 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
-INSERT OR REPLACE INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
+INSERT INTO template (id, category, display_name, description, schema, field_descriptions, classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes) VALUES (
     'wohngeld_notice',
     'M. Sonstiges',
     'Wohngeldbescheid',
@@ -2433,23 +2575,25 @@ INSERT OR REPLACE INTO template (id, category, display_name, description, schema
     1,
     'mistral_batch',
     'Häufige Verwechslung mit anderen Sozialleistungsbescheiden wie Bürgergeld oder Grundsicherung. Wohngeldbescheide beziehen sich explizit auf Wohnkosten (Miete oder Lasten) und enthalten immer einen Bewilligungszeitraum sowie einen monatlichen Zuschussbetrag. Tipp: Achten auf den Absender (Wohngeldstelle) und die Nennung des Wohngeldgesetzes (WoGG). Bei Ablehnungen ist der Bescheid oft kürzer, enthält aber dieselben Felder (außer ''monatlicher_zuschuss'').'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, display_name=EXCLUDED.display_name, description=EXCLUDED.description, schema=EXCLUDED.schema, field_descriptions=EXCLUDED.field_descriptions, classify_keywords=EXCLUDED.classify_keywords, typical_senders=EXCLUDED.typical_senders, steuer_relevanz=EXCLUDED.steuer_relevanz, priority=EXCLUDED.priority, enabled=EXCLUDED.enabled, version=EXCLUDED.version, source=EXCLUDED.source, notes=EXCLUDED.notes;
 
 -- =============================================================================
 -- Prompts (T-DAI-008) — hardcodierte LLM-Prompts in DB migriert
 -- =============================================================================
 
 -- vision.system — System-Prompt für Mistral Vision (aus mistral_client.py)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'vision.system',
     'vision',
     'system',
     'Du bist ein präziser Assistent für Bild- und Dokumentenanalyse. Befolge ausschließlich die Anweisungen im User-Prompt. Antworte NICHT mit Einleitungssätzen, Erklärungen oder Code-Block-Wrapping — nur mit dem angeforderten Ergebnis.',
     'You are a precise assistant for image and document analysis. Follow only the instructions in the user prompt. Do NOT reply with introductions, explanations, or code-block wrapping — only the requested result.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- vision.default — Default-Vision-Prompt für Bilder (aus routing.py convert_auto)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'vision.default',
     'vision',
     'default',
@@ -2462,10 +2606,11 @@ INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUE
 
 Antworte ausschließlich mit dem Markdown-Ergebnis.',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- vision.scanned_pdf — Scanned-PDF-Vision-Prompt (aus converters/pdf.py)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'vision.scanned_pdf',
     'vision',
     'scanned_pdf',
@@ -2482,10 +2627,11 @@ Regeln:
 
 Antworte ausschließlich mit dem Markdown-Text.',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- image.classify — Image-Classify-Prompt (aus converters/images.py)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'image.classify',
     'image',
     'classify',
@@ -2499,10 +2645,11 @@ text_scan  = image of a document, form, invoice, letter, or any image where text
 decorative = logo, icon, background image, decorative graphic with no information value
 
 Reply with exactly one of: photo, chart, diagram, text_scan, decorative'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- image.mermaid — Mermaid-Konvertierung-Prompt (aus converters/images.py)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'image.mermaid',
     'image',
     'mermaid',
@@ -2523,10 +2670,11 @@ graph TD
     A[Nicht darstellbar]
 ```
 - No explanations, no text outside the code block'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- image.chart — Chart-Daten-Prompt (aus converters/images.py)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'image.chart',
     'image',
     'chart',
@@ -2541,65 +2689,72 @@ Instructions:
 - If no chart data found: output only [No chart data found]
 
 Output ONLY the Markdown table. No explanations, no introductions.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- image.photo_de — Foto-Beschreibung Deutsch (aus converters/images.py)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'image.photo_de',
     'image',
     'photo_de',
     'Beschreibe dieses Bild präzise: was ist zu sehen, relevante Beschriftungen, erkennbare Objekte und der Gesamtkontext. Format: kurzer Absatz.',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- image.photo_en — Foto-Beschreibung Englisch (aus converters/images.py)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'image.photo_en',
     'image',
     'photo_en',
     NULL,
     'Describe this image precisely: what is shown, relevant labels, recognizable objects and overall context. Format: short paragraph.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- image.text_scan_de — Text-Scan-Prompt Deutsch (aus converters/images.py)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'image.text_scan_de',
     'image',
     'text_scan_de',
     'Extrahiere den gesamten sichtbaren Text aus diesem Bild. Gib ihn strukturiert als Markdown wieder. Übersetze nicht.',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- image.text_scan_en — Text-Scan-Prompt Englisch (aus converters/images.py)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'image.text_scan_en',
     'image',
     'text_scan_en',
     NULL,
     'Extract all visible text from this image. Return it as structured Markdown. Do not translate.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- classify.system_de — Klassifizierungs-System-Prompt Deutsch (aus intelligence.py)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'classify.system_de',
     'classify',
     'system_de',
     'Du bist ein Experte für Dokumentenklassifizierung. Antworte ausschließlich mit validem JSON.',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- classify.system_en — Klassifizierungs-System-Prompt Englisch (aus intelligence.py)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'classify.system_en',
     'classify',
     'system_en',
     NULL,
     'You are an expert document classifier. Respond exclusively with valid JSON.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- classify.user_de — Klassifizierungs-User-Prompt Deutsch (aus intelligence.py)
 -- Hinweis: {categories_lines} und {truncated_markdown} sind Platzhalter die zur Laufzeit ersetzt werden
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'classify.user_de',
     'classify',
     'user_de',
@@ -2615,10 +2770,11 @@ Verwende GENAU eine der Typ-IDs. Bevorzuge den spezifischsten Typ.
 Dokument:
 {truncated_markdown}',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- classify.user_en — Klassifizierungs-User-Prompt Englisch (aus intelligence.py)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'classify.user_en',
     'classify',
     'user_en',
@@ -2634,29 +2790,32 @@ Use EXACTLY one of the type IDs. Prefer the most specific type.
 
 Document:
 {truncated_markdown}'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- ocr_correct.de — OCR-Korrektur-System-Prompt Deutsch (aus intelligence.py)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'ocr_correct.system_de',
     'ocr_correct',
     'system_de',
     'Du bist ein Experte für OCR-Fehlerkorrektur. Korrigiere ausschließlich offensichtliche OCR-Artefakte, verändere KEINE inhaltlichen Fakten.',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- ocr_correct.system_en — OCR-Korrektur-System-Prompt Englisch (aus intelligence.py)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'ocr_correct.system_en',
     'ocr_correct',
     'system_en',
     NULL,
     'You are an expert in OCR error correction. Correct only obvious OCR artifacts, do NOT change any factual content.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- ocr_correct.user_de — OCR-Korrektur-User-Prompt Deutsch (aus intelligence.py)
 -- Hinweis: {text} ist Platzhalter der zur Laufzeit ersetzt wird
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'ocr_correct.user_de',
     'ocr_correct',
     'user_de',
@@ -2679,10 +2838,11 @@ Antworte mit dem korrigierten Text, dann genau eine abschließende Zeile:
 Text:
 {text}',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- ocr_correct.user_en — OCR-Korrektur-User-Prompt Englisch (aus intelligence.py)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'ocr_correct.user_en',
     'ocr_correct',
     'user_en',
@@ -2705,29 +2865,32 @@ Reply with the corrected text, then exactly one closing line:
 
 Text:
 {text}'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- extract.system_de — Extraktions-System-Prompt Deutsch (aus intelligence.py)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'extract.system_de',
     'extract',
     'system_de',
     'Du bist ein Experte für Dokumentenanalyse und Datenextraktion. Antworte ausschließlich mit validem JSON.',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- extract.system_en — Extraktions-System-Prompt Englisch (aus intelligence.py)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'extract.system_en',
     'extract',
     'system_en',
     NULL,
     'You are an expert in document analysis and data extraction. Respond exclusively with valid JSON.'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- extract.user_de — Extraktions-User-Prompt Deutsch (aus intelligence.py)
 -- Hinweis: {schema_str}, {template_hints}, {meta_instruction}, {markdown} sind Platzhalter
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'extract.user_de',
     'extract',
     'user_de',
@@ -2747,10 +2910,11 @@ Schema:
 Dokument:
 {markdown}',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- extract.user_en — Extraktions-User-Prompt Englisch (aus intelligence.py)
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'extract.user_en',
     'extract',
     'user_en',
@@ -2770,11 +2934,12 @@ Schema:
 
 Document:
 {markdown}'
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- validate.dual_pass — Dual-Pass-Validation-Prompt (aus intelligence.py)
 -- Hinweis: {markdown} ist Platzhalter der zur Laufzeit ersetzt wird
-INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUES (
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'validate.dual_pass',
     'validate',
     'dual_pass',
@@ -2783,98 +2948,119 @@ INSERT OR REPLACE INTO prompt (id, category, name, content_de, content_en) VALUE
 OCR-Text:
 {markdown}',
     NULL
-);
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
 
 -- =============================================================================
 -- Scoring Weights (T-DAI-008) — aus calculate_quality_score in intelligence.py
 -- =============================================================================
 
 -- Zeichendichte-Schwellenwerte (Komponente 1: 0-0.3)
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'density_low_threshold', 'density_low_threshold', 0.1,
     'Unterhalb dieser Zeichendichte → score 0.0 (Komponente: density, max 0.3)'
-);
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'density_mid_threshold', 'density_mid_threshold', 0.2,
     'Oberhalb: linear bis 0.2; unterhalb: lineare Interpolation (Komponente: density)'
-);
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'density_high_threshold', 'density_high_threshold', 0.8,
     'Optimaler Bereich: 0.2-0.8 → score 0.3 (Komponente: density)'
-);
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'density_optimal', 'density_optimal', 0.3,
     'Maximaler Score für Zeichendichte-Komponente (0.3)'
-);
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
 
 -- Wort-Qualitäts-Gewichtungen (Komponente 2: 0-0.3)
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'word_quality_max', 'word_quality_max', 0.3,
     'Maximaler Score für Wort-Qualität-Komponente'
-);
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'word_min_chars_threshold', 'word_min_chars_threshold', 50,
     'Mindestlänge in Zeichen — unter diesem Wert wird word_score halbiert'
-);
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'word_short_text_penalty', 'word_short_text_penalty', 0.5,
     'Multiplikator für word_score bei zu kurzem Text (< word_min_chars_threshold)'
-);
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
 
 -- Struktur-Elemente-Gewichtungen (Komponente 3: 0-0.2)
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'structure_element_score', 'structure_element_score', 0.05,
     'Score pro Struktur-Element (Headings, Listen, Tabellen, Code-Blöcke)'
-);
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'structure_max', 'structure_max', 0.2,
     'Maximaler Score für Struktur-Elemente-Komponente'
-);
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
 
 -- Vision/OCR Confidence-Gewichtungen (Komponente 4: 0-0.2)
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'vision_efficiency_high', 'vision_efficiency_high', 0.5,
     'Token-Effizienz >= 0.5 → vision_score 0.2'
-);
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'vision_efficiency_mid', 'vision_efficiency_mid', 0.2,
     'Token-Effizienz >= 0.2 → vision_score 0.15'
-);
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'vision_efficiency_low', 'vision_efficiency_low', 0.05,
     'Token-Effizienz >= 0.05 → vision_score 0.1'
-);
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'vision_score_high', 'vision_score_high', 0.2,
     'Vision-Score bei hoher Token-Effizienz (>= 0.5)'
-);
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'vision_score_mid', 'vision_score_mid', 0.15,
     'Vision-Score bei mittlerer Token-Effizienz (>= 0.2)'
-);
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'vision_score_low', 'vision_score_low', 0.1,
     'Vision-Score bei niedriger Token-Effizienz (>= 0.05) oder nur Completion bekannt'
-);
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'vision_score_min', 'vision_score_min', 0.05,
     'Minimum Vision-Score wenn Token-Effizienz < 0.05'
-);
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'vision_baseline', 'vision_baseline', 0.2,
     'Baseline-Score wenn kein Vision verwendet (kein OCR-Unsicherheitsabzug)'
-);
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
 
 -- Grade-Schwellenwerte
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'grade_poor', 'grade_poor', 0.3,
     'Unterhalb: quality_grade = poor'
-);
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'grade_fair', 'grade_fair', 0.6,
     'Unterhalb: quality_grade = fair (>= grade_poor)'
-);
-INSERT OR REPLACE INTO scoring_weight (id, name, value, description) VALUES (
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
+INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'grade_good', 'grade_good', 0.8,
     'Unterhalb: quality_grade = good (>= grade_fair); ab diesem Wert: excellent'
-);
+)
+ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
