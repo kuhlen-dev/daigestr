@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Was ist das?
 
-Daigestr — Document Intelligence Service. Konvertiert Dokumente, Bilder, Audio/Video zu Markdown mit LLM-gestützter Analyse. Zwei Schnittstellen:
+Daigestr — Document Intelligence Service v5.9.0. Konvertiert Dokumente, Bilder, Audio/Video zu Markdown mit LLM-gestützter Analyse. Zwei Schnittstellen:
 - **MCP** (Port 8080, extern 18005): Für Claude und MCP-Clients via SSE oder stdio
 - **REST** (Port 8081, extern 18006): Für n8n und HTTP-Clients (FastAPI mit Swagger unter `/docs`)
 
@@ -12,7 +12,7 @@ Auto-Routing: Bilder → Mistral Vision API, gescannte PDFs → Mistral OCR 3, A
 
 ## Architektur
 
-Ein Container (`daigestr`) definiert in `docker-compose.yml`, Build-Context ist `./mcp/`.
+Zwei Container: `daigestr` (Application) und `daigestr-postgres` (PostgreSQL-Datenbank), definiert in `docker-compose.yml`, Build-Context ist `./mcp/`.
 
 ### Modulstruktur (`mcp/`)
 
@@ -29,7 +29,7 @@ Ein Container (`daigestr`) definiert in `docker-compose.yml`, Build-Context ist 
 | `converters/audio.py` | ffmpeg-Extraktion + faster-whisper Transkription |
 | `converters/email.py` | EML-Parsing, Routing-Metadaten, Thread-Infos, Kalender-Events |
 | `intelligence.py` | `classify`, `extract`, `quality_score`, `chunk`, `dual_pass_validate`, `_apply_auto_extract` |
-| `templates_db.py` | SQLite: templates, prompts, scoring_weights, cache (`cache_get/set/clear`) |
+| `templates_db.py` | PostgreSQL (psycopg2): templates, prompts, scoring_weights, cache, async jobs (`cache_get/set/clear`, `job_create/update/get`) |
 | `routing.py` | `convert_auto`, `convert_folder_contents`, `convert_url`, `_build_tips_dict` |
 | `api_rest.py` | FastAPI-App, alle REST-Endpoints |
 | `api_mcp.py` | FastMCP-Instanz, alle MCP-Tools |
@@ -273,6 +273,13 @@ Wichtigste Variablen:
 | `MISTRAL_OCR_MODEL` | mistral-ocr-latest | OCR-Modell |
 | `MISTRAL_TEXT_MODEL` | mistral-large-latest | Text-Modell (Classify, Extract, OCR-Korrektur) |
 | `MISTRAL_OCR_ENABLED` | true | Mistral OCR 3 aktivieren |
+| `DATABASE_URL` | postgresql://daigestr:daigestr@daigestr-postgres:5432/daigestr | PostgreSQL-Verbindungs-URL (Templates, Cache, Jobs) |
+| `POSTGRES_USER` | daigestr | PostgreSQL-Benutzername (für daigestr-postgres Container) |
+| `POSTGRES_PASSWORD` | daigestr | PostgreSQL-Passwort (für daigestr-postgres Container) |
+| `POSTGRES_DB` | daigestr | PostgreSQL-Datenbankname (für daigestr-postgres Container) |
+| `POSTGRES_HOST_PORT` | 15432 | Externer Host-Port für PostgreSQL (Debugging) |
+| `DB_POOL_MIN` | 1 | Minimale Verbindungen im psycopg2-Pool |
+| `DB_POOL_MAX` | 5 | Maximale Verbindungen im psycopg2-Pool |
 | `CACHE_ENABLED` | true | Request-Level-Cache aktivieren |
 | `CACHE_TTL_SECONDS` | 3600 | Cache-TTL in Sekunden |
 | `RATE_LIMIT_MAX_WAIT_SECONDS` | 60 | Max. Wartezeit bei Rate-Limit |
