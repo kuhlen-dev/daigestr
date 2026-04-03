@@ -145,8 +145,8 @@ from intelligence import (
     find_matching_template,
     _make_null_tolerant,
     _apply_auto_extract,
-    get_db_connection,
-    get_template_by_id,
+    get_db_connection,  # re-exported from templates_db via intelligence
+    get_template_by_id,  # re-exported from templates_db via intelligence
     _META_SCHEMA,
     _STEUER_SIGNALWOERTER,
     _DATENTYP_KONVENTIONEN,
@@ -178,6 +178,7 @@ except ImportError:
 from templates_db import (  # noqa: F401
     init_templates_db,
     get_all_template_ids,
+    get_template_by_id,
     search_templates,
     get_prompt,
     get_scoring_weight,
@@ -187,6 +188,7 @@ from templates_db import (  # noqa: F401
     cache_get,
     cache_set,
     cache_clear,
+    pool_reset,
     # Async Job API (T-DAI-023)
     job_create,
     job_update,
