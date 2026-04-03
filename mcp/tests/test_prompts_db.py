@@ -1,13 +1,14 @@
 """
-Tests für T-DAI-008: Prompts und Scoring-Gewichtungen in SQLite-DB.
+Tests für T-DAI-008: Prompts und Scoring-Gewichtungen in PostgreSQL-DB.
 
 Alle Tests laufen ohne Docker-Container und ohne echte API-Calls.
-DB wird in tmp_path angelegt und mit seed.sql befüllt.
+DB ist die echte PostgreSQL-DB (daigestr auf localhost:15432).
+Vor jedem Test werden relevante Tabellen geTRUNCATEd und neu geseeded.
 """
 
-import sqlite3
-import tempfile
-from pathlib import Path
+import os
+import psycopg2
+import psycopg2.extras
 from unittest.mock import patch
 
 import pytest
@@ -16,45 +17,55 @@ from conftest import load_server_module
 
 
 # ---------------------------------------------------------------------------
-# Server laden und DB-Hilfsfunktionen extrahieren
+# Server laden
 # ---------------------------------------------------------------------------
+
+_DB_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://daigestr:daigestr@localhost:15432/daigestr",
+)
 
 _server = load_server_module(use_real_pil=False)
 
 
 # ---------------------------------------------------------------------------
-# Fixture: Temporäre DB mit vollständiger Initialisierung (inkl. Seed)
+# Fixture: DB truncaten + re-seeden vor jedem Test
 # ---------------------------------------------------------------------------
 
-@pytest.fixture
-def initialized_db(tmp_path):
-    """Legt eine temporäre DB an, führt init_templates_db() aus (inkl. seed.sql-Seeding)."""
-    db_path = tmp_path / "test_prompts.db"
-    with patch.object(_server, "TEMPLATES_DB_PATH", db_path):
+@pytest.fixture(autouse=True)
+def reset_db():
+    """Truncate + re-init PostgreSQL DB vor jedem Test."""
+    import templates_db as _tdb
+    _tdb.pool_reset()
+    with patch.dict(os.environ, {"DATABASE_URL": _DB_URL}):
+        conn = psycopg2.connect(_DB_URL)
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute("TRUNCATE TABLE template, prompt, scoring_weight, cache RESTART IDENTITY CASCADE")
+        conn.close()
+        # Pool neu initialisieren mit Test-DB-URL
+        _tdb.pool_reset()
         _server.init_templates_db()
-        yield db_path
+        yield
+        _tdb.pool_reset()
 
 
-# ---------------------------------------------------------------------------
-# Hilfsfunktion: get_prompt und get_scoring_weight direkt aus server-Namespace
-# ---------------------------------------------------------------------------
-
-def _get_prompt(db_path, category, name, language="de"):
-    """Ruft get_prompt mit gepatchtem DB-Pfad auf."""
-    with patch.object(_server, "TEMPLATES_DB_PATH", db_path):
-        return _server.get_prompt(category, name, language)
+def _get_pg_conn():
+    conn = psycopg2.connect(_DB_URL)
+    conn.cursor_factory = psycopg2.extras.RealDictCursor
+    return conn
 
 
-def _get_scoring_weight(db_path, weight_name):
-    """Ruft get_scoring_weight mit gepatchtem DB-Pfad auf."""
-    with patch.object(_server, "TEMPLATES_DB_PATH", db_path):
-        return _server.get_scoring_weight(weight_name)
+def _get_prompt(category, name, language="de"):
+    return _server.get_prompt(category, name, language)
 
 
-def _upsert_prompt(db_path, prompt_id, category, name, content_de=None, content_en=None):
-    """Ruft upsert_prompt mit gepatchtem DB-Pfad auf."""
-    with patch.object(_server, "TEMPLATES_DB_PATH", db_path):
-        return _server.upsert_prompt(prompt_id, category, name, content_de, content_en)
+def _get_scoring_weight(weight_name):
+    return _server.get_scoring_weight(weight_name)
+
+
+def _upsert_prompt(prompt_id, category, name, content_de=None, content_en=None):
+    return _server.upsert_prompt(prompt_id, category, name, content_de, content_en)
 
 
 # ---------------------------------------------------------------------------
@@ -64,40 +75,52 @@ def _upsert_prompt(db_path, prompt_id, category, name, content_de=None, content_
 class TestInitPromptsTables:
     """Tests dass die neuen Tabellen korrekt erstellt werden."""
 
-    def test_prompts_table_created(self, initialized_db):
-        """prompt-Tabelle wird von init_templates_db erstellt."""
-        conn = sqlite3.connect(str(initialized_db))
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='prompt'"
+    def test_prompts_table_created(self):
+        """prompt-Tabelle existiert in PostgreSQL."""
+        conn = _get_pg_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema='public' AND table_name='prompt'"
         )
-        result = cursor.fetchone()
+        result = cur.fetchone()
         conn.close()
         assert result is not None, "prompt-Tabelle sollte existieren"
 
-    def test_scoring_weights_table_created(self, initialized_db):
-        """scoring_weight-Tabelle wird von init_templates_db erstellt."""
-        conn = sqlite3.connect(str(initialized_db))
-        cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='scoring_weight'"
+    def test_scoring_weights_table_created(self):
+        """scoring_weight-Tabelle existiert in PostgreSQL."""
+        conn = _get_pg_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema='public' AND table_name='scoring_weight'"
         )
-        result = cursor.fetchone()
+        result = cur.fetchone()
         conn.close()
         assert result is not None, "scoring_weight-Tabelle sollte existieren"
 
-    def test_prompts_table_has_required_columns(self, initialized_db):
+    def test_prompts_table_has_required_columns(self):
         """prompt-Tabelle hat alle benötigten Spalten."""
-        conn = sqlite3.connect(str(initialized_db))
-        cursor = conn.execute("PRAGMA table_info(prompt)")
-        cols = {row[1] for row in cursor.fetchall()}
+        conn = _get_pg_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema='public' AND table_name='prompt'"
+        )
+        cols = {row["column_name"] for row in cur.fetchall()}
         conn.close()
         required = {"id", "category", "name", "content_de", "content_en", "version", "created_at", "updated_at"}
         assert required.issubset(cols), f"Fehlende Spalten: {required - cols}"
 
-    def test_scoring_weights_table_has_required_columns(self, initialized_db):
+    def test_scoring_weights_table_has_required_columns(self):
         """scoring_weight-Tabelle hat alle benötigten Spalten."""
-        conn = sqlite3.connect(str(initialized_db))
-        cursor = conn.execute("PRAGMA table_info(scoring_weight)")
-        cols = {row[1] for row in cursor.fetchall()}
+        conn = _get_pg_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema='public' AND table_name='scoring_weight'"
+        )
+        cols = {row["column_name"] for row in cur.fetchall()}
         conn.close()
         required = {"id", "name", "value", "description", "created_at"}
         assert required.issubset(cols), f"Fehlende Spalten: {required - cols}"
@@ -107,7 +130,6 @@ class TestInitPromptsTables:
 # Tests: Seed-Daten (alle Prompts aus seed.sql geladen)
 # ---------------------------------------------------------------------------
 
-# Alle erwarteten Prompt-IDs (aus seed.sql)
 _EXPECTED_PROMPT_IDS = [
     "vision.system",
     "vision.default",
@@ -134,7 +156,6 @@ _EXPECTED_PROMPT_IDS = [
     "validate.dual_pass",
 ]
 
-# Alle erwarteten Scoring-Weights aus seed.sql
 _EXPECTED_SCORING_WEIGHT_IDS = [
     "density_low_threshold",
     "density_mid_threshold",
@@ -162,39 +183,43 @@ _EXPECTED_SCORING_WEIGHT_IDS = [
 class TestSeedDataLoaded:
     """Testet dass alle Prompts aus seed.sql korrekt geladen wurden."""
 
-    def test_all_prompts_seeded(self, initialized_db):
+    def test_all_prompts_seeded(self):
         """Alle erwarteten Prompt-IDs sind in der DB vorhanden."""
-        conn = sqlite3.connect(str(initialized_db))
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute("SELECT id FROM prompt").fetchall()
+        conn = _get_pg_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM prompt")
+        seeded_ids = {row["id"] for row in cur.fetchall()}
         conn.close()
-        seeded_ids = {r["id"] for r in rows}
         for expected_id in _EXPECTED_PROMPT_IDS:
             assert expected_id in seeded_ids, f"Prompt fehlt: '{expected_id}'"
 
-    def test_all_scoring_weights_seeded(self, initialized_db):
+    def test_all_scoring_weights_seeded(self):
         """Alle erwarteten Scoring-Weights sind in der DB vorhanden."""
-        conn = sqlite3.connect(str(initialized_db))
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute("SELECT id FROM scoring_weight").fetchall()
+        conn = _get_pg_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM scoring_weight")
+        seeded_ids = {row["id"] for row in cur.fetchall()}
         conn.close()
-        seeded_ids = {r["id"] for r in rows}
         for expected_id in _EXPECTED_SCORING_WEIGHT_IDS:
             assert expected_id in seeded_ids, f"Scoring-Weight fehlt: '{expected_id}'"
 
-    def test_prompts_count_minimum(self, initialized_db):
+    def test_prompts_count_minimum(self):
         """Mindestens die erwartete Anzahl Prompts sind vorhanden."""
-        conn = sqlite3.connect(str(initialized_db))
-        count = conn.execute("SELECT COUNT(*) FROM prompt").fetchone()[0]
+        conn = _get_pg_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS cnt FROM prompt")
+        count = cur.fetchone()["cnt"]
         conn.close()
         assert count >= len(_EXPECTED_PROMPT_IDS), (
             f"Zu wenig Prompts: {count} < {len(_EXPECTED_PROMPT_IDS)}"
         )
 
-    def test_scoring_weights_count_minimum(self, initialized_db):
+    def test_scoring_weights_count_minimum(self):
         """Mindestens die erwartete Anzahl Scoring-Weights sind vorhanden."""
-        conn = sqlite3.connect(str(initialized_db))
-        count = conn.execute("SELECT COUNT(*) FROM scoring_weight").fetchone()[0]
+        conn = _get_pg_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS cnt FROM scoring_weight")
+        count = cur.fetchone()["cnt"]
         conn.close()
         assert count >= len(_EXPECTED_SCORING_WEIGHT_IDS), (
             f"Zu wenig Scoring-Weights: {count} < {len(_EXPECTED_SCORING_WEIGHT_IDS)}"
@@ -208,76 +233,75 @@ class TestSeedDataLoaded:
 class TestGetPromptValid:
     """Testet get_prompt() mit gültigen IDs."""
 
-    def test_get_vision_system_de(self, initialized_db):
+    def test_get_vision_system_de(self):
         """vision.system DE-Prompt ist nicht leer und enthält Schlüsselwörter."""
-        result = _get_prompt(initialized_db, "vision", "system", language="de")
+        result = _get_prompt("vision", "system", language="de")
         assert isinstance(result, str)
         assert len(result) > 10
         assert "Assistent" in result or "präzis" in result
 
-    def test_get_vision_system_en(self, initialized_db):
+    def test_get_vision_system_en(self):
         """vision.system EN-Prompt ist nicht leer und enthält Schlüsselwörter."""
-        result = _get_prompt(initialized_db, "vision", "system", language="en")
+        result = _get_prompt("vision", "system", language="en")
         assert isinstance(result, str)
         assert len(result) > 10
         assert "assistant" in result.lower() or "precise" in result.lower()
 
-    def test_get_image_classify_en(self, initialized_db):
+    def test_get_image_classify_en(self):
         """image.classify EN-Prompt enthält die Klassifizierungs-Kategorien."""
-        result = _get_prompt(initialized_db, "image", "classify", language="en")
+        result = _get_prompt("image", "classify", language="en")
         assert "photo" in result
         assert "chart" in result
         assert "diagram" in result
         assert "text_scan" in result
         assert "decorative" in result
 
-    def test_get_image_mermaid_en(self, initialized_db):
+    def test_get_image_mermaid_en(self):
         """image.mermaid EN-Prompt enthält Mermaid-Syntax-Anweisungen."""
-        result = _get_prompt(initialized_db, "image", "mermaid", language="en")
+        result = _get_prompt("image", "mermaid", language="en")
         assert "mermaid" in result.lower() or "Mermaid" in result
         assert "graph TD" in result
 
-    def test_get_classify_system_de(self, initialized_db):
+    def test_get_classify_system_de(self):
         """classify.system_de enthält JSON-Anweisung."""
-        result = _get_prompt(initialized_db, "classify", "system_de", language="de")
+        result = _get_prompt("classify", "system_de", language="de")
         assert "JSON" in result
         assert "Dokumentenklassifizierung" in result
 
-    def test_get_ocr_correct_user_de(self, initialized_db):
+    def test_get_ocr_correct_user_de(self):
         """ocr_correct.user_de enthält Korrektur-Anweisungen."""
-        result = _get_prompt(initialized_db, "ocr_correct", "user_de", language="de")
+        result = _get_prompt("ocr_correct", "user_de", language="de")
         assert "OCR" in result
         assert "CORRECTIONS" in result
         assert "{text}" in result
 
-    def test_get_extract_system_en(self, initialized_db):
+    def test_get_extract_system_en(self):
         """extract.system_en enthält JSON-Anweisung."""
-        result = _get_prompt(initialized_db, "extract", "system_en", language="en")
+        result = _get_prompt("extract", "system_en", language="en")
         assert "JSON" in result
         assert "expert" in result.lower()
 
-    def test_get_validate_dual_pass(self, initialized_db):
+    def test_get_validate_dual_pass(self):
         """validate.dual_pass enthält OCR-Vergleichs-Anweisung."""
-        result = _get_prompt(initialized_db, "validate", "dual_pass", language="de")
+        result = _get_prompt("validate", "dual_pass", language="de")
         assert "OCR" in result
         assert "{markdown}" in result
 
-    def test_get_vision_scanned_pdf(self, initialized_db):
+    def test_get_vision_scanned_pdf(self):
         """vision.scanned_pdf enthält PDF-Scan-Anweisungen."""
-        result = _get_prompt(initialized_db, "vision", "scanned_pdf", language="de")
+        result = _get_prompt("vision", "scanned_pdf", language="de")
         assert "Markdown" in result
         assert "UNLESERLICH" in result or "unleserlich" in result
 
-    def test_get_vision_default(self, initialized_db):
+    def test_get_vision_default(self):
         """vision.default enthält Bild-Analyse-Anweisungen."""
-        result = _get_prompt(initialized_db, "vision", "default", language="de")
+        result = _get_prompt("vision", "default", language="de")
         assert "Markdown" in result
         assert "Bild" in result or "Text" in result
 
-    def test_language_fallback_de_to_en(self, initialized_db):
+    def test_language_fallback_de_to_en(self):
         """Wenn DE-Inhalt fehlt, fällt get_prompt() auf EN zurück."""
-        # image.classify hat nur content_en, kein content_de → DE-Anfrage gibt EN zurück
-        result = _get_prompt(initialized_db, "image", "classify", language="de")
+        result = _get_prompt("image", "classify", language="de")
         assert isinstance(result, str)
         assert len(result) > 0
 
@@ -305,9 +329,9 @@ class TestGetPromptValid:
         ("extract.user_en", "extract", "user_en", "en"),
         ("validate.dual_pass", "validate", "dual_pass", "de"),
     ])
-    def test_all_expected_prompts_loadable(self, initialized_db, prompt_id, category, name, lang):
+    def test_all_expected_prompts_loadable(self, prompt_id, category, name, lang):
         """Alle Prompts aus seed.sql können per get_prompt() geladen werden."""
-        result = _get_prompt(initialized_db, category, name, language=lang)
+        result = _get_prompt(category, name, language=lang)
         assert isinstance(result, str), f"Prompt {prompt_id} sollte String sein"
         assert len(result) > 0, f"Prompt {prompt_id} sollte nicht leer sein"
 
@@ -319,36 +343,30 @@ class TestGetPromptValid:
 class TestGetPromptInvalid:
     """Testet dass get_prompt() bei unbekannter ID ValueError wirft — KEIN Fallback."""
 
-    def test_unknown_category_raises_value_error(self, initialized_db):
+    def test_unknown_category_raises_value_error(self):
         """Unbekannte Kategorie → ValueError."""
-        with patch.object(_server, "TEMPLATES_DB_PATH", initialized_db):
-            with pytest.raises(ValueError, match="Prompt nicht gefunden"):
-                _server.get_prompt("nonexistent_category", "nonexistent_name")
+        with pytest.raises(ValueError, match="Prompt nicht gefunden"):
+            _server.get_prompt("nonexistent_category", "nonexistent_name")
 
-    def test_unknown_name_raises_value_error(self, initialized_db):
+    def test_unknown_name_raises_value_error(self):
         """Bekannte Kategorie, unbekannter Name → ValueError."""
-        with patch.object(_server, "TEMPLATES_DB_PATH", initialized_db):
-            with pytest.raises(ValueError, match="Prompt nicht gefunden"):
-                _server.get_prompt("vision", "nonexistent_name")
+        with pytest.raises(ValueError, match="Prompt nicht gefunden"):
+            _server.get_prompt("vision", "nonexistent_name")
 
-    def test_empty_category_raises_value_error(self, initialized_db):
+    def test_empty_category_raises_value_error(self):
         """Leere Kategorie → ValueError."""
-        with patch.object(_server, "TEMPLATES_DB_PATH", initialized_db):
-            with pytest.raises(ValueError):
-                _server.get_prompt("", "")
+        with pytest.raises(ValueError):
+            _server.get_prompt("", "")
 
-    def test_no_silent_fallback_no_default_returned(self, initialized_db):
+    def test_no_silent_fallback_no_default_returned(self):
         """get_prompt() gibt NIEMALS einen Default-String zurück wenn Prompt fehlt."""
-        with patch.object(_server, "TEMPLATES_DB_PATH", initialized_db):
-            raised = False
-            try:
-                result = _server.get_prompt("definitely_nonexistent", "also_nonexistent")
-                # Wenn wir hier ankommen, ist kein Fehler geworfen worden
-                # Das ist ein Test-Fehler
-                assert False, f"Erwartete ValueError, aber bekam: '{result}'"
-            except ValueError:
-                raised = True
-            assert raised, "get_prompt() muss ValueError werfen wenn Prompt nicht gefunden"
+        raised = False
+        try:
+            result = _server.get_prompt("definitely_nonexistent", "also_nonexistent")
+            assert False, f"Erwartete ValueError, aber bekam: '{result}'"
+        except ValueError:
+            raised = True
+        assert raised, "get_prompt() muss ValueError werfen wenn Prompt nicht gefunden"
 
 
 # ---------------------------------------------------------------------------
@@ -358,40 +376,40 @@ class TestGetPromptInvalid:
 class TestGetScoringWeightValid:
     """Testet get_scoring_weight() mit gültigen IDs."""
 
-    def test_grade_poor_threshold(self, initialized_db):
+    def test_grade_poor_threshold(self):
         """grade_poor hat den erwarteten Wert 0.3."""
-        result = _get_scoring_weight(initialized_db, "grade_poor")
+        result = _get_scoring_weight("grade_poor")
         assert isinstance(result, float)
         assert abs(result - 0.3) < 1e-9
 
-    def test_grade_fair_threshold(self, initialized_db):
+    def test_grade_fair_threshold(self):
         """grade_fair hat den erwarteten Wert 0.6."""
-        result = _get_scoring_weight(initialized_db, "grade_fair")
+        result = _get_scoring_weight("grade_fair")
         assert abs(result - 0.6) < 1e-9
 
-    def test_grade_good_threshold(self, initialized_db):
+    def test_grade_good_threshold(self):
         """grade_good hat den erwarteten Wert 0.8."""
-        result = _get_scoring_weight(initialized_db, "grade_good")
+        result = _get_scoring_weight("grade_good")
         assert abs(result - 0.8) < 1e-9
 
-    def test_density_low_threshold(self, initialized_db):
+    def test_density_low_threshold(self):
         """density_low_threshold hat den erwarteten Wert 0.1."""
-        result = _get_scoring_weight(initialized_db, "density_low_threshold")
+        result = _get_scoring_weight("density_low_threshold")
         assert abs(result - 0.1) < 1e-9
 
-    def test_density_optimal(self, initialized_db):
+    def test_density_optimal(self):
         """density_optimal hat den erwarteten Wert 0.3."""
-        result = _get_scoring_weight(initialized_db, "density_optimal")
+        result = _get_scoring_weight("density_optimal")
         assert abs(result - 0.3) < 1e-9
 
-    def test_vision_score_high(self, initialized_db):
+    def test_vision_score_high(self):
         """vision_score_high hat den erwarteten Wert 0.2."""
-        result = _get_scoring_weight(initialized_db, "vision_score_high")
+        result = _get_scoring_weight("vision_score_high")
         assert abs(result - 0.2) < 1e-9
 
-    def test_word_quality_max(self, initialized_db):
+    def test_word_quality_max(self):
         """word_quality_max hat den erwarteten Wert 0.3."""
-        result = _get_scoring_weight(initialized_db, "word_quality_max")
+        result = _get_scoring_weight("word_quality_max")
         assert abs(result - 0.3) < 1e-9
 
     @pytest.mark.parametrize("weight_id,expected_value", [
@@ -415,9 +433,9 @@ class TestGetScoringWeightValid:
         ("grade_fair", 0.6),
         ("grade_good", 0.8),
     ])
-    def test_scoring_weight_value(self, initialized_db, weight_id, expected_value):
+    def test_scoring_weight_value(self, weight_id, expected_value):
         """Alle Scoring-Weights haben die erwarteten Werte."""
-        result = _get_scoring_weight(initialized_db, weight_id)
+        result = _get_scoring_weight(weight_id)
         assert isinstance(result, float), f"{weight_id} sollte float sein"
         assert abs(result - expected_value) < 1e-9, (
             f"{weight_id}: erwartet {expected_value}, bekam {result}"
@@ -431,22 +449,20 @@ class TestGetScoringWeightValid:
 class TestGetScoringWeightInvalid:
     """Testet dass get_scoring_weight() bei unbekannter ID ValueError wirft."""
 
-    def test_unknown_weight_raises_value_error(self, initialized_db):
+    def test_unknown_weight_raises_value_error(self):
         """Unbekannte Gewichtung → ValueError."""
-        with patch.object(_server, "TEMPLATES_DB_PATH", initialized_db):
-            with pytest.raises(ValueError, match="Scoring-Gewichtung nicht gefunden"):
-                _server.get_scoring_weight("nonexistent_weight")
+        with pytest.raises(ValueError, match="Scoring-Gewichtung nicht gefunden"):
+            _server.get_scoring_weight("nonexistent_weight")
 
-    def test_no_silent_fallback(self, initialized_db):
+    def test_no_silent_fallback(self):
         """get_scoring_weight() gibt NIEMALS 0.0 oder None zurück wenn Gewichtung fehlt."""
-        with patch.object(_server, "TEMPLATES_DB_PATH", initialized_db):
-            raised = False
-            try:
-                result = _server.get_scoring_weight("definitely_nonexistent_weight")
-                assert False, f"Erwartete ValueError, aber bekam: {result}"
-            except ValueError:
-                raised = True
-            assert raised
+        raised = False
+        try:
+            result = _server.get_scoring_weight("definitely_nonexistent_weight")
+            assert False, f"Erwartete ValueError, aber bekam: {result}"
+        except ValueError:
+            raised = True
+        assert raised
 
 
 # ---------------------------------------------------------------------------
@@ -456,10 +472,9 @@ class TestGetScoringWeightInvalid:
 class TestUpsertPrompt:
     """Testet upsert_prompt() — Erstellen und Versionierung."""
 
-    def test_upsert_creates_new_prompt(self, initialized_db):
+    def test_upsert_creates_new_prompt(self):
         """upsert_prompt() erstellt einen neuen Prompt wenn ID nicht existiert."""
         result = _upsert_prompt(
-            initialized_db,
             "test.new_prompt",
             "test",
             "new_prompt",
@@ -469,73 +484,43 @@ class TestUpsertPrompt:
         assert result["id"] == "test.new_prompt"
         assert result["version"] == 1
 
-        # Verify in DB
-        content = _get_prompt(initialized_db, "test", "new_prompt", language="de")
+        content = _get_prompt("test", "new_prompt", language="de")
         assert content == "Test-Inhalt DE"
 
-    def test_upsert_updates_existing_prompt(self, initialized_db):
+    def test_upsert_updates_existing_prompt(self):
         """upsert_prompt() aktualisiert bestehenden Prompt."""
-        # Erst erstellen
-        _upsert_prompt(
-            initialized_db,
-            "test.update_me",
-            "test",
-            "update_me",
-            content_de="Original DE",
-        )
-        # Dann aktualisieren
-        result = _upsert_prompt(
-            initialized_db,
-            "test.update_me",
-            "test",
-            "update_me",
-            content_de="Updated DE",
-        )
+        _upsert_prompt("test.update_me", "test", "update_me", content_de="Original DE")
+        result = _upsert_prompt("test.update_me", "test", "update_me", content_de="Updated DE")
         assert result["version"] == 2
 
-        # Verify updated content
-        content = _get_prompt(initialized_db, "test", "update_me", language="de")
+        content = _get_prompt("test", "update_me", language="de")
         assert content == "Updated DE"
 
-    def test_upsert_increments_version_on_each_update(self, initialized_db):
+    def test_upsert_increments_version_on_each_update(self):
         """Version wird bei jedem Update inkrementiert."""
         for i in range(3):
             result = _upsert_prompt(
-                initialized_db,
-                "test.versioned",
-                "test",
-                "versioned",
-                content_de=f"Version {i + 1}",
+                "test.versioned", "test", "versioned", content_de=f"Version {i + 1}"
             )
         assert result["version"] == 3
 
-    def test_upsert_returns_correct_metadata(self, initialized_db):
+    def test_upsert_returns_correct_metadata(self):
         """upsert_prompt() gibt korrekte Metadaten zurück."""
         result = _upsert_prompt(
-            initialized_db,
-            "test.metadata",
-            "test",
-            "metadata",
-            content_de="DE content",
-            content_en="EN content",
+            "test.metadata", "test", "metadata",
+            content_de="DE content", content_en="EN content",
         )
         assert result["id"] == "test.metadata"
         assert result["category"] == "test"
         assert result["name"] == "metadata"
         assert result["version"] == 1
 
-    def test_upsert_en_content_loadable(self, initialized_db):
+    def test_upsert_en_content_loadable(self):
         """Upsert-Prompt mit EN-Inhalt ist per get_prompt(..., language='en') ladbar."""
-        _upsert_prompt(
-            initialized_db,
-            "test.bilingual",
-            "test",
-            "bilingual",
-            content_de="Deutsch",
-            content_en="English",
-        )
-        result_de = _get_prompt(initialized_db, "test", "bilingual", language="de")
-        result_en = _get_prompt(initialized_db, "test", "bilingual", language="en")
+        _upsert_prompt("test.bilingual", "test", "bilingual",
+                       content_de="Deutsch", content_en="English")
+        result_de = _get_prompt("test", "bilingual", language="de")
+        result_en = _get_prompt("test", "bilingual", language="en")
         assert result_de == "Deutsch"
         assert result_en == "English"
 
@@ -547,20 +532,18 @@ class TestUpsertPrompt:
 class TestGetPromptById:
     """Testet get_prompt_by_id()."""
 
-    def test_get_existing_prompt_by_id(self, initialized_db):
+    def test_get_existing_prompt_by_id(self):
         """Bekannter Prompt-ID wird korrekt geladen."""
-        with patch.object(_server, "TEMPLATES_DB_PATH", initialized_db):
-            result = _server.get_prompt_by_id("vision.system")
+        result = _server.get_prompt_by_id("vision.system")
         assert result["id"] == "vision.system"
         assert result["category"] == "vision"
         assert result["name"] == "system"
         assert "version" in result
 
-    def test_get_nonexistent_prompt_by_id_raises(self, initialized_db):
+    def test_get_nonexistent_prompt_by_id_raises(self):
         """Unbekannte ID → ValueError."""
-        with patch.object(_server, "TEMPLATES_DB_PATH", initialized_db):
-            with pytest.raises(ValueError, match="Prompt nicht gefunden"):
-                _server.get_prompt_by_id("definitely.nonexistent")
+        with pytest.raises(ValueError, match="Prompt nicht gefunden"):
+            _server.get_prompt_by_id("definitely.nonexistent")
 
 
 # ---------------------------------------------------------------------------
@@ -570,31 +553,27 @@ class TestGetPromptById:
 class TestListPrompts:
     """Testet list_prompts()."""
 
-    def test_list_all_prompts(self, initialized_db):
+    def test_list_all_prompts(self):
         """list_prompts() ohne Filter gibt alle Prompts zurück."""
-        with patch.object(_server, "TEMPLATES_DB_PATH", initialized_db):
-            result = _server.list_prompts()
+        result = _server.list_prompts()
         assert isinstance(result, list)
         assert len(result) >= len(_EXPECTED_PROMPT_IDS)
 
-    def test_list_prompts_by_category(self, initialized_db):
+    def test_list_prompts_by_category(self):
         """list_prompts(category='vision') gibt nur Vision-Prompts zurück."""
-        with patch.object(_server, "TEMPLATES_DB_PATH", initialized_db):
-            result = _server.list_prompts(category="vision")
+        result = _server.list_prompts(category="vision")
         assert len(result) > 0
         for item in result:
             assert item["category"] == "vision"
 
-    def test_list_prompts_unknown_category_returns_empty(self, initialized_db):
+    def test_list_prompts_unknown_category_returns_empty(self):
         """list_prompts() mit unbekannter Kategorie gibt leere Liste zurück."""
-        with patch.object(_server, "TEMPLATES_DB_PATH", initialized_db):
-            result = _server.list_prompts(category="nonexistent_category")
+        result = _server.list_prompts(category="nonexistent_category")
         assert result == []
 
-    def test_list_prompts_has_required_keys(self, initialized_db):
+    def test_list_prompts_has_required_keys(self):
         """Jeder Eintrag in list_prompts() hat id, category, name, version."""
-        with patch.object(_server, "TEMPLATES_DB_PATH", initialized_db):
-            result = _server.list_prompts(category="classify")
+        result = _server.list_prompts(category="classify")
         for item in result:
             assert "id" in item
             assert "category" in item
