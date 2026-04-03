@@ -13,3 +13,4 @@ up.build
 mcp/__pycache__/
 mcp/tests/__pycache__/
 mcp/tests/.pytest_cache/
+FEATURE_NORMALIZATION_LAYER.md
