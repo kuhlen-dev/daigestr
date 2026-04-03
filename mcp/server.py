@@ -188,6 +188,7 @@ from settings import (  # noqa: F401
     AUDIT_RETENTION_DAYS,
     AUDIT_API_ENABLED,
 )
+from api_rest_audit import audit_router  # noqa: F401 — re-exported for test patchability
 
 # Re-export templates_db functions for backwards-compatibility
 from templates_db import (  # noqa: F401

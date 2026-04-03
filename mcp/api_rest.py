@@ -79,6 +79,7 @@ from routing import (
     convert_folder_contents,
     _build_tips_dict,
 )
+from api_rest_audit import audit_router
 
 log = structlog.get_logger()
 
@@ -130,6 +131,10 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         status_code=422,
         content={"detail": safe_errors},
     )
+
+
+# Audit Router einbinden
+app.include_router(audit_router)
 
 
 @app.post("/v1/convert", response_model=ConvertResponse)

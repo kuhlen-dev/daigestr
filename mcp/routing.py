@@ -1276,6 +1276,7 @@ def _build_tips_dict() -> dict:
             {"problem": "ocr_embed has no effect", "cause": "Only works on scanned PDFs", "fix": "ocr_embed only embeds OCR text layer in scanned PDFs — has no effect on text PDFs or other formats"},
             {"problem": "classify_categories ignored", "cause": "classify defaults to false", "fix": "Set classify=true to use custom categories"},
             {"problem": "prompt has no effect on documents", "cause": "prompt only affects Vision analysis", "fix": "prompt is only used for image files processed via Vision API, not for documents"},
+            {"problem": "Audit log entries missing or incorrect", "cause": "Direct DB writes bypass validation and indexing", "fix": "Do NOT modify audit_log directly in DB — use audit_log_event() from audit_db.py for all writes"},
         ],
         "available_templates": get_all_template_ids(),
         "available_formats": {
