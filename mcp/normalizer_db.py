@@ -11,6 +11,7 @@ Reuses get_db_connection() / _return_conn() from templates_db.
 
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 import structlog
@@ -148,6 +149,18 @@ def init_normalization_db() -> None:
         )
 
         conn.commit()
+
+        # Seed normalization tables if empty
+        cur.execute("SELECT COUNT(*) AS cnt FROM normalized_categories")
+        row = cur.fetchone()
+        if row["cnt"] == 0:
+            seed_path = Path(__file__).parent / "seed_normalization.sql"
+            if seed_path.exists():
+                seed_sql = seed_path.read_text(encoding="utf-8")
+                cur.execute(seed_sql)
+                conn.commit()
+                log.info("normalization_seeded", source=str(seed_path))
+
         log.info("normalization_db_initialized")
     finally:
         _return_conn(conn)
