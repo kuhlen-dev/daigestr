@@ -31,9 +31,14 @@ Zwei Container: `daigestr` (Application) und `daigestr-postgres` (PostgreSQL-Dat
 | `intelligence.py` | `classify`, `extract`, `quality_score`, `chunk`, `dual_pass_validate`, `_apply_auto_extract` |
 | `templates_db.py` | PostgreSQL (psycopg2): templates, prompts, scoring_weights, cache, async jobs (`cache_get/set/clear`, `job_create/update/get`) |
 | `audit_db.py` | PostgreSQL: Audit-Log-Tabelle — `audit_log`, `audit_get_by_request`, `audit_get_by_job`, `audit_list`, `audit_cleanup` |
+| `normalizer.py` | 13-step Normalization Pipeline (mapping, validation, scoring) |
+| `normalizer_cache.py` | In-memory Cache mit Version-Hash-Invalidierung |
+| `normalizer_db.py` | PostgreSQL CRUD für 6 Normalization-Tabellen |
 | `routing.py` | `convert_auto`, `convert_folder_contents`, `convert_url`, `_build_tips_dict` |
 | `api_rest.py` | FastAPI-App, alle REST-Endpoints |
 | `api_rest_audit.py` | FastAPI-Router `audit_router` — 4 Audit-Endpoints (GET/DELETE), prefix `/v1/audit` |
+| `api_rest_normalize.py` | 15 Admin-REST-Endpoints für Normalization, prefix `/v1/normalized` |
+| `seed_normalization.sql` | 18 Kategorien, 52 Felder, 200+ Werte (DB-Seed) |
 | `api_mcp.py` | FastMCP-Instanz, alle MCP-Tools |
 | `renderers/html.py` | Markdown → vollständiges HTML (Mermaid.js, highlight.js, CSS) |
 | `renderers/text.py` | Markdown → Plaintext (Markdown-Syntax entfernen) |
@@ -86,6 +91,8 @@ Alle Features sind standardmäßig **AUS** — explizit aktivieren oder `mode: "
 | `no_cache` | `false` | Cache umgehen und frische Konvertierung erzwingen |
 | `webhook_url` | `null` | URL für POST-Callback wenn Konvertierung fertig (besonders nützlich mit Async Jobs) |
 | `classify_categories` | (aus Registry) | Erlaubte Dokumenttypen (überschreibt Default) |
+| `normalize` | `false` (auto wenn Mapping vorhanden) | Normalisierung erzwingen/deaktivieren |
+| `compact` | `false` | Kompakt-Format (nur Kategorie-Felder, kürzer) |
 
 ### Bild-Klassifizierung (bei `describe_images: true`)
 
@@ -163,6 +170,8 @@ curl -X POST http://localhost:18006/v1/convert \
 | `chunks` | Nur wenn `chunk=true` |
 | `enriched_pdf` | Nur wenn `ocr_embed=true` und Dokument ist gescanntes PDF (Base64) |
 | `meta` | Immer vorhanden — enthält: `quality_score`, `duration_ms`, `pipeline_steps`, `document_type`, `zugferd`, `xmp_metadata`, `exif`, `iptc`, `cached`, etc. |
+| `normalized` | Nur wenn Normalisierung aktiv und Mapping vorhanden — strukturierte Daten mit einheitlichen Feldnamen |
+| `compact` | Nur wenn `compact=true` — verdichtete Version gruppiert nach Kategorien |
 | `error` | Nur wenn `success=false` |
 
 ### Häufige Fehler
@@ -199,6 +208,21 @@ curl -X POST http://localhost:18006/v1/convert \
 | `/v1/audit/{request_id}` | GET | Alle Audit-Events für eine request_id |
 | `/v1/audit/job/{job_id}` | GET | Alle Audit-Events für eine job_id |
 | `/v1/audit/cleanup` | DELETE | Alte Audit-Einträge löschen (gemäß `AUDIT_RETENTION_DAYS`) |
+| `/v1/normalized/fields` | GET | Alle normalisierten Felder |
+| `/v1/normalized/fields` | POST | Neues Feld anlegen |
+| `/v1/normalized/fields/{name}` | PUT | Feld aktualisieren |
+| `/v1/normalized/fields/{name}` | DELETE | Feld löschen |
+| `/v1/normalized/values/{field}` | GET | Erlaubte Werte für ein Feld |
+| `/v1/normalized/values/{field}` | POST | Neuen Wert anlegen |
+| `/v1/normalized/categories` | GET | Alle Kategorien mit Feld-Zuordnung |
+| `/v1/normalized/categories` | POST | Neue Kategorie anlegen |
+| `/v1/normalized/mappings/{template}` | GET | Mapping für ein Template |
+| `/v1/normalized/mappings/{template}` | PUT | Mapping setzen/aktualisieren |
+| `/v1/normalized/schema` | GET | Aktuelles Normalization-Schema (JSON Schema) |
+| `/v1/normalized/coverage` | GET | Coverage-Report (Templates mit/ohne Mapping) |
+| `/v1/normalized/batch-validate` | POST | Batch-Validierung mehrerer normalisierter Objekte |
+| `/v1/normalized/corrections` | POST | Korrektur-Feedback einreichen |
+| `/v1/normalized/corrections` | GET | Korrektur-Statistiken |
 | `/v1/cache` | DELETE | Request-Level-Cache leeren |
 | `/v1/health` | GET | Health-Check |
 | `/v1/formats` | GET | Unterstützte Formate |
@@ -326,6 +350,10 @@ Wichtigste Variablen:
 | `AUDIT_ENABLED` | true | Audit-Logging aktivieren |
 | `AUDIT_RETENTION_DAYS` | 30 | Aufbewahrungsdauer für Audit-Events (Tage) |
 | `AUDIT_API_ENABLED` | true | Audit-REST-API aktivieren (bei false → HTTP 404) |
+| `NORMALIZE_CACHE_TTL_SECONDS` | 60 | TTL für den Normalization-In-Memory-Cache (Sekunden) |
+| `NORMALIZE_CACHE_ENABLED` | true | Normalization-Cache aktivieren |
+| `NORMALIZE_FALLBACK_COUNTRY` | DE | Fallback-Länderkode für Normalisierung |
+| `NORMALIZE_PLAUSIBILITY_TOLERANCE` | 0.01 | Toleranz für Plausibilitätsprüfungen |
 
 ## Unterstützte Formate
 

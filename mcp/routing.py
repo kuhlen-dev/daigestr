@@ -1387,5 +1387,27 @@ def _build_tips_dict() -> dict:
             "calendar_events": "Calendar events extracted from .ics attachments",
             "hidden_slides": "PPTX hidden slides — extracted with hidden=true marker in meta",
         },
+        "normalization": {
+            "description": "Automatische Normalisierung extrahierter Daten in einheitliche Feldnamen",
+            "how_it_works": "Bei convert/extract: Wenn ein Mapping für den Template-Typ existiert, werden extrahierte Felder automatisch normalisiert",
+            "parameters": {
+                "normalize": "true/false — Normalisierung erzwingen oder deaktivieren (Default: auto wenn Mapping vorhanden)",
+                "compact": "true/false — Kompakt-Format mit Kategorie-Gruppierung",
+            },
+            "response_fields": {
+                "normalized": "Normalisierte Daten mit einheitlichen Feldnamen, Typen, Validierung und Qualitäts-Score",
+                "compact": "Verdichtete Version gruppiert nach Kategorien (nur wenn compact=true)",
+            },
+            "admin_endpoints": [
+                "GET/POST /v1/normalized/fields — Felder verwalten",
+                "GET/POST /v1/normalized/values/{field} — Erlaubte Werte verwalten",
+                "GET/POST /v1/normalized/categories — Kategorien verwalten",
+                "GET/PUT /v1/normalized/mappings/{template} — Template-Mappings",
+                "GET /v1/normalized/schema — JSON Schema",
+                "GET /v1/normalized/coverage — Coverage Report",
+                "POST /v1/normalized/batch-validate — Batch-Validierung",
+                "POST/GET /v1/normalized/corrections — Korrektur-Feedback",
+            ],
+        },
         "note_mcp_vs_rest": "MCP tool 'convert' uses 'base64_data' parameter (not 'base64' like REST API)",
     }
