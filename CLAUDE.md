@@ -30,8 +30,10 @@ Zwei Container: `daigestr` (Application) und `daigestr-postgres` (PostgreSQL-Dat
 | `converters/email.py` | EML-Parsing, Routing-Metadaten, Thread-Infos, Kalender-Events |
 | `intelligence.py` | `classify`, `extract`, `quality_score`, `chunk`, `dual_pass_validate`, `_apply_auto_extract` |
 | `templates_db.py` | PostgreSQL (psycopg2): templates, prompts, scoring_weights, cache, async jobs (`cache_get/set/clear`, `job_create/update/get`) |
+| `audit_db.py` | PostgreSQL: Audit-Log-Tabelle — `audit_log`, `audit_get_by_request`, `audit_get_by_job`, `audit_list`, `audit_cleanup` |
 | `routing.py` | `convert_auto`, `convert_folder_contents`, `convert_url`, `_build_tips_dict` |
 | `api_rest.py` | FastAPI-App, alle REST-Endpoints |
+| `api_rest_audit.py` | FastAPI-Router `audit_router` — 4 Audit-Endpoints (GET/DELETE), prefix `/v1/audit` |
 | `api_mcp.py` | FastMCP-Instanz, alle MCP-Tools |
 | `renderers/html.py` | Markdown → vollständiges HTML (Mermaid.js, highlight.js, CSS) |
 | `renderers/text.py` | Markdown → Plaintext (Markdown-Syntax entfernen) |
@@ -193,6 +195,10 @@ curl -X POST http://localhost:18006/v1/convert \
 | `/v1/jobs/{id}` | DELETE | Job löschen |
 | `/v1/prepare-batch` | POST | Mistral-Batch-Job aus einer Liste von Convert-Requests vorbereiten |
 | `/v1/apply-batch-results` | POST | Abgeschlossene Mistral-Batch-Ergebnisse auf Jobs anwenden |
+| `/v1/audit` | GET | Audit-Events abrufen (filter: since, until, level, event_type, limit) |
+| `/v1/audit/{request_id}` | GET | Alle Audit-Events für eine request_id |
+| `/v1/audit/job/{job_id}` | GET | Alle Audit-Events für eine job_id |
+| `/v1/audit/cleanup` | DELETE | Alte Audit-Einträge löschen (gemäß `AUDIT_RETENTION_DAYS`) |
 | `/v1/cache` | DELETE | Request-Level-Cache leeren |
 | `/v1/health` | GET | Health-Check |
 | `/v1/formats` | GET | Unterstützte Formate |
@@ -210,6 +216,32 @@ curl -X POST http://localhost:18006/v1/convert \
 | `get_tips` | Vollständige Feature-Referenz (analog zu GET /v1/tips) |
 
 **Hinweis:** MCP nutzt `base64_data`, REST nutzt `base64` als Feldname.
+
+## Audit-Log
+
+Jede Konvertierung erzeugt automatisch Audit-Events in PostgreSQL (Tabelle `audit_log`). Aktivierung via ENV:
+
+| Variable | Default | Zweck |
+|----------|---------|-------|
+| `AUDIT_ENABLED` | `true` | Audit-Logging aktivieren (Events in DB schreiben) |
+| `AUDIT_RETENTION_DAYS` | `30` | Aufbewahrungsdauer in Tagen (ältere Events via `DELETE /v1/audit/cleanup` löschen) |
+| `AUDIT_API_ENABLED` | `true` | Audit-REST-API aktivieren (bei `false` → HTTP 404 auf alle `/v1/audit/*` Endpoints) |
+
+Jedes Event enthält: `id`, `request_id`, `job_id`, `event_type`, `step`, `detail`, `progress`, `level`, `error`, `duration_ms`, `metadata`, `source_ip`, `user_agent`, `created_at`.
+
+```bash
+# Letzte Audit-Events abrufen
+curl http://localhost:18006/v1/audit?limit=10
+
+# Events für einen bestimmten Request
+curl http://localhost:18006/v1/audit/<request_id>
+
+# Events für einen Async-Job
+curl http://localhost:18006/v1/audit/job/<job_id>
+
+# Alte Einträge bereinigen
+curl -X DELETE http://localhost:18006/v1/audit/cleanup
+```
 
 ## Build & Run
 
@@ -291,6 +323,9 @@ Wichtigste Variablen:
 | `BRIX_URL` | http://brix:8080 | URL des Brix-Orchestrators (Batch-Detection und Hints) |
 | `WEBHOOK_TIMEOUT_SECONDS` | 30 | Timeout für Webhook-Zustellung |
 | `WHISPER_MODEL_SIZE` | base | Whisper-Modell (tiny/base/small/medium/large) |
+| `AUDIT_ENABLED` | true | Audit-Logging aktivieren |
+| `AUDIT_RETENTION_DAYS` | 30 | Aufbewahrungsdauer für Audit-Events (Tage) |
+| `AUDIT_API_ENABLED` | true | Audit-REST-API aktivieren (bei false → HTTP 404) |
 
 ## Unterstützte Formate
 

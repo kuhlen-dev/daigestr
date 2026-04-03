@@ -455,6 +455,10 @@ See [Mistral Models](#mistral-models-march-2026) for the full comparison.
 | `DELETE` | `/v1/jobs/{id}` | Delete a job |
 | `POST` | `/v1/prepare-batch` | Prepare a Mistral batch job from a list of convert requests |
 | `POST` | `/v1/apply-batch-results` | Apply completed Mistral batch results back to jobs |
+| `GET` | `/v1/audit` | List audit events (filters: since, until, level, event_type, limit) |
+| `GET` | `/v1/audit/{request_id}` | Get all audit events for a request ID |
+| `GET` | `/v1/audit/job/{job_id}` | Get all audit events for a job ID |
+| `DELETE` | `/v1/audit/cleanup` | Delete old audit entries (per `AUDIT_RETENTION_DAYS`) |
 | `DELETE` | `/v1/cache` | Clear the request-level cache |
 | `GET` | `/v1/tips` | Full feature reference as JSON (ideal for LLM self-discovery) |
 | `GET` | `/v1/formats` | List supported file formats |
@@ -1201,6 +1205,14 @@ All settings are controlled via environment variables. Copy `.env.example` to `.
 | `CACHE_ENABLED` | `true` | Enable request-level result cache |
 | `CACHE_TTL_SECONDS` | `3600` | Cache time-to-live in seconds |
 
+### Audit Log
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AUDIT_ENABLED` | `true` | Write audit events to PostgreSQL for every conversion request |
+| `AUDIT_RETENTION_DAYS` | `30` | How long to keep audit records (days). Enforce via `DELETE /v1/audit/cleanup`. |
+| `AUDIT_API_ENABLED` | `true` | Expose `/v1/audit/*` endpoints. Set to `false` to return HTTP 404 on all audit endpoints. |
+
 ### Rate Limiting
 
 | Variable | Default | Description |
@@ -1281,6 +1293,17 @@ Images smaller than `MIN_IMAGE_SIZE_PX` in either dimension are skipped.
 
 When `CACHE_ENABLED=true` (default), the service caches conversion results keyed by file hash + request parameters. Cached responses are returned immediately without re-processing. Cache TTL is controlled by `CACHE_TTL_SECONDS` (default: 3600). Clear the cache via `DELETE /v1/cache`. The `meta.cached` field in the response indicates whether the result came from cache.
 
+### Audit Log
+
+When `AUDIT_ENABLED=true` (default), every conversion request is written to a PostgreSQL `audit_log` table. Each audit event records the request ID, optional job ID, event type, pipeline step, progress percentage, log level, duration, and metadata. Events are queryable via four REST endpoints:
+
+- `GET /v1/audit` — paginated event list with filters (`since`, `until`, `level`, `event_type`, `limit`)
+- `GET /v1/audit/{request_id}` — all events for a specific request, in chronological order
+- `GET /v1/audit/job/{job_id}` — all events linked to an async job
+- `DELETE /v1/audit/cleanup` — remove records older than `AUDIT_RETENTION_DAYS` (default: 30 days)
+
+The audit API can be disabled independently via `AUDIT_API_ENABLED=false` (returns HTTP 404 on all audit endpoints) while keeping internal logging active. No PII is written to the audit log — only structural metadata about the conversion pipeline.
+
 ---
 
 ## Architecture
@@ -1301,7 +1324,9 @@ The service runs as a **single Docker container** (`daigestr`) with a modular Py
 | `converters/audio.py` | ffmpeg extraction + faster-whisper transcription |
 | `converters/email.py` | EML parsing, routing metadata, calendar events |
 | `templates_db.py` | PostgreSQL (psycopg2): templates, prompts, scoring weights, request cache, async jobs |
+| `audit_db.py` | PostgreSQL: audit log table — `audit_log`, `audit_get_by_request`, `audit_get_by_job`, `audit_list`, `audit_cleanup` |
 | `api_rest.py` | FastAPI app, all REST endpoints |
+| `api_rest_audit.py` | FastAPI router — 4 audit endpoints (GET/DELETE), prefix `/v1/audit` |
 | `api_mcp.py` | FastMCP instance, all MCP tools |
 | `renderers/html.py` | Markdown → full HTML (Mermaid.js, highlight.js, CSS) |
 | `renderers/text.py` | Markdown → plain text (strip Markdown syntax) |
@@ -1432,6 +1457,7 @@ Test modules:
 
 | Version | Date | Highlights |
 |---------|------|-----------|
+| **6.2.0** | April 2026 | Audit Log — PostgreSQL-backed `audit_log` table. Every conversion writes structured audit events (request_id, job_id, event_type, step, progress, level, duration_ms, metadata). Four REST endpoints: `GET /v1/audit`, `GET /v1/audit/{request_id}`, `GET /v1/audit/job/{job_id}`, `DELETE /v1/audit/cleanup`. Three new ENV variables: `AUDIT_ENABLED`, `AUDIT_RETENTION_DAYS`, `AUDIT_API_ENABLED`. New modules: `audit_db.py`, `api_rest_audit.py`. |
 | **5.6.0** | April 2026 | `mode: "deep"` for per-image extraction with classification (diagram→Mermaid, chart→table). `mode: "full"` now uses page-level rendering for PDFs (15 API calls vs 58 for a 15-page document). CMYK colorspace fix — CMYK images properly converted to RGB. Embedded image resize before Vision API. `PAGE_DESCRIBE_MAX_PAGES` ENV. Non-PDF fallback to individual image description. |
 | **5.5.0** | March 2026 | Mistral Batch Integration (`POST /v1/prepare-batch`, `POST /v1/apply-batch-results`). Brix detection: hint in `meta.brix_hint` when >10 images detected. Per-image progress in async jobs (`"image 14/50"`). `JOB_TIMEOUT_SECONDS=900` — async jobs fail-safe after 15 min. `BRIX_URL` ENV for Brix reachability check. `DAIGESTR_VERSION` read from Git tag. `CONVERT_TIMEOUT_SECONDS` removed (no internal timeout in `convert_auto`). |
 | **5.9.0** | April 2026 | PostgreSQL migration — Template Registry, request cache, and async jobs migrated from SQLite to PostgreSQL (`daigestr-postgres` container). `DATABASE_URL`, `DB_POOL_MIN`, `DB_POOL_MAX` ENV variables. psycopg2 connection pool. Zero-downtime migration via `seed.sql` + `init_templates_db()`. |
