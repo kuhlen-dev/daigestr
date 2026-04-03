@@ -287,10 +287,12 @@ async def _convert_auto_impl(
     except Exception:
         _default_job_update = None
 
+    _job_completed = False  # Guard: no more status updates after job_set_result
+
     def _update_progress(step: str, detail: str, progress: int) -> None:
         log.info("convert_progress", step=step, detail=detail, progress=progress)
         _audit("step", step=step, detail=detail, progress=progress)
-        if _job_id:
+        if _job_id and not _job_completed:
             import json as _json
             try:
                 _fn = _get("job_update", _default_job_update)
@@ -390,6 +392,8 @@ async def _convert_auto_impl(
 
     def _cache_and_return(resp: ConvertResponse) -> ConvertResponse:
         """Speichert erfolgreiche Responses im Cache, feuert Audit-Event und gibt sie zurück."""
+        nonlocal _job_completed
+        _job_completed = True  # Guard: prevent _update_progress from resetting status after this
         if _cache_enabled and _cache_key is not None and resp.success:
             try:
                 _cache_set(_cache_key, resp.model_dump_json())
