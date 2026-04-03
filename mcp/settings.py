@@ -195,3 +195,11 @@ BRIX_URL = os.getenv("BRIX_URL", "http://brix:8080")
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://daigestr:daigestr@daigestr-postgres:5432/daigestr")
 DB_POOL_MIN = int(os.getenv("DB_POOL_MIN", "1"))
 DB_POOL_MAX = int(os.getenv("DB_POOL_MAX", "5"))
+
+# =============================================================================
+# Audit Log — T-DAI-070
+# =============================================================================
+
+AUDIT_ENABLED = os.getenv("AUDIT_ENABLED", "true").lower() == "true"
+AUDIT_RETENTION_DAYS = int(os.getenv("AUDIT_RETENTION_DAYS", "30"))
+AUDIT_API_ENABLED = os.getenv("AUDIT_API_ENABLED", "true").lower() == "true"

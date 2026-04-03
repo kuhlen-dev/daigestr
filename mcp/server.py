@@ -174,6 +174,21 @@ try:
 except ImportError:
     convert_from_path = None  # type: ignore[assignment]
 
+# Re-export audit_db functions and settings for backwards-compatibility (T-DAI-070)
+from audit_db import (  # noqa: F401
+    init_audit_db,
+    audit_log_event,
+    audit_get_by_request,
+    audit_get_by_job,
+    audit_list,
+    audit_cleanup,
+)
+from settings import (  # noqa: F401
+    AUDIT_ENABLED,
+    AUDIT_RETENTION_DAYS,
+    AUDIT_API_ENABLED,
+)
+
 # Re-export templates_db functions for backwards-compatibility
 from templates_db import (  # noqa: F401
     init_templates_db,
@@ -268,6 +283,13 @@ if __name__ == "__main__":
         log.info("template_registry_initialized", database_url=DATABASE_URL)
     except Exception as _db_init_err:
         log.warning("template_registry_init_failed", error=str(_db_init_err))
+
+    # Initialize Audit Log DB (T-DAI-070)
+    try:
+        init_audit_db()
+        log.info("audit_db_initialized", database_url=DATABASE_URL)
+    except Exception as _audit_init_err:
+        log.warning("audit_db_init_failed", error=str(_audit_init_err))
 
     log.info("server_starting",
              version=VERSION,
