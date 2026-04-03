@@ -9,6 +9,7 @@ Enthält alle Funktionen für Mistral API-Calls:
 
 import asyncio
 import base64
+import time
 from typing import Any
 
 import httpx
@@ -25,10 +26,25 @@ from settings import (
     VISION_MAX_TOKENS,
     MAX_RETRIES,
     RATE_LIMIT_MAX_WAIT_SECONDS,
+    AUDIT_ENABLED,
 )
 from utils import _get, _LOADED_BY_SERVER  # noqa: F401
 
 log = structlog.get_logger()
+
+
+def _audit(request_id: str, event_type: str, **kwargs) -> None:
+    """Fire-and-forget Audit-Log-Helper. Patchable via _get für Tests."""
+    if not AUDIT_ENABLED:
+        return
+    try:
+        _fn = _get("audit_log_event", None)
+        if _fn is None:
+            from audit_db import audit_log_event as _audit_log_event  # noqa: PLC0415
+            _fn = _audit_log_event
+        _fn(request_id=request_id, event_type=event_type, **kwargs)
+    except Exception:
+        pass  # fire-and-forget
 
 
 async def _handle_rate_limit(response: "httpx.Response") -> None:
@@ -45,9 +61,25 @@ async def _handle_rate_limit(response: "httpx.Response") -> None:
             wait_seconds = 5
         wait_seconds = min(wait_seconds, RATE_LIMIT_MAX_WAIT_SECONDS)
         log.warning("rate_limited", retry_after=wait_seconds)
+        _audit(
+            request_id="",
+            event_type="warning",
+            step="rate_limit",
+            detail=f"retry_after={wait_seconds}",
+            level="warning",
+            metadata={"status_code": 429, "retry_after": wait_seconds},
+        )
         await asyncio.sleep(wait_seconds)
     else:
         log.warning("rate_limited", retry_after=None)
+        _audit(
+            request_id="",
+            event_type="warning",
+            step="rate_limit",
+            detail="retry_after=None",
+            level="warning",
+            metadata={"status_code": 429, "retry_after": None},
+        )
     response.raise_for_status()
 
 
@@ -59,6 +91,7 @@ async def _handle_rate_limit(response: "httpx.Response") -> None:
 )
 async def call_mistral_vision_api(payload: dict) -> dict:
     """Ruft die Mistral Vision API mit Retry-Logik auf."""
+    t0 = time.monotonic()
     async with httpx.AsyncClient(timeout=float(MISTRAL_TIMEOUT)) as client:
         response = await client.post(
             f"{MISTRAL_API_URL}/chat/completions",
@@ -71,7 +104,22 @@ async def call_mistral_vision_api(payload: dict) -> dict:
         if response.status_code == 429:
             await _handle_rate_limit(response)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        usage = data.get("usage", {})
+        _audit(
+            request_id="",
+            event_type="mistral_call",
+            detail="vision",
+            duration_ms=duration_ms,
+            metadata={
+                "model": MISTRAL_VISION_MODEL,
+                "tokens_prompt": usage.get("prompt_tokens"),
+                "tokens_completion": usage.get("completion_tokens"),
+                "status_code": 200,
+            },
+        )
+        return data
 
 
 @retry(
@@ -90,6 +138,7 @@ async def call_mistral_ocr_api(file_data: bytes, filename: str) -> dict:
             "document_url": f"data:application/pdf;base64,{b64}",
         },
     }
+    t0 = time.monotonic()
     async with httpx.AsyncClient(timeout=float(MISTRAL_TIMEOUT)) as client:
         response = await client.post(
             f"{MISTRAL_API_URL}/ocr",
@@ -102,7 +151,22 @@ async def call_mistral_ocr_api(file_data: bytes, filename: str) -> dict:
         if response.status_code == 429:
             await _handle_rate_limit(response)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        usage = data.get("usage", {})
+        _audit(
+            request_id="",
+            event_type="mistral_call",
+            detail="ocr",
+            duration_ms=duration_ms,
+            metadata={
+                "model": MISTRAL_OCR_MODEL,
+                "tokens_prompt": usage.get("prompt_tokens"),
+                "tokens_completion": usage.get("completion_tokens"),
+                "status_code": 200,
+            },
+        )
+        return data
 
 
 async def analyze_with_mistral_vision(
@@ -176,8 +240,16 @@ async def analyze_with_mistral_vision(
             "vision_model": vision_model,
         }
 
-    except httpx.TimeoutException:
+    except httpx.TimeoutException as e:
         log.error("vision_api_timeout", timeout=MISTRAL_TIMEOUT)
+        _audit(
+            request_id="",
+            event_type="warning",
+            step="vision_timeout",
+            level="warning",
+            error=str(e),
+            metadata={"model": vision_model, "timeout": MISTRAL_TIMEOUT},
+        )
         return {
             "success": False,
             "error_code": ErrorCode.TIMEOUT,
@@ -192,12 +264,28 @@ async def analyze_with_mistral_vision(
             pass
         if status_code == 429:
             log.error("vision_api_rate_limit_exhausted", retries=MAX_RETRIES)
+            _audit(
+                request_id="",
+                event_type="warning",
+                step="vision_rate_limit_exhausted",
+                level="warning",
+                error=error_detail,
+                metadata={"model": vision_model, "retries": MAX_RETRIES, "status_code": 429},
+            )
             return {
                 "success": False,
                 "error_code": ErrorCode.API_ERROR,
                 "error": f"Mistral Vision API unavailable after {MAX_RETRIES} retries (rate limited)"
             }
         log.error("vision_api_error", error=error_detail)
+        _audit(
+            request_id="",
+            event_type="warning",
+            step="vision_api_error",
+            level="warning",
+            error=error_detail,
+            metadata={"model": vision_model, "status_code": status_code},
+        )
         return {
             "success": False,
             "error_code": ErrorCode.API_ERROR,
@@ -205,6 +293,14 @@ async def analyze_with_mistral_vision(
         }
     except Exception as e:
         log.error("vision_api_exception", error=str(e))
+        _audit(
+            request_id="",
+            event_type="warning",
+            step="vision_exception",
+            level="warning",
+            error=str(e),
+            metadata={"model": vision_model},
+        )
         return {
             "success": False,
             "error_code": ErrorCode.VISION_FAILED,
