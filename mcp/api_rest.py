@@ -68,6 +68,7 @@ from intelligence import (
     get_db_connection,
     get_template_by_id,
 )
+from templates_db import _return_conn as _db_return_conn
 from templates_db import (
     get_all_template_ids, search_templates, cache_clear,
     job_create, job_update, job_set_result, job_get, job_delete, job_list,
@@ -465,10 +466,14 @@ async def api_extract(request: ExtractRequest) -> ConvertResponse:
 async def api_template_categories() -> dict:
     """Gibt alle Template-Kategorien mit Anzahl zurück (T-MKIT-035)."""
     conn = get_db_connection()
-    rows = conn.execute(
-        "SELECT category, COUNT(*) as count FROM template WHERE enabled = 1 GROUP BY category ORDER BY category"
-    ).fetchall()
-    conn.close()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT category, COUNT(*) as count FROM template WHERE enabled = 1 GROUP BY category ORDER BY category"
+        )
+        rows = cur.fetchall()
+    finally:
+        _db_return_conn(conn)
     return {"categories": [{"name": r["category"], "count": r["count"]} for r in rows]}
 
 
@@ -490,10 +495,14 @@ async def api_templates() -> TemplateResponse:
     übergeben werden.
     """
     conn = get_db_connection()
-    rows = conn.execute(
-        "SELECT id, category, display_name, enabled FROM template ORDER BY category, display_name"
-    ).fetchall()
-    conn.close()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, category, display_name, enabled FROM template ORDER BY category, display_name"
+        )
+        rows = cur.fetchall()
+    finally:
+        _db_return_conn(conn)
     # Build legacy-compatible dict with full schemas for TemplateResponse
     templates: dict = {}
     for row in rows:
@@ -520,41 +529,45 @@ async def api_bulk_templates(request: dict) -> dict:
     conn = get_db_connection()
     created = 0
     updated = 0
-    for tmpl in templates:
-        if "id" not in tmpl or "schema" not in tmpl:
-            continue
-        existing = conn.execute("SELECT id FROM template WHERE id = ?", (tmpl["id"],)).fetchone()
-        if existing and mode == "upsert":
-            conn.execute(
-                """UPDATE template SET category=?, display_name=?, description=?, schema=?,
-                   field_descriptions=?, classify_keywords=?, typical_senders=?, steuer_relevanz=?,
-                   priority=?, enabled=?, version=?, source=?, notes=?, updated_at=CURRENT_TIMESTAMP
-                   WHERE id=?""",
-                (tmpl.get("category", "other"), tmpl.get("display_name", tmpl["id"]),
-                 tmpl.get("description"), json.dumps(tmpl["schema"]),
-                 json.dumps(tmpl.get("field_descriptions")) if tmpl.get("field_descriptions") else None,
-                 tmpl.get("classify_keywords"), tmpl.get("typical_senders"),
-                 tmpl.get("steuer_relevanz"), tmpl.get("priority", 0),
-                 tmpl.get("enabled", True), tmpl.get("version", 1),
-                 tmpl.get("source", "manual"), tmpl.get("notes"), tmpl["id"])
-            )
-            updated += 1
-        elif not existing:
-            conn.execute(
-                """INSERT INTO template (id, category, display_name, description, schema, field_descriptions,
-                   classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (tmpl["id"], tmpl.get("category", "other"), tmpl.get("display_name", tmpl["id"]),
-                 tmpl.get("description"), json.dumps(tmpl["schema"]),
-                 json.dumps(tmpl.get("field_descriptions")) if tmpl.get("field_descriptions") else None,
-                 tmpl.get("classify_keywords"), tmpl.get("typical_senders"),
-                 tmpl.get("steuer_relevanz"), tmpl.get("priority", 0),
-                 tmpl.get("enabled", True), tmpl.get("version", 1),
-                 tmpl.get("source", "manual"), tmpl.get("notes"))
-            )
-            created += 1
-    conn.commit()
-    conn.close()
+    try:
+        cur = conn.cursor()
+        for tmpl in templates:
+            if "id" not in tmpl or "schema" not in tmpl:
+                continue
+            cur.execute("SELECT id FROM template WHERE id = %s", (tmpl["id"],))
+            existing = cur.fetchone()
+            if existing and mode == "upsert":
+                cur.execute(
+                    """UPDATE template SET category=%s, display_name=%s, description=%s, schema=%s,
+                       field_descriptions=%s, classify_keywords=%s, typical_senders=%s, steuer_relevanz=%s,
+                       priority=%s, enabled=%s, version=%s, source=%s, notes=%s, updated_at=now()
+                       WHERE id=%s""",
+                    (tmpl.get("category", "other"), tmpl.get("display_name", tmpl["id"]),
+                     tmpl.get("description"), json.dumps(tmpl["schema"]),
+                     json.dumps(tmpl.get("field_descriptions")) if tmpl.get("field_descriptions") else None,
+                     tmpl.get("classify_keywords"), tmpl.get("typical_senders"),
+                     tmpl.get("steuer_relevanz"), tmpl.get("priority", 0),
+                     int(tmpl.get("enabled", 1)), tmpl.get("version", 1),
+                     tmpl.get("source", "manual"), tmpl.get("notes"), tmpl["id"])
+                )
+                updated += 1
+            elif not existing:
+                cur.execute(
+                    """INSERT INTO template (id, category, display_name, description, schema, field_descriptions,
+                       classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (tmpl["id"], tmpl.get("category", "other"), tmpl.get("display_name", tmpl["id"]),
+                     tmpl.get("description"), json.dumps(tmpl["schema"]),
+                     json.dumps(tmpl.get("field_descriptions")) if tmpl.get("field_descriptions") else None,
+                     tmpl.get("classify_keywords"), tmpl.get("typical_senders"),
+                     tmpl.get("steuer_relevanz"), tmpl.get("priority", 0),
+                     int(tmpl.get("enabled", 1)), tmpl.get("version", 1),
+                     tmpl.get("source", "manual"), tmpl.get("notes"))
+                )
+                created += 1
+        conn.commit()
+    finally:
+        _db_return_conn(conn)
     return {"success": True, "created": created, "updated": updated, "total": len(templates)}
 
 
@@ -565,25 +578,28 @@ async def api_create_template(request: dict) -> dict:
         raise HTTPException(status_code=400, detail="'id' and 'schema' are required")
     conn = get_db_connection()
     try:
-        conn.execute(
+        cur = conn.cursor()
+        cur.execute(
             """INSERT INTO template (id, category, display_name, description, schema, field_descriptions,
                classify_keywords, typical_senders, steuer_relevanz, priority, enabled, version, source, notes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (request["id"], request.get("category", "other"), request.get("display_name", request["id"]),
              request.get("description"), json.dumps(request["schema"]),
              json.dumps(request.get("field_descriptions")) if request.get("field_descriptions") else None,
              request.get("classify_keywords"), request.get("typical_senders"),
              request.get("steuer_relevanz"), request.get("priority", 0),
-             request.get("enabled", True), request.get("version", 1),
+             int(request.get("enabled", 1)), request.get("version", 1),
              request.get("source", "manual"), request.get("notes"))
         )
         conn.commit()
     except Exception as e:
-        conn.close()
-        if "UNIQUE constraint failed" in str(e) or "IntegrityError" in type(e).__name__:
+        conn.rollback()
+        _db_return_conn(conn)
+        import psycopg2.errors
+        if isinstance(e, psycopg2.errors.UniqueViolation) or "UniqueViolation" in type(e).__name__ or "duplicate key" in str(e).lower():
             raise HTTPException(status_code=409, detail=f"Template '{request['id']}' already exists")
         raise
-    conn.close()
+    _db_return_conn(conn)
     return {"success": True, "id": request["id"]}
 
 
@@ -591,41 +607,43 @@ async def api_create_template(request: dict) -> dict:
 async def api_update_template(template_id: str, request: dict) -> dict:
     """Aktualisiert ein Template (partial update, T-MKIT-035)."""
     conn = get_db_connection()
-    existing = conn.execute("SELECT id FROM template WHERE id = ?", (template_id,)).fetchone()
-    if not existing:
-        conn.close()
-        raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found")
-    # Fixed UPDATE with COALESCE — no dynamic SQL construction
-    row = conn.execute("SELECT * FROM template WHERE id = ?", (template_id,)).fetchone()
-    current = dict(row)
-    conn.execute(
-        """UPDATE template SET
-            category = ?, display_name = ?, description = ?,
-            schema = ?, field_descriptions = ?,
-            classify_keywords = ?, typical_senders = ?,
-            steuer_relevanz = ?, priority = ?, enabled = ?,
-            version = ?, source = ?, notes = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?""",
-        (
-            request.get("category", current["category"]),
-            request.get("display_name", current["display_name"]),
-            request.get("description", current["description"]),
-            json.dumps(request["schema"]) if "schema" in request else current["schema"],
-            json.dumps(request["field_descriptions"]) if "field_descriptions" in request else current["field_descriptions"],
-            request.get("classify_keywords", current["classify_keywords"]),
-            request.get("typical_senders", current["typical_senders"]),
-            request.get("steuer_relevanz", current["steuer_relevanz"]),
-            request.get("priority", current["priority"]),
-            request.get("enabled", current["enabled"]),
-            request.get("version", current["version"]),
-            request.get("source", current["source"]),
-            request.get("notes", current["notes"]),
-            template_id,
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM template WHERE id = %s", (template_id,))
+        existing = cur.fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found")
+        cur.execute("SELECT * FROM template WHERE id = %s", (template_id,))
+        current = dict(cur.fetchone())
+        cur.execute(
+            """UPDATE template SET
+                category = %s, display_name = %s, description = %s,
+                schema = %s, field_descriptions = %s,
+                classify_keywords = %s, typical_senders = %s,
+                steuer_relevanz = %s, priority = %s, enabled = %s,
+                version = %s, source = %s, notes = %s,
+                updated_at = now()
+            WHERE id = %s""",
+            (
+                request.get("category", current["category"]),
+                request.get("display_name", current["display_name"]),
+                request.get("description", current["description"]),
+                json.dumps(request["schema"]) if "schema" in request else current["schema"],
+                json.dumps(request["field_descriptions"]) if "field_descriptions" in request else current["field_descriptions"],
+                request.get("classify_keywords", current["classify_keywords"]),
+                request.get("typical_senders", current["typical_senders"]),
+                request.get("steuer_relevanz", current["steuer_relevanz"]),
+                request.get("priority", current["priority"]),
+                int(request.get("enabled", current["enabled"])),
+                request.get("version", current["version"]),
+                request.get("source", current["source"]),
+                request.get("notes", current["notes"]),
+                template_id,
+            )
         )
-    )
-    conn.commit()
-    conn.close()
+        conn.commit()
+    finally:
+        _db_return_conn(conn)
     return {"success": True, "id": template_id}
 
 
@@ -633,10 +651,14 @@ async def api_update_template(template_id: str, request: dict) -> dict:
 async def api_delete_template(template_id: str) -> dict:
     """Löscht ein Template (T-MKIT-035)."""
     conn = get_db_connection()
-    cursor = conn.execute("DELETE FROM template WHERE id = ?", (template_id,))
-    conn.commit()
-    conn.close()
-    if cursor.rowcount == 0:
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM template WHERE id = %s", (template_id,))
+        deleted = cur.rowcount > 0
+        conn.commit()
+    finally:
+        _db_return_conn(conn)
+    if not deleted:
         raise HTTPException(status_code=404, detail=f"Template '{template_id}' not found")
     return {"success": True, "id": template_id}
 

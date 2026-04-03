@@ -15,10 +15,16 @@ import hashlib
 from pathlib import Path
 from unittest.mock import MagicMock, AsyncMock, patch, call
 
+import psycopg2
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 from conftest import load_server_module, run_async
+
+_DB_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://daigestr:daigestr@localhost:15432/daigestr",
+)
 
 
 def _make_minimal_pdf_bytes() -> bytes:
@@ -83,32 +89,29 @@ class TestCacheFunctions:
 
     def setup_method(self):
         self.server = load_server_module()
+        import templates_db as _tdb
+        _tdb.pool_reset()
+        conn = psycopg2.connect(_DB_URL)
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute("TRUNCATE TABLE cache")
+        conn.close()
+        _tdb.pool_reset()
 
-    def test_cache_get_miss(self, tmp_path):
+    def test_cache_get_miss(self):
         """Cache-Miss gibt None zurück."""
-        db_path = tmp_path / "test.db"
-        self.server.TEMPLATES_DB_PATH = db_path
-        self.server.init_templates_db()
         result = self.server.cache_get("nonexistent_key", 3600)
         assert result is None
 
-    def test_cache_set_and_get(self, tmp_path):
+    def test_cache_set_and_get(self):
         """Gespeicherte Response wird korrekt zurückgegeben."""
-        db_path = tmp_path / "test.db"
-        self.server.TEMPLATES_DB_PATH = db_path
-        self.server.init_templates_db()
-
         test_json = '{"success": true, "markdown": "# Test"}'
         self.server.cache_set("test_key", test_json)
         result = self.server.cache_get("test_key", 3600)
         assert result == test_json
 
-    def test_cache_clear(self, tmp_path):
+    def test_cache_clear(self):
         """Nach cache_clear gibt cache_get None zurück."""
-        db_path = tmp_path / "test.db"
-        self.server.TEMPLATES_DB_PATH = db_path
-        self.server.init_templates_db()
-
         self.server.cache_set("key1", '{"success": true}')
         self.server.cache_set("key2", '{"success": true}')
 
@@ -262,12 +265,16 @@ class TestCacheHitInConvertAuto:
         assert cache_get_called["n"] == 0
         assert cache_set_called["n"] == 0
 
-    def test_cache_clear_then_no_hit(self, monkeypatch, tmp_path):
+    def test_cache_clear_then_no_hit(self, monkeypatch):
         """Nach cache_clear kein Cache-Hit mehr."""
-        # Echte DB verwenden für diesen Test
-        db_path = tmp_path / "cache_test.db"
-        self.server.TEMPLATES_DB_PATH = db_path
-        self.server.init_templates_db()
+        import templates_db as _tdb
+        _tdb.pool_reset()
+        conn = psycopg2.connect(_DB_URL)
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute("TRUNCATE TABLE cache")
+        conn.close()
+        _tdb.pool_reset()
 
         monkeypatch.setattr(self.server, "CACHE_ENABLED", True)
         monkeypatch.setattr(self.server, "CACHE_TTL_SECONDS", 3600)

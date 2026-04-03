@@ -342,8 +342,8 @@ def cache_get(key: str, ttl: int) -> Optional[str]:
         try:
             cur.execute(
                 "SELECT response_json FROM cache WHERE key = %s "
-                "AND created_at > now() - interval '%s seconds'",
-                (key, str(ttl))
+                "AND created_at > now() - (interval '1 second' * %s)",
+                (key, ttl)
             )
             row = cur.fetchone()
         except psycopg2.errors.UndefinedTable:

@@ -7,25 +7,35 @@ Alle externen Abhängigkeiten werden per unittest.mock gemockt.
 
 import asyncio
 import json
+import os
 import sys
-import tempfile
 import types
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import psycopg2
 import pytest
 
 from conftest import load_server_module, run_async
 
 
+_DB_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://daigestr:daigestr@localhost:15432/daigestr",
+)
+
 # Einmal laden; alle Tests in diesem Modul teilen diese Instanz
 _server = load_server_module(use_real_pil=False)
 classify_document = _server.classify_document
 
-# DB in temporärem Verzeichnis initialisieren (isoliert vom Produktions-DB)
-_tmp_db_dir = tempfile.mkdtemp(prefix="daigestr_test_classify_")
-_tmp_db_path = Path(_tmp_db_dir) / "templates.db"
-_server.TEMPLATES_DB_PATH = _tmp_db_path
+# DB initialisieren (echte PostgreSQL, tables + seed)
+import templates_db as _tdb
+_tdb.pool_reset()
+conn = psycopg2.connect(_DB_URL)
+conn.autocommit = True
+cur = conn.cursor()
+cur.execute("TRUNCATE TABLE template, prompt, scoring_weight, cache RESTART IDENTITY CASCADE")
+conn.close()
+_tdb.pool_reset()
 _server.init_templates_db()
 
 
