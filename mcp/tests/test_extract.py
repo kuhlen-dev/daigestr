@@ -437,6 +437,7 @@ class TestExtractInConvertAuto:
                 source_type="file",
                 input_meta={},
                 extract_schema=INVOICE_SCHEMA,
+                no_cache=True,  # Verhindert Cache-Treffer vom vorherigen Test
             ))
 
         # Konvertierung war erfolgreich, auch wenn Extraktion fehlschlug

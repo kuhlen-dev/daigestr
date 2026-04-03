@@ -60,7 +60,17 @@ def get_db_connection():
 
 
 def _return_conn(conn) -> None:
-    """Gibt eine Verbindung zurück in den Pool."""
+    """Gibt eine Verbindung zurück in den Pool.
+
+    Rollt offene Transaktionen zurück bevor die Verbindung in den Pool
+    zurückgegeben wird — verhindert 'idle in transaction'-Locks.
+    STATUS_READY=1 (psycopg2.extensions.STATUS_READY).
+    """
+    try:
+        if conn.status != 1:  # nicht STATUS_READY → offene Transaktion
+            conn.rollback()
+    except Exception:
+        pass
     try:
         _get_pool().putconn(conn)
     except Exception:
