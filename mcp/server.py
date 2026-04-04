@@ -147,9 +147,9 @@ from intelligence import (
     _apply_auto_extract,
     get_db_connection,  # re-exported from templates_db via intelligence
     get_template_by_id,  # re-exported from templates_db via intelligence
-    _META_SCHEMA,
-    _STEUER_SIGNALWOERTER,
-    _DATENTYP_KONVENTIONEN,
+    get_meta_schema,
+    get_steuer_signalwoerter,
+    get_datentyp_konventionen,
 )
 
 # Re-export availability flags and key names from sub-modules so tests can patch

@@ -31,23 +31,11 @@ DEFAULT_BASE_URL = "http://localhost:18006"
 DEFAULT_MISTRAL_MODEL = "mistral-large-latest"
 DEFAULT_DELAY = 0.2
 
-# All 52 normalized fields (from seed_normalization.sql)
-NORMALIZED_FIELDS = [
-    "amount", "amount_net", "amount_tax", "tax_rate", "currency",
-    "iban_vendor", "iban_recipient", "bic", "payment_method", "mandate_reference",
-    "tax_relevant", "tax_category", "tax_deductible_amount",
-    "invoice_number", "reference_number", "order_number", "customer_number",
-    "contract_number", "insurance_number",
-    "vendor_name", "vendor_address", "vendor_contact", "vendor_tax_id",
-    "vendor_slug", "vendor_country",
-    "recipient_name", "recipient_address", "recipient_country",
-    "date_issued", "date_due", "date_paid", "date_service", "treatment_date",
-    "date_period_from", "date_period_to",
-    "line_items", "line_items_count", "summary", "notes",
-    "cancellation_period", "contract_end", "auto_renewal",
-    "phone_number", "insurance_type", "reimbursement_rate", "own_share", "diagnosis",
-    "language", "page_count", "quality_score", "completeness_score", "tax_country",
-]
+def _load_normalized_fields(base_url: str) -> list[str]:
+    """Load normalized field names from daigestr API."""
+    resp = httpx.get(f"{base_url}/v1/normalized/fields", timeout=10.0)
+    resp.raise_for_status()
+    return [f["name"] for f in resp.json().get("fields", [])]
 
 
 def _extract_schema_paths(schema: dict, prefix: str = "") -> list[str]:
@@ -251,6 +239,14 @@ def main():
     parser.add_argument("--model", default=DEFAULT_MISTRAL_MODEL,
                         help=f"Mistral model (default: {DEFAULT_MISTRAL_MODEL})")
     args = parser.parse_args()
+
+    # Load normalized fields from API
+    global NORMALIZED_FIELDS
+    try:
+        NORMALIZED_FIELDS = _load_normalized_fields(args.base_url)
+    except Exception as exc:
+        print(f"ERROR: Could not load normalized fields: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     # Resolve API key
     api_key = MISTRAL_API_KEY

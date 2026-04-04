@@ -50,64 +50,85 @@ log = structlog.get_logger()
 
 
 # =============================================================================
-# _meta Block: Steuerrelevanz + Datentyp-Konventionen (T-MKIT-037)
+# _meta Block: Steuerrelevanz + Datentyp-Konventionen (T-DAI-062)
+# Alle Werte werden aus der DB geladen (prompt-Tabelle).
+# Hardcoded-Fallbacks nur für den Fall dass die DB leer ist (Erststart).
 # =============================================================================
 
-_META_SCHEMA = {
-    "absender": {
-        "name": "string | null — Persönlicher Name des Absenders (z.B. 'Thomas Weber'). null wenn nur Firma erkennbar.",
-        "firma": "string | null — Firmenname / Organisation (z.B. 'Telekom Deutschland GmbH', 'REWE Sascha Sieger oHG'). null wenn Privatperson.",
-        "slug": "string — geläufigster Kurzname, Kleinbuchstaben, Bindestriche statt Leerzeichen",
-        "adresse": {
-            "strasse": "string | null",
-            "plz": "string | null",
-            "ort": "string | null",
-        },
-    },
-    "empfaenger": {
-        "name": "string | null — Name des Empfängers (z.B. 'Max Mustermann', 'Max und Maria Mustermann'). null wenn nicht erkennbar (z.B. Kassenbon).",
-        "slug": "string — geläufigster Kurzname, Kleinbuchstaben, Bindestriche statt Leerzeichen",
-        "adresse": {
-            "strasse": "string | null",
-            "plz": "string | null",
-            "ort": "string | null",
-        },
-    },
-    "steuerrelevant": "boolean — true wenn das Dokument steuerlich relevant ist",
-    "steuerrelevanz_hinweis": "string | null — wörtliches Zitat aus dem Dokument falls vorhanden",
-    "steuer_kategorie": "string | null — werbungskosten | sonderausgaben | aussergewoehnliche_belastungen | haushaltsnahe_dienstleistungen | handwerkerleistungen | vorsorgeaufwendungen | kapitalertraege | vermietung | kirchensteuer | spenden | kinderbetreuung | null",
-    "steuerjahr": "string | null — YYYY",
-    "mwst_ausgewiesen": "boolean",
-    "mwst_betrag": "string | null — Decimal mit 2 Stellen",
-    "mwst_satz": "string | null — z.B. '19' oder '7'",
-    "aktenzeichen": "string | null — Aktenzeichen, Geschäftszeichen, Vorgangsnummer",
-    "dokumenten_id": "string | null — eindeutige ID (Rechnungsnr, Policennr, Bescheidnr)"
-}
+def _load_meta_schema() -> dict:
+    """Load _META_SCHEMA from DB (prompt id='meta.schema'). Cached after first call."""
+    try:
+        from templates_db import get_prompt as _gp
+        raw = _gp("meta", "schema", language="de")
+        if raw:
+            return json.loads(raw)
+    except Exception:
+        pass
+    log.warning("meta_schema_fallback_hardcoded")
+    return {
+        "absender": {"name": "string | null", "firma": "string | null", "slug": "string",
+                     "adresse": {"strasse": "string | null", "plz": "string | null", "ort": "string | null", "land": "string | null"}},
+        "empfaenger": {"name": "string | null", "slug": "string",
+                       "adresse": {"strasse": "string | null", "plz": "string | null", "ort": "string | null", "land": "string | null"}},
+        "steuerrelevant": "boolean", "steuerrelevanz_hinweis": "string | null",
+        "steuer_kategorie": "string | null", "steuerjahr": "string | null",
+        "mwst_ausgewiesen": "boolean", "mwst_betrag": "string | null", "mwst_satz": "string | null",
+        "aktenzeichen": "string | null", "dokumenten_id": "string | null", "zusammenfassung": "string | null",
+    }
 
-_STEUER_SIGNALWOERTER = [
-    "Finanzamt", "Steuererklärung", "steuerlich absetzbar", "steuerrelevant",
-    "§10 EStG", "§10b EStG", "§35a EStG",
-    "Werbungskosten", "Sonderausgaben", "außergewöhnliche Belastungen",
-    "Vorsorgeaufwendungen", "Altersvorsorge", "Riester", "Rürup",
-    "Spendenquittung", "Zuwendungsbestätigung",
-    "Lohnanteil", "Arbeitskosten",
-    "Arbeitsmittel", "Fortbildung", "Fachliteratur",
-    "Bitte aufbewahren", "zur Vorlage"
-]
+_META_SCHEMA: dict | None = None
 
-_DATENTYP_KONVENTIONEN = """
-Datentyp-Konventionen für die Extraktion:
-- Datum: ISO 8601 YYYY-MM-DD (z.B. "2025-03-26")
-- Betrag: IMMER Punkt als Dezimaltrenner, 2 Nachkommastellen (z.B. "49.99" NICHT "49,99")
-- Währung: ISO 4217 (z.B. "EUR")
-- IBAN: Ohne Leerzeichen (z.B. "DE89370400440532013000")
-- Telefon: E.164 (z.B. "+4921611234567")
-- PLZ: String mit führenden Nullen (z.B. "01234")
-- Fehlende Werte: null (NICHT leerer String "")
-- Boolean: true/false
-- Tabellen/Positionen: JSON Array of Objects
-- Positionsbezeichnungen: Wenn leer, aus Dokumentkontext ableiten (z.B. Seitenüberschrift, vorherige Position)
-"""
+def get_meta_schema() -> dict:
+    """Returns cached _META_SCHEMA, loading from DB on first call."""
+    global _META_SCHEMA
+    if _META_SCHEMA is None:
+        _META_SCHEMA = _load_meta_schema()
+    return _META_SCHEMA
+
+
+def _load_steuer_signalwoerter() -> list[str]:
+    """Load tax signal words from DB (prompt id='meta.steuer_signalwoerter')."""
+    try:
+        from templates_db import get_prompt as _gp
+        raw = _gp("meta", "steuer_signalwoerter", language="de")
+        if raw:
+            return json.loads(raw)
+    except Exception:
+        pass
+    log.warning("steuer_signalwoerter_fallback_hardcoded")
+    return ["Finanzamt", "Steuererklärung", "steuerlich absetzbar", "Werbungskosten",
+            "Sonderausgaben", "Vorsorgeaufwendungen", "Spendenquittung"]
+
+_STEUER_SIGNALWOERTER: list[str] | None = None
+
+def get_steuer_signalwoerter() -> list[str]:
+    """Returns cached _STEUER_SIGNALWOERTER, loading from DB on first call."""
+    global _STEUER_SIGNALWOERTER
+    if _STEUER_SIGNALWOERTER is None:
+        _STEUER_SIGNALWOERTER = _load_steuer_signalwoerter()
+    return _STEUER_SIGNALWOERTER
+
+
+def _load_datentyp_konventionen() -> str:
+    """Load data type conventions from DB (prompt id='meta.datentyp_konventionen')."""
+    try:
+        from templates_db import get_prompt as _gp
+        raw = _gp("meta", "datentyp_konventionen", language="de")
+        if raw:
+            return raw
+    except Exception:
+        pass
+    log.warning("datentyp_konventionen_fallback_hardcoded")
+    return "Datum: YYYY-MM-DD, Betrag: Punkt-Dezimaltrenner, Währung: ISO 4217, IBAN: ohne Leerzeichen, null statt leerer String."
+
+_DATENTYP_KONVENTIONEN: str | None = None
+
+def get_datentyp_konventionen() -> str:
+    """Returns cached _DATENTYP_KONVENTIONEN, loading from DB on first call."""
+    global _DATENTYP_KONVENTIONEN
+    if _DATENTYP_KONVENTIONEN is None:
+        _DATENTYP_KONVENTIONEN = _load_datentyp_konventionen()
+    return _DATENTYP_KONVENTIONEN
 
 
 # =============================================================================
@@ -604,7 +625,7 @@ async def extract_structured_data(
     # _meta Block Instruktion — wird an beide Sprach-Prompts angehängt
     meta_instruction = (
         "\n\nZUSÄTZLICH zu den Schema-Feldern extrahiere IMMER einen '_meta' Block mit folgenden Feldern:\n"
-        + json.dumps(_META_SCHEMA, indent=2, ensure_ascii=False)
+        + json.dumps(get_meta_schema(), indent=2, ensure_ascii=False)
         + "\n\nAbsender/Empfänger-Regeln:"
         + "\n- absender: Wer hat das Dokument erstellt/verschickt? Bei Firmen: firma='Telekom Deutschland GmbH', name=null. Bei Personen mit Firma: name='Thomas Weber', firma='Schornsteinfeger Weber'."
         + "\n- empfaenger: An wen ist das Dokument gerichtet? Bei Kassenbons ohne Empfänger: name=null."
@@ -624,9 +645,9 @@ async def extract_structured_data(
         + "'Stadtsparkasse Mönchengladbach' → 'sparkasse-mg', "
         + "'ING-DiBa AG' → 'ing'."
         + "\n\nSteuerrelevanz-Signalwörter (aktiv suchen): "
-        + ", ".join(_STEUER_SIGNALWOERTER[:10]) + ", ..."
+        + ", ".join(get_steuer_signalwoerter()[:10]) + ", ..."
         + "\nAuch implizit steuerrelevant: Rechnungen mit MwSt, Gehaltsabrechnungen, Versicherungsbeiträge, Handwerkerleistungen."
-        + "\n" + _DATENTYP_KONVENTIONEN
+        + "\n" + get_datentyp_konventionen()
     )
 
     from templates_db import get_prompt as _get_prompt  # noqa: PLC0415 — lazy import (avoid circular)

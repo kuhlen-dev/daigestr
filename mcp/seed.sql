@@ -3064,3 +3064,48 @@ INSERT INTO scoring_weight (id, name, value, description) VALUES (
     'Unterhalb: quality_grade = good (>= grade_fair); ab diesem Wert: excellent'
 )
 ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, value=EXCLUDED.value, description=EXCLUDED.description;
+
+-- =============================================================================
+-- Meta-Konfiguration (T-DAI-062): _META_SCHEMA, Steuer-Signalwörter, Datentyp-Konventionen
+-- Wird von intelligence.py zur Laufzeit aus der DB gelesen.
+-- =============================================================================
+
+-- meta.schema — Struktur des _meta-Blocks bei jeder Extraktion
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'meta.schema',
+    'meta',
+    'schema',
+    '{"absender":{"name":"string | null — Persönlicher Name des Absenders. null wenn nur Firma erkennbar.","firma":"string | null — Firmenname / Organisation. null wenn Privatperson.","slug":"string — geläufigster Kurzname, Kleinbuchstaben, Bindestriche statt Leerzeichen","adresse":{"strasse":"string | null","plz":"string | null","ort":"string | null","land":"string | null"}},"empfaenger":{"name":"string | null — Name des Empfängers. null wenn nicht erkennbar (z.B. Kassenbon).","slug":"string — geläufigster Kurzname, Kleinbuchstaben, Bindestriche statt Leerzeichen","adresse":{"strasse":"string | null","plz":"string | null","ort":"string | null","land":"string | null"}},"steuerrelevant":"boolean — true wenn das Dokument steuerlich relevant ist","steuerrelevanz_hinweis":"string | null — wörtliches Zitat aus dem Dokument falls vorhanden","steuer_kategorie":"string | null — werbungskosten | sonderausgaben | aussergewoehnliche_belastungen | haushaltsnahe_dienstleistungen | handwerkerleistungen | vorsorgeaufwendungen | kapitalertraege | vermietung | kirchensteuer | spenden | kinderbetreuung | null","steuerjahr":"string | null — YYYY","mwst_ausgewiesen":"boolean","mwst_betrag":"string | null — Decimal mit 2 Stellen","mwst_satz":"string | null — z.B. 19 oder 7","aktenzeichen":"string | null — Aktenzeichen, Geschäftszeichen, Vorgangsnummer","dokumenten_id":"string | null — eindeutige ID (Rechnungsnr, Policennr, Bescheidnr)","zusammenfassung":"string | null — Zusammenfassung des Dokumentinhalts in einem Satz"}',
+    NULL
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
+
+-- meta.steuer_signalwoerter — Keywords für Steuerrelevanz-Erkennung
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'meta.steuer_signalwoerter',
+    'meta',
+    'steuer_signalwoerter',
+    '["Finanzamt","Steuererklärung","steuerlich absetzbar","steuerrelevant","§10 EStG","§10b EStG","§35a EStG","Werbungskosten","Sonderausgaben","außergewöhnliche Belastungen","Vorsorgeaufwendungen","Altersvorsorge","Riester","Rürup","Spendenquittung","Zuwendungsbestätigung","Lohnanteil","Arbeitskosten","Arbeitsmittel","Fortbildung","Fachliteratur","Bitte aufbewahren","zur Vorlage"]',
+    NULL
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;
+
+-- meta.datentyp_konventionen — Format-Regeln für LLM-Extraktion
+INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
+    'meta.datentyp_konventionen',
+    'meta',
+    'datentyp_konventionen',
+    'Datentyp-Konventionen für die Extraktion:
+- Datum: ISO 8601 YYYY-MM-DD (z.B. "2025-03-26")
+- Betrag: IMMER Punkt als Dezimaltrenner, 2 Nachkommastellen (z.B. "49.99" NICHT "49,99")
+- Währung: ISO 4217 (z.B. "EUR")
+- IBAN: Ohne Leerzeichen (z.B. "DE89370400440532013000")
+- Telefon: E.164 (z.B. "+4921611234567")
+- PLZ: String mit führenden Nullen (z.B. "01234")
+- Fehlende Werte: null (NICHT leerer String "")
+- Boolean: true/false
+- Tabellen/Positionen: JSON Array of Objects
+- Positionsbezeichnungen: Wenn leer, aus Dokumentkontext ableiten (z.B. Seitenüberschrift, vorherige Position)',
+    NULL
+)
+ON CONFLICT (id) DO UPDATE SET category=EXCLUDED.category, name=EXCLUDED.name, content_de=EXCLUDED.content_de, content_en=EXCLUDED.content_en;

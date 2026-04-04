@@ -4,7 +4,7 @@
 
 Most document-to-Markdown tools work fine until you hand them a real-world file: a scanned invoice, a DOCX full of charts, an Excel with merged cells across 12 sheets, or a meeting recording. Then they silently fail, return empty text, or lose all structure. This service fixes that.
 
-Built on Microsoft's [markitdown](https://github.com/microsoft/markitdown), extended with Mistral OCR-3, Vision AI, audio transcription, a Template Registry with auto-extract, and a hybrid routing engine that picks the best tool for each document — automatically. Two interfaces: **MCP server** (for Claude and AI agents) and **REST API** (for n8n, workflows, and custom integrations). Self-hosted in a single Docker container. Current version: **v5.6.0**.
+Built on Microsoft's [markitdown](https://github.com/microsoft/markitdown), extended with Mistral OCR-3, Vision AI, audio transcription, a Template Registry with auto-extract, a Normalization Layer that maps extracted fields to 52 unified field names across 143 document types, and a hybrid routing engine that picks the best tool for each document — automatically. Two interfaces: **MCP server** (for Claude and AI agents) and **REST API** (for n8n, workflows, and custom integrations). Self-hosted in two Docker containers. Current version: **v7.0.0**.
 
 ---
 
@@ -257,7 +257,7 @@ The architecture diagram was converted to Mermaid syntax (renderable in GitHub, 
 | Deployment complexity | Minimal | Heavy (PyTorch + models) | Cloud SaaS | Minimal (docker compose up) |
 | Pricing | Free | Open source / paid SaaS | Per-page API cost | API cost only (Mistral) |
 
-markitdown alone is a lightweight starting point. Unstructured.io is a heavy dependency tree (PyTorch, multiple model downloads) with no MCP interface. Azure and AWS document services are cloud-only, have per-page pricing, and require data to leave your infrastructure. This service is a single Docker container with a Mistral API key — self-hosted, MCP-native, and covering all the gaps.
+markitdown alone is a lightweight starting point. Unstructured.io is a heavy dependency tree (PyTorch, multiple model downloads) with no MCP interface. Azure and AWS document services are cloud-only, have per-page pricing, and require data to leave your infrastructure. This service is two Docker containers with a Mistral API key — self-hosted, MCP-native, and covering all the gaps.
 
 ---
 
@@ -459,6 +459,21 @@ See [Mistral Models](#mistral-models-march-2026) for the full comparison.
 | `GET` | `/v1/audit/{request_id}` | Get all audit events for a request ID |
 | `GET` | `/v1/audit/job/{job_id}` | Get all audit events for a job ID |
 | `DELETE` | `/v1/audit/cleanup` | Delete old audit entries (per `AUDIT_RETENTION_DAYS`) |
+| `GET` | `/v1/normalized/fields` | List all normalized fields |
+| `POST` | `/v1/normalized/fields` | Create a new normalized field |
+| `PUT` | `/v1/normalized/fields/{name}` | Update a normalized field |
+| `DELETE` | `/v1/normalized/fields/{name}` | Delete a normalized field |
+| `GET` | `/v1/normalized/values/{field}` | List allowed values for a field |
+| `POST` | `/v1/normalized/values/{field}` | Create a new allowed value |
+| `GET` | `/v1/normalized/categories` | List all categories with field assignments |
+| `POST` | `/v1/normalized/categories` | Create a new category |
+| `GET` | `/v1/normalized/mappings/{template}` | Get mapping for a template |
+| `PUT` | `/v1/normalized/mappings/{template}` | Set/update mapping for a template |
+| `GET` | `/v1/normalized/schema` | Current normalization JSON Schema |
+| `GET` | `/v1/normalized/coverage` | Coverage report (templates with/without mapping) |
+| `POST` | `/v1/normalized/batch-validate` | Batch-validate multiple normalized objects |
+| `POST` | `/v1/normalized/corrections` | Submit correction feedback |
+| `GET` | `/v1/normalized/corrections` | Get correction statistics |
 | `DELETE` | `/v1/cache` | Clear the request-level cache |
 | `GET` | `/v1/tips` | Full feature reference as JSON (ideal for LLM self-discovery) |
 | `GET` | `/v1/formats` | List supported file formats |
@@ -868,6 +883,8 @@ The `pipeline_steps` field in the response metadata lists every stage that ran.
 | `pages` | `string` | — | Page selection for PDFs. Syntax: `"1-3"`, `"7,14,22"`, `"10-20,!15"` (exclude page 15). `null` = all pages. |
 | `no_cache` | `bool` | `false` | Bypass cache and force fresh conversion |
 | `webhook_url` | `string` | — | URL to POST the result to when conversion completes (especially useful with async jobs) |
+| `normalize` | `bool` | auto | Force or disable normalization. By default, normalization runs automatically when a mapping exists for the detected template. Set to `true` to force or `false` to disable. |
+| `compact` | `bool` | `false` | Return compact format: normalized fields grouped by category, shorter output |
 | `password` | `string` | — | Password for protected PDFs (reserved, not yet implemented) |
 | `meta` | `object` | `{}` | Arbitrary pass-through metadata |
 
@@ -890,6 +907,18 @@ When you pass `chunk: true`, the Markdown output is split into semantically mean
 ### Optional: Classification
 
 When you pass `classify: true`, the document type is identified (invoice, contract, cv, etc.) and returned in `meta.document_type` with a confidence score. This does not change the Markdown output.
+
+### Optional: Normalized Data
+
+When `auto_extract` or `template` is used and a normalize mapping exists for the detected template, the response includes `normalized` — a dict with unified field names across all 143 document types. Enable `compact: true` for a shorter version grouped by category.
+
+| Field | Present When |
+|-------|-------------|
+| `normalized` | Mapping exists for detected template (or `normalize: true` forced) |
+| `compact` | `compact: true` was set |
+| `normalized_version` | Always with normalized — schema version hash |
+| `normalized_warnings` | Validation warnings (type mismatches, implausible values) |
+| `normalized_trace` | Step-by-step trace of the 13-step pipeline |
 
 ### Optional: High Accuracy
 
@@ -1219,6 +1248,15 @@ All settings are controlled via environment variables. Copy `.env.example` to `.
 |----------|---------|-------------|
 | `RATE_LIMIT_MAX_WAIT_SECONDS` | `60` | Maximum time to wait when Mistral API returns 429 before aborting |
 
+### Normalization
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NORMALIZE_CACHE_TTL_SECONDS` | `300` | TTL for in-memory normalization schema cache |
+| `NORMALIZE_CACHE_ENABLED` | `true` | Enable normalization schema caching |
+| `NORMALIZE_FALLBACK_COUNTRY` | `DE` | Default country for context enrichment |
+| `NORMALIZE_PLAUSIBILITY_TOLERANCE` | `0.1` | Tolerance for plausibility checks (0.0–1.0) |
+
 ### HTML Rendering
 
 | Variable | Default | Description |
@@ -1281,6 +1319,29 @@ Images smaller than `MIN_IMAGE_SIZE_PX` in either dimension are skipped.
 
 **Smart Chunking:** With `chunk: true`, the Markdown output is split into chunks of approximately `chunk_size` tokens (heuristic: characters / 4). Headings trigger new chunks. Tables and code blocks are kept atomic and never split mid-structure.
 
+### Normalization Layer
+
+**Automatic field harmonization across 143 document types.** When extracting data from an invoice, a payslip, and an insurance claim, each template uses different field names — `brutto` vs `gesamtbetrag` vs `total_amount`. The Normalization Layer maps all of them to 52 unified field names like `amount`, `vendor_name`, `date_issued`.
+
+The 13-step pipeline runs automatically after extraction when a mapping exists:
+1. Mapping resolution (template → field assignments)
+2. Field extraction from raw data
+3. Type conversion (string → decimal, date parsing, boolean normalization)
+4. Value normalization (allowed values, aliases)
+5. Context enrichment (country, currency from document metadata)
+6. Plausibility checks (amount ranges, date sanity)
+7. Required field validation
+8. Quality scoring (completeness, correctness)
+9. Compact format generation (category grouping)
+10. Traceability (step-by-step audit trail)
+11. Warning collection
+12. Version stamping
+13. Cache update
+
+**Admin API:** 15 REST endpoints under `/v1/normalized/` for managing fields, categories, values, mappings, and correction feedback. Coverage report shows which templates have mappings.
+
+**Seed data:** 18 categories, 52 fields, 200+ allowed values, and 143 template mappings ship with the container — 100% coverage out of the box.
+
 ### Output Formats
 
 **HTML Rendering:** With `output_format: "html"`, the Markdown is rendered to a complete HTML document with embedded CSS, [Mermaid.js](https://mermaid.js.org/) for diagram rendering, and [highlight.js](https://highlightjs.org/) for code block syntax highlighting. CDN URLs are configurable via `MERMAID_CDN_URL`, `HIGHLIGHTJS_CDN_URL`, and `HIGHLIGHTJS_CSS_URL`.
@@ -1308,7 +1369,7 @@ The audit API can be disabled independently via `AUDIT_API_ENABLED=false` (retur
 
 ## Architecture
 
-The service runs as a **single Docker container** (`daigestr`) with a modular Python codebase in `mcp/`. FastMCP (port 8080) and FastAPI (port 8081) run as parallel async interfaces sharing all modules.
+The service runs as **two Docker containers (`daigestr` + `daigestr-postgres`)** with a modular Python codebase in `mcp/`. FastMCP (port 8080) and FastAPI (port 8081) run as parallel async interfaces sharing all modules.
 
 ### Module Structure
 
@@ -1327,6 +1388,11 @@ The service runs as a **single Docker container** (`daigestr`) with a modular Py
 | `audit_db.py` | PostgreSQL: audit log table — `audit_log`, `audit_get_by_request`, `audit_get_by_job`, `audit_list`, `audit_cleanup` |
 | `api_rest.py` | FastAPI app, all REST endpoints |
 | `api_rest_audit.py` | FastAPI router — 4 audit endpoints (GET/DELETE), prefix `/v1/audit` |
+| `normalizer.py` | 13-step normalization pipeline (mapping → type conversion → validation → scoring) |
+| `normalizer_cache.py` | In-memory cache with version-hash invalidation for normalization schema |
+| `normalizer_db.py` | PostgreSQL CRUD for 6 normalization tables (fields, categories, values, mappings, fixtures, corrections) |
+| `api_rest_normalize.py` | FastAPI router — 15 normalization admin endpoints, prefix `/v1/normalized` |
+| `seed_normalization.sql` | Seed data: 18 categories, 52 fields, 200+ values, 143 template mappings |
 | `api_mcp.py` | FastMCP instance, all MCP tools |
 | `renderers/html.py` | Markdown → full HTML (Mermaid.js, highlight.js, CSS) |
 | `renderers/text.py` | Markdown → plain text (strip Markdown syntax) |
@@ -1375,6 +1441,14 @@ The service runs as a **single Docker container** (`daigestr`) with a modular Py
 │          │  _meta (tax relevance) │                 │
 │          │  Quality scoring       │                 │
 │          │  Smart chunking        │                 │
+│          └────────────┬───────────┘                 │
+│                       │                             │
+│          ┌────────────────────────┐                 │
+│          │  normalizer.py         │                 │
+│          │  Normalization (13-step)│                 │
+│          │  Field mapping          │                 │
+│          │  Type conversion        │                 │
+│          │  Validation + scoring   │                 │
 │          └────────────┬───────────┘                 │
 │                       │                             │
 │          ┌────────────────────────┐                 │
@@ -1457,19 +1531,19 @@ Test modules:
 
 | Version | Date | Highlights |
 |---------|------|-----------|
-| **6.2.0** | April 2026 | Audit Log — PostgreSQL-backed `audit_log` table. Every conversion writes structured audit events (request_id, job_id, event_type, step, progress, level, duration_ms, metadata). Four REST endpoints: `GET /v1/audit`, `GET /v1/audit/{request_id}`, `GET /v1/audit/job/{job_id}`, `DELETE /v1/audit/cleanup`. Three new ENV variables: `AUDIT_ENABLED`, `AUDIT_RETENTION_DAYS`, `AUDIT_API_ENABLED`. New modules: `audit_db.py`, `api_rest_audit.py`. |
-| **5.6.0** | April 2026 | `mode: "deep"` for per-image extraction with classification (diagram→Mermaid, chart→table). `mode: "full"` now uses page-level rendering for PDFs (15 API calls vs 58 for a 15-page document). CMYK colorspace fix — CMYK images properly converted to RGB. Embedded image resize before Vision API. `PAGE_DESCRIBE_MAX_PAGES` ENV. Non-PDF fallback to individual image description. |
-| **5.5.0** | March 2026 | Mistral Batch Integration (`POST /v1/prepare-batch`, `POST /v1/apply-batch-results`). Brix detection: hint in `meta.brix_hint` when >10 images detected. Per-image progress in async jobs (`"image 14/50"`). `JOB_TIMEOUT_SECONDS=900` — async jobs fail-safe after 15 min. `BRIX_URL` ENV for Brix reachability check. `DAIGESTR_VERSION` read from Git tag. `CONVERT_TIMEOUT_SECONDS` removed (no internal timeout in `convert_auto`). |
-| **5.9.0** | April 2026 | PostgreSQL migration — Template Registry, request cache, and async jobs migrated from SQLite to PostgreSQL (`daigestr-postgres` container). `DATABASE_URL`, `DB_POOL_MIN`, `DB_POOL_MAX` ENV variables. psycopg2 connection pool. Zero-downtime migration via `seed.sql` + `init_templates_db()`. |
-| **5.5.0** | March 2026 | Mistral Batch Integration (`/v1/prepare-batch`, `/v1/apply-batch-results`). Async job progress updates at every pipeline step. Per-image progress callback. 60s vision timeout. Job timeout (`JOB_TIMEOUT_SECONDS`). |
-| **5.4.0** | March 2026 | Async Job API (`POST /v1/convert/async`, `GET /v1/jobs/{id}`, `GET /v1/jobs/{id}/result`, `DELETE /v1/jobs/{id}`, `GET /v1/jobs`). Webhook callback (`webhook_url` parameter on any convert request). |
-| **5.3.0** | March 2026 | PDF page selection (`pages` parameter). Syntax: ranges (`"1-3"`), individual pages (`"7,14"`), exclusions (`"10-20,!15"`). |
-| **5.2.2** | March 2026 | Crash recovery: global exception handler, REST-thread watchdog, `MAX_DESCRIBE_IMAGES=50` limit, `CONVERT_TIMEOUT_SECONDS=300` global timeout. |
-| **5.2.0** | March 2026 | Modular architecture refactor — monolithic `server.py` split into 15 focused modules (`routing.py`, `intelligence.py`, `converters/`, `renderers/`, `api_rest.py`, `api_mcp.py`, `templates_db.py`, etc.). New features: `mode: "full"` shorthand for all features, `output_format: html/text` rendering (Mermaid.js, highlight.js, plain text), `describe_images` extended to PDF/ODT/ODP/HTML (previously DOCX/PPTX only), request-level cache with `DELETE /v1/cache`, 429 rate-limit handling with configurable wait, DB-backed prompts via Template Registry, `/v1/tips` LLM self-discovery endpoint. |
-| **3.1** | March 2026 | Template Registry & Auto-Extract — SQLite Template Registry with CRUD API (bulk import, search, categories), auto-extract pipeline (classify → template lookup → extraction in one call), `_meta` block with tax relevance on every extraction (Steuerrelevanz, MwSt, Aktenzeichen), classify uses dynamic Template Registry IDs, seed.sql for default templates, DB as single source of truth. 787 unit tests. |
-| **3.0** | March 2026 | Hidden Data & E-Rechnung — ZUGFeRD/Factur-X e-invoice extraction (structured JSON without LLM, 100% accuracy), PDF XMP metadata + embedded files, XLSX hidden/very-hidden sheets, EXIF/GPS/IPTC from images, Office document properties (core/app/custom), email routing headers + SPF/DKIM/DMARC + calendar ICS, PPTX hidden slides + embedded objects, OCR text layer embedding (ocr_embed), LLM usage hints (get_tips endpoint + context-sensitive response hints). 715+ unit tests. |
-| **2.0** | March 2026 | Document Intelligence Service — 20 features: PDF Intelligence (cross-page tables, scanned PDF detection, OCR-3, img2table, metadata), Vision Intelligence (embedded images, diagrams→Mermaid, charts→tables, OCR correction, artifact stripping), Format extensions (code blocks, audio/video, Excel enhanced, DOCX extras), Document Intelligence (classification, schema extraction, quality scoring, RAG chunking, high-accuracy pipeline). Mistral OCR-3 integration. 37 configurable ENV variables. 501 unit tests. |
-| **0.3** | January 2026 | MCP + REST dual interface, Mistral Vision integration, folder conversion, retry logic, structured logging, URL conversion. |
+| **7.0.0** | April 2026 | **Normalization Layer** — 13-step pipeline mapping extracted fields to 52 unified field names across 143 templates (100% coverage). Admin REST API (15 endpoints), in-memory cache, batch validation, correction feedback. Auto-normalization on extract when mapping exists. New modules: `normalizer.py`, `normalizer_db.py`, `normalizer_cache.py`, `api_rest_normalize.py`. Seed data: 18 categories, 52 fields, 200+ values, 143 template mappings. `_META_SCHEMA`, `_STEUER_SIGNALWOERTER`, `_DATENTYP_KONVENTIONEN` moved from hardcoded to PostgreSQL prompt table. |
+| **6.2.0** | April 2026 | **Audit Log** — PostgreSQL-backed `audit_log` table with structured events. Four REST endpoints. `AUDIT_ENABLED`, `AUDIT_RETENTION_DAYS`, `AUDIT_API_ENABLED` ENV. New modules: `audit_db.py`, `api_rest_audit.py`. |
+| **5.9.0** | April 2026 | **PostgreSQL Migration** — Template Registry, request cache, async jobs migrated from SQLite to PostgreSQL (`daigestr-postgres` container). `DATABASE_URL`, `DB_POOL_MIN/MAX` ENV. |
+| **5.6.0** | April 2026 | `mode: "deep"` for per-image extraction with classification. `mode: "full"` page-level rendering for PDFs. |
+| **5.5.0** | March 2026 | Mistral Batch Integration (`/v1/prepare-batch`, `/v1/apply-batch-results`). Brix detection. Per-image progress. `JOB_TIMEOUT_SECONDS`. |
+| **5.4.0** | March 2026 | Async Job API (`/v1/convert/async`, `/v1/jobs`). Webhook callback (`webhook_url`). |
+| **5.3.0** | March 2026 | PDF page selection (`pages` parameter). |
+| **5.2.2** | March 2026 | Crash recovery, error handling, `MAX_DESCRIBE_IMAGES=50`, global timeout. |
+| **5.2.0** | March 2026 | Modular architecture refactor — 15 modules. `mode: "full"`, `output_format`, `describe_images` for all formats, request cache, rate-limit handling, `/v1/tips`. |
+| **3.1** | March 2026 | Template Registry & Auto-Extract — CRUD API, auto_extract pipeline, `_meta` tax relevance, seed.sql with 143 templates. |
+| **3.0** | March 2026 | Hidden Data & E-Rechnung — ZUGFeRD/Factur-X, PDF XMP metadata, XLSX hidden sheets, EXIF/IPTC, email routing, `ocr_embed`. |
+| **2.0** | March 2026 | Document Intelligence Service — 20 features, Mistral OCR-3, 37 ENV variables. |
+| **0.3** | January 2026 | MCP + REST dual interface, Mistral Vision integration, folder conversion, URL conversion. |
 | **0.1** | December 2025 | Initial release — markitdown wrapper with basic MCP server. |
 
 ---
