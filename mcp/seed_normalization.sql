@@ -228,7 +228,7 @@ ON CONFLICT (field_name, canonical_value) DO UPDATE SET
 INSERT INTO normalized_values (field_name, canonical_value, aliases, is_default, description, sort_order) VALUES
   ('insurance_type', 'kranken',            ARRAY['KV', 'PKV', 'GKV', 'Krankenversicherung', 'Kranken', 'private Krankenversicherung', 'Gesetzliche Krankenversicherung', 'Private Krankenversicherung', 'Zusatzversicherung', 'Zahnzusatz'], false, 'Krankenversicherung',       10),
   ('insurance_type', 'haftpflicht',        ARRAY['PHV', 'Privathaftpflicht', 'Haftpflicht', 'Haftpflichtversicherung', 'Tierhalterhaftpflicht', 'Haus- und Grundbesitzerhaftpflicht'], false, 'Haftpflichtversicherung',   20),
-  ('insurance_type', 'kfz',               ARRAY['KFZ', 'Auto', 'Kfz-Versicherung', 'Kraftfahrzeugversicherung', 'Fahrzeugversicherung', 'Kfz-Haftpflicht', 'Kfz-Teilkasko', 'Kfz-Vollkasko', 'Motorradversicherung'], false, 'Kfz-Versicherung',          30),
+  ('insurance_type', 'kfz',               ARRAY['KFZ', 'Auto', 'Kfz-Versicherung', 'Kraftfahrzeugversicherung', 'Fahrzeugversicherung', 'Kfz-Haftpflicht', 'Kfz-Teilkasko', 'Kfz-Vollkasko', 'Motorradversicherung', 'Kfz-Haftpflicht + Teilkasko', 'KFZ Haftpflicht', 'Kfz Versicherung'], false, 'Kfz-Versicherung',          30),
   ('insurance_type', 'berufsunfaehigkeit', ARRAY['BU', 'Berufsunfähigkeit', 'Berufsunfähigkeitsversicherung', 'BU-Versicherung', 'Erwerbsminderung', 'Dienstunfähigkeit'], false, 'Berufsunfähigkeitsversicherung', 40),
   ('insurance_type', 'leben',             ARRAY['LV', 'Lebensversicherung', 'Leben', 'Risikolebensversicherung', 'Sterbegeldversicherung', 'Kapitallebensversicherung'], false, 'Lebensversicherung',        50)
 ON CONFLICT (field_name, canonical_value) DO UPDATE SET

@@ -436,7 +436,7 @@ def _normalize_umlauts(text: str) -> str:
         .replace("ß", "ss"))
 
 
-def find_canonical(field_name: str, raw_value: str) -> Optional[str]:
+def find_canonical(field_name: str, raw_value: str, _depth: int = 0) -> Optional[str]:
     """
     Looks up the canonical_value for a raw input string via:
     1. Exact match on canonical_value (case-insensitive)
@@ -494,6 +494,22 @@ def find_canonical(field_name: str, raw_value: str) -> Optional[str]:
             for alias in (r["aliases"] or []):
                 if _normalize_umlauts(alias).lower() == normalized_input:
                     return r["canonical_value"]
+
+        # Step 5: Token-match fallback — split composite values and match individual tokens
+        if _depth < 1:
+            separators = [" + ", " und ", " & ", ", ", " / "]
+            tokens = [raw_value]
+            for sep in separators:
+                new_tokens = []
+                for t in tokens:
+                    new_tokens.extend(t.split(sep))
+                tokens = new_tokens
+            tokens = [t.strip() for t in tokens if t.strip()]
+            if len(tokens) > 1:
+                for token in tokens:
+                    result = find_canonical(field_name, token, _depth=_depth + 1)
+                    if result is not None:
+                        return result
 
         return None
     finally:
