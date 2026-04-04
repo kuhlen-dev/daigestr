@@ -49,7 +49,8 @@ INSERT INTO normalized_fields (name, label_de, label_en, type, category, descrip
   ('iban_recipient',        'IBAN Empfänger',        'Recipient IBAN',        'string',   'financial.payment',  'IBAN des Empfängers/Kunden',                            21),
   ('bic',                   'BIC',                   'BIC',                   'string',   'financial.payment',  'BIC/SWIFT-Code der Bank',                               22),
   ('payment_method',        'Zahlungsart',           'Payment Method',        'enum',     'financial.payment',  'Art der Zahlung (Lastschrift, Überweisung, …)',          23),
-  ('mandate_reference',     'Mandatsreferenz',       'Mandate Reference',     'string',   'financial.payment',  'SEPA-Mandatsreferenz',                                  24),
+  ('payment_frequency',     'Zahlungsfrequenz',      'Payment Frequency',     'enum',     'financial.payment',  'Zahlungsintervall (monatlich, vierteljährlich, jährlich etc.)', 24),
+  ('mandate_reference',     'Mandatsreferenz',       'Mandate Reference',     'string',   'financial.payment',  'SEPA-Mandatsreferenz',                                  25),
   -- financial.tax
   ('tax_relevant',          'Steuerrelevant',        'Tax Relevant',          'boolean',  'financial.tax',      'Ist das Dokument steuerrelevant?',                      30),
   ('tax_category',          'Steuerkategorie',       'Tax Category',          'enum',     'financial.tax',      'Steuerliche Einordnung (Werbungskosten, Sonderausgaben…)',31),
@@ -138,6 +139,20 @@ INSERT INTO normalized_values (field_name, canonical_value, aliases, is_default,
   ('payment_method', 'kreditkarte',  ARRAY['Visa', 'Mastercard', 'Amex', 'credit card', 'Kreditkarte', 'kreditkarte'],                      false, 'Kreditkartenzahlung',  30),
   ('payment_method', 'paypal',       ARRAY['PayPal', 'Paypal', 'paypal.com'],                                                               false, 'PayPal',               40),
   ('payment_method', 'rechnung',     ARRAY['Zahlung per Rechnung', 'auf Rechnung', 'invoice', 'per Rechnung'],                              false, 'Zahlung per Rechnung', 50)
+ON CONFLICT (field_name, canonical_value) DO UPDATE SET
+  aliases     = EXCLUDED.aliases,
+  is_default  = EXCLUDED.is_default,
+  description = EXCLUDED.description,
+  sort_order  = EXCLUDED.sort_order,
+  updated_at  = now();
+
+-- payment_frequency
+INSERT INTO normalized_values (field_name, canonical_value, aliases, is_default, description, sort_order) VALUES
+  ('payment_frequency', 'monatlich',        ARRAY['monthly', 'mtl.', 'Monat', 'pro Monat', '1/12', 'monatliche Zahlung'],                                          true,  'Monatlich',        10),
+  ('payment_frequency', 'vierteljaehrlich', ARRAY['quartalsweise', 'quarterly', 'pro Quartal', '1/4', 'vierteljährlich', 'Quartal', 'quartal'],                    false, 'Vierteljährlich',  20),
+  ('payment_frequency', 'halbjaehrlich',    ARRAY['halbjährlich', 'semi-annual', 'pro Halbjahr', '1/2', 'Halbjahr', 'halbjährig'],                                 false, 'Halbjährlich',     30),
+  ('payment_frequency', 'jaehrlich',        ARRAY['jährlich', 'annual', 'pro Jahr', 'p.a.', 'yearly', 'Jahr', 'annually', '1/1'],                                  false, 'Jährlich',         40),
+  ('payment_frequency', 'einmalig',         ARRAY['one-time', 'Einmalzahlung', 'single payment', 'einmal', 'Einmalbeitrag'],                                       false, 'Einmalige Zahlung', 50)
 ON CONFLICT (field_name, canonical_value) DO UPDATE SET
   aliases     = EXCLUDED.aliases,
   is_default  = EXCLUDED.is_default,
