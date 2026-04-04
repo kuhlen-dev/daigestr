@@ -168,11 +168,11 @@ ON CONFLICT (field_name, canonical_value) DO UPDATE SET
 
 -- payment_method
 INSERT INTO normalized_values (field_name, canonical_value, aliases, is_default, description, sort_order) VALUES
-  ('payment_method', 'lastschrift',  ARRAY['SEPA', 'Einzug', 'Bankeinzug', 'Lastschrift', 'Abbuchung', 'sepa-lastschrift', 'direct debit', 'SEPA-Lastschrift', 'Einzugsermächtigung'], true,  'SEPA-Lastschrift',     10),
-  ('payment_method', 'ueberweisung', ARRAY['Überweisung', 'Banküberweisung', 'überweisung', 'transfer', 'bank transfer'],                   false, 'Banküberweisung',      20),
-  ('payment_method', 'kreditkarte',  ARRAY['Visa', 'Mastercard', 'Amex', 'credit card', 'Kreditkarte', 'kreditkarte', 'EC-Karte', 'Debitkarte', 'Kartenzahlung', 'girocard'], false, 'Kreditkartenzahlung',  30),
-  ('payment_method', 'paypal',       ARRAY['PayPal', 'Paypal', 'paypal.com'],                                                               false, 'PayPal',               40),
-  ('payment_method', 'rechnung',     ARRAY['Zahlung per Rechnung', 'auf Rechnung', 'invoice', 'per Rechnung', 'Vorkasse', 'Vorauszahlung'], false, 'Zahlung per Rechnung', 50)
+  ('payment_method', 'direct_debit',     ARRAY['SEPA', 'Einzug', 'Bankeinzug', 'Lastschrift', 'Abbuchung', 'sepa-lastschrift', 'direct debit', 'SEPA-Lastschrift', 'Einzugsermächtigung', 'lastschrift'], true,  'SEPA Direct Debit',    10),
+  ('payment_method', 'bank_transfer',    ARRAY['Überweisung', 'Banküberweisung', 'überweisung', 'transfer', 'bank transfer', 'ueberweisung'],                   false, 'Bank Transfer',        20),
+  ('payment_method', 'credit_card',      ARRAY['Visa', 'Mastercard', 'Amex', 'credit card', 'Kreditkarte', 'kreditkarte', 'EC-Karte', 'Debitkarte', 'Kartenzahlung', 'girocard'], false, 'Credit Card Payment',  30),
+  ('payment_method', 'paypal',           ARRAY['PayPal', 'Paypal', 'paypal.com'],                                                               false, 'PayPal',               40),
+  ('payment_method', 'invoice_payment',  ARRAY['Zahlung per Rechnung', 'auf Rechnung', 'invoice', 'per Rechnung', 'Vorkasse', 'Vorauszahlung', 'rechnung'], false, 'Invoice Payment',      50)
 ON CONFLICT (field_name, canonical_value) DO UPDATE SET
   aliases     = EXCLUDED.aliases,
   is_default  = EXCLUDED.is_default,
@@ -182,11 +182,11 @@ ON CONFLICT (field_name, canonical_value) DO UPDATE SET
 
 -- payment_frequency
 INSERT INTO normalized_values (field_name, canonical_value, aliases, is_default, description, sort_order) VALUES
-  ('payment_frequency', 'monatlich',        ARRAY['monthly', 'mtl.', 'Monat', 'pro Monat', '1/12', 'monatliche Zahlung'],                                          true,  'Monatlich',        10),
-  ('payment_frequency', 'vierteljaehrlich', ARRAY['quartalsweise', 'quarterly', 'pro Quartal', '1/4', 'vierteljährlich', 'Quartal', 'quartal'],                    false, 'Vierteljährlich',  20),
-  ('payment_frequency', 'halbjaehrlich',    ARRAY['halbjährlich', 'semi-annual', 'pro Halbjahr', '1/2', 'Halbjahr', 'halbjährig'],                                 false, 'Halbjährlich',     30),
-  ('payment_frequency', 'jaehrlich',        ARRAY['jährlich', 'annual', 'pro Jahr', 'p.a.', 'yearly', 'Jahr', 'annually', '1/1'],                                  false, 'Jährlich',         40),
-  ('payment_frequency', 'einmalig',         ARRAY['one-time', 'Einmalzahlung', 'single payment', 'einmal', 'Einmalbeitrag'],                                       false, 'Einmalige Zahlung', 50)
+  ('payment_frequency', 'monthly',      ARRAY['monthly', 'mtl.', 'Monat', 'pro Monat', '1/12', 'monatliche Zahlung', 'monatlich'],                                          true,  'Monthly',          10),
+  ('payment_frequency', 'quarterly',    ARRAY['quartalsweise', 'quarterly', 'pro Quartal', '1/4', 'vierteljährlich', 'Quartal', 'quartal', 'vierteljaehrlich'],                    false, 'Quarterly',        20),
+  ('payment_frequency', 'semi_annual',  ARRAY['halbjährlich', 'semi-annual', 'pro Halbjahr', '1/2', 'Halbjahr', 'halbjährig', 'halbjaehrlich'],                                 false, 'Semi-Annual',      30),
+  ('payment_frequency', 'annual',       ARRAY['jährlich', 'annual', 'pro Jahr', 'p.a.', 'yearly', 'Jahr', 'annually', '1/1', 'jaehrlich'],                                  false, 'Annual',           40),
+  ('payment_frequency', 'one_time',     ARRAY['one-time', 'Einmalzahlung', 'single payment', 'einmal', 'Einmalbeitrag', 'einmalig'],                                       false, 'One-Time Payment', 50)
 ON CONFLICT (field_name, canonical_value) DO UPDATE SET
   aliases     = EXCLUDED.aliases,
   is_default  = EXCLUDED.is_default,
@@ -196,11 +196,11 @@ ON CONFLICT (field_name, canonical_value) DO UPDATE SET
 
 -- tax_category
 INSERT INTO normalized_values (field_name, canonical_value, aliases, is_default, description, sort_order) VALUES
-  ('tax_category', 'werbungskosten',                ARRAY['Werbungskosten', 'WK', 'Berufliche Ausgaben', 'Anlage N', 'berufliche Aufwendungen', 'Arbeitnehmer-Pauschbetrag'],          false, 'Werbungskosten (§9 EStG)',                    10),
-  ('tax_category', 'sonderausgaben',                ARRAY['Sonderausgaben', 'SA', 'Vorsorgeaufwendungen', 'Anlage Vorsorgeaufwand', 'Sonderausgabe', 'Versicherungsbeiträge', 'Altersvorsorge'], false, 'Sonderausgaben (§10 EStG)',                   20),
-  ('tax_category', 'aussergewoehnliche_belastung',  ARRAY['Außergewöhnliche Belastungen', 'agB', 'AB', 'außergewöhnliche Belastung', 'Anlage agB', 'Krankheitskosten', 'Pflegekosten'], false, 'Außergewöhnliche Belastungen (§33 EStG)',     30),
-  ('tax_category', 'haushaltsnahe_dienstleistung',  ARRAY['Haushaltsnahe Dienstleistungen', 'HnD', 'haushaltsnahe Dienstleistung', '§35a EStG', 'Handwerkerleistungen', 'Handwerkerleistung', 'Handwerkerrechnung'], false, 'Haushaltsnahe Dienstleistungen (§35a EStG)', 40),
-  ('tax_category', 'betriebsausgaben',              ARRAY['Betriebsausgaben', 'BA', 'Anlage EÜR', 'betriebliche Ausgaben', 'Geschäftsausgaben', 'Betriebsausgabe'],                  false, 'Betriebsausgaben (§4 EStG)',                  50)
+  ('tax_category', 'business_expenses',        ARRAY['Werbungskosten', 'WK', 'Berufliche Ausgaben', 'Anlage N', 'berufliche Aufwendungen', 'Arbeitnehmer-Pauschbetrag', 'werbungskosten'],          false, 'Business Expenses (§9 EStG)',                  10),
+  ('tax_category', 'special_expenses',        ARRAY['Sonderausgaben', 'SA', 'Vorsorgeaufwendungen', 'Anlage Vorsorgeaufwand', 'Sonderausgabe', 'Versicherungsbeiträge', 'Altersvorsorge', 'sonderausgaben'], false, 'Special Expenses (§10 EStG)',                  20),
+  ('tax_category', 'extraordinary_expenses',  ARRAY['Außergewöhnliche Belastungen', 'agB', 'AB', 'außergewöhnliche Belastung', 'Anlage agB', 'Krankheitskosten', 'Pflegekosten', 'aussergewoehnliche_belastung'], false, 'Extraordinary Expenses (§33 EStG)',            30),
+  ('tax_category', 'household_services',      ARRAY['Haushaltsnahe Dienstleistungen', 'HnD', 'haushaltsnahe Dienstleistung', '§35a EStG', 'Handwerkerleistungen', 'Handwerkerleistung', 'Handwerkerrechnung', 'haushaltsnahe_dienstleistung'], false, 'Household Services (§35a EStG)',               40),
+  ('tax_category', 'operating_expenses',      ARRAY['Betriebsausgaben', 'BA', 'Anlage EÜR', 'betriebliche Ausgaben', 'Geschäftsausgaben', 'Betriebsausgabe', 'betriebsausgaben'],                  false, 'Operating Expenses (§4 EStG)',                 50)
 ON CONFLICT (field_name, canonical_value) DO UPDATE SET
   aliases     = EXCLUDED.aliases,
   is_default  = EXCLUDED.is_default,
@@ -226,11 +226,11 @@ ON CONFLICT (field_name, canonical_value) DO UPDATE SET
 
 -- insurance_type
 INSERT INTO normalized_values (field_name, canonical_value, aliases, is_default, description, sort_order) VALUES
-  ('insurance_type', 'kranken',            ARRAY['KV', 'PKV', 'GKV', 'Krankenversicherung', 'Kranken', 'private Krankenversicherung', 'Gesetzliche Krankenversicherung', 'Private Krankenversicherung', 'Zusatzversicherung', 'Zahnzusatz'], false, 'Krankenversicherung',       10),
-  ('insurance_type', 'haftpflicht',        ARRAY['PHV', 'Privathaftpflicht', 'Haftpflicht', 'Haftpflichtversicherung', 'Tierhalterhaftpflicht', 'Haus- und Grundbesitzerhaftpflicht'], false, 'Haftpflichtversicherung',   20),
-  ('insurance_type', 'kfz',               ARRAY['KFZ', 'Auto', 'Kfz-Versicherung', 'Kraftfahrzeugversicherung', 'Fahrzeugversicherung', 'Kfz-Haftpflicht', 'Kfz-Teilkasko', 'Kfz-Vollkasko', 'Motorradversicherung', 'Kfz-Haftpflicht + Teilkasko', 'KFZ Haftpflicht', 'Kfz Versicherung'], false, 'Kfz-Versicherung',          30),
-  ('insurance_type', 'berufsunfaehigkeit', ARRAY['BU', 'Berufsunfähigkeit', 'Berufsunfähigkeitsversicherung', 'BU-Versicherung', 'Erwerbsminderung', 'Dienstunfähigkeit'], false, 'Berufsunfähigkeitsversicherung', 40),
-  ('insurance_type', 'leben',             ARRAY['LV', 'Lebensversicherung', 'Leben', 'Risikolebensversicherung', 'Sterbegeldversicherung', 'Kapitallebensversicherung'], false, 'Lebensversicherung',        50)
+  ('insurance_type', 'health',          ARRAY['KV', 'PKV', 'GKV', 'Krankenversicherung', 'Kranken', 'private Krankenversicherung', 'Gesetzliche Krankenversicherung', 'Private Krankenversicherung', 'Zusatzversicherung', 'Zahnzusatz', 'kranken'], false, 'Health Insurance',          10),
+  ('insurance_type', 'liability',      ARRAY['PHV', 'Privathaftpflicht', 'Haftpflicht', 'Haftpflichtversicherung', 'Tierhalterhaftpflicht', 'Haus- und Grundbesitzerhaftpflicht', 'haftpflicht'], false, 'Liability Insurance',       20),
+  ('insurance_type', 'motor_vehicle',  ARRAY['KFZ', 'Auto', 'Kfz-Versicherung', 'Kraftfahrzeugversicherung', 'Fahrzeugversicherung', 'Kfz-Haftpflicht', 'Kfz-Teilkasko', 'Kfz-Vollkasko', 'Motorradversicherung', 'Kfz-Haftpflicht + Teilkasko', 'KFZ Haftpflicht', 'Kfz Versicherung', 'kfz'], false, 'Motor Vehicle Insurance',   30),
+  ('insurance_type', 'disability',     ARRAY['BU', 'Berufsunfähigkeit', 'Berufsunfähigkeitsversicherung', 'BU-Versicherung', 'Erwerbsminderung', 'Dienstunfähigkeit', 'berufsunfaehigkeit'], false, 'Disability Insurance',      40),
+  ('insurance_type', 'life',           ARRAY['LV', 'Lebensversicherung', 'Leben', 'Risikolebensversicherung', 'Sterbegeldversicherung', 'Kapitallebensversicherung', 'leben'], false, 'Life Insurance',            50)
 ON CONFLICT (field_name, canonical_value) DO UPDATE SET
   aliases     = EXCLUDED.aliases,
   is_default  = EXCLUDED.is_default,
