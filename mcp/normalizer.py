@@ -576,6 +576,10 @@ async def normalize(
     except Exception:
         normalized_version = "unknown"
 
+    # Quality score + validation errors in context (accessible via normalized_context)
+    context["quality_score"] = quality_score
+    context["validation_errors"] = validation_errors
+
     if compact:
         # Null-Felder entfernen
         normalized = {k: v for k, v in normalized.items() if v is not None}
