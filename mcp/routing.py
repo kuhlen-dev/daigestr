@@ -175,6 +175,7 @@ async def _apply_normalizer(
             response.normalized_warnings = norm_result.get("normalized_warnings")
             response.normalized_trace = norm_result.get("normalized_trace")
             response.normalized_context = norm_result.get("normalized_context")
+            response.normalized_confidence = norm_result.get("normalized_confidence")
             log.info("normalizer_applied", template=template_name, compact=compact)
     except Exception as exc:
         log.warning("normalizer_error", template=template_name, error=str(exc))

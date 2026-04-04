@@ -150,6 +150,7 @@ class ConvertResponse(BaseModel):
     normalized_warnings: Optional[list[str]] = Field(None, description="Warnungen aus der Normalisierung (fehlende Felder, Validierungsfehler, etc.)")
     normalized_trace: Optional[list[dict[str, Any]]] = Field(None, description="Trace-Log der Normalisierungsschritte (Feld → Regel → Konfidenz)")
     normalized_context: Optional[dict[str, Any]] = Field(None, description="Kontext aus der Normalisierung (vendor_country, recipient_country, tax_country)")
+    normalized_confidence: Optional[dict[str, float]] = Field(None, description="Confidence scores per normalized field (0.0-1.0)")
 
 
 class HealthResponse(BaseModel):

@@ -580,6 +580,15 @@ async def normalize(
     context["quality_score"] = quality_score
     context["validation_errors"] = validation_errors
 
+    normalized["_quality_score"] = quality_score
+
+    confidence_dict: dict[str, float] = {}
+    for t in trace:
+        field = t.get("field")
+        conf = t.get("confidence")
+        if field and conf is not None:
+            confidence_dict[field] = conf
+
     if compact:
         # Null-Felder entfernen
         normalized = {k: v for k, v in normalized.items() if v is not None}
@@ -590,6 +599,7 @@ async def normalize(
         "normalized_warnings": warnings_list,
         "normalized_trace": trace,
         "normalized_context": context,
+        "normalized_confidence": confidence_dict,
         "quality_score": quality_score,
         "validation_errors": validation_errors,
     }
