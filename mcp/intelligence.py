@@ -67,13 +67,18 @@ def _load_meta_schema() -> dict:
     log.warning("meta_schema_fallback_hardcoded")
     return {
         "absender": {"name": "string | null", "firma": "string | null", "slug": "string",
-                     "adresse": {"strasse": "string | null", "plz": "string | null", "ort": "string | null", "land": "string | null"}},
+                     "adresse": {"strasse": "string | null", "plz": "string | null", "ort": "string | null", "land": "string | null"},
+                     "ust_id": "string | null", "bic": "string | null", "iban": "string | null"},
         "empfaenger": {"name": "string | null", "slug": "string",
                        "adresse": {"strasse": "string | null", "plz": "string | null", "ort": "string | null", "land": "string | null"}},
         "steuerrelevant": "boolean", "steuerrelevanz_hinweis": "string | null",
         "steuer_kategorie": "string | null", "steuerjahr": "string | null",
         "mwst_ausgewiesen": "boolean", "mwst_betrag": "string | null", "mwst_satz": "string | null",
         "aktenzeichen": "string | null", "dokumenten_id": "string | null", "zusammenfassung": "string | null",
+        "faelligkeitsdatum": "string | null", "zahlungsart": "string | null",
+        "zahlungsweise": "string | null", "mandatsreferenz": "string | null",
+        "bestellnummer": "string | null", "vertragsnummer": "string | null",
+        "empfaenger_iban": "string | null", "automatische_verlaengerung": "boolean | null",
     }
 
 _META_SCHEMA: dict | None = None
