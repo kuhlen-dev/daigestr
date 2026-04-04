@@ -1409,6 +1409,14 @@ def _build_tips_dict() -> dict:
                 "POST /v1/normalized/batch-validate — Batch-Validierung",
                 "POST/GET /v1/normalized/corrections — Korrektur-Feedback",
             ],
+            "response_structure": {
+                "normalized": "Flat dict with field values. Contains _quality_score (0.0-1.0). Null fields included unless compact=true.",
+                "normalized_confidence": "Flat dict parallel to normalized. Keys = field names, Values = confidence float (0.0-1.0).",
+                "normalized_version": "String — version hash of the normalization rules.",
+                "normalized_warnings": "Array of strings — warnings (missing fields, validation errors).",
+                "normalized_trace": "Array of objects — step-by-step audit trail. Each entry: {field, source_field, raw, rule, confidence}.",
+                "normalized_context": "Dict with context: vendor_country, recipient_country, tax_country, quality_score, validation_errors.",
+            },
         },
         "note_mcp_vs_rest": "MCP tool 'convert' uses 'base64_data' parameter (not 'base64' like REST API)",
     }
