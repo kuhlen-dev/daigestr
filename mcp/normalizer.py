@@ -48,6 +48,30 @@ def _resolve_dot_path(obj: Any, path: str) -> Any:
     return current
 
 
+def _flatten_address(obj: Any) -> Optional[str]:
+    """Flatten an address dict to a single string.
+    {strasse: 'Musterstr. 42', plz: '12345', ort: 'Berlin'} → 'Musterstr. 42, 12345 Berlin'
+    """
+    if not isinstance(obj, dict):
+        return str(obj) if obj is not None else None
+    parts = []
+    strasse = obj.get("strasse")
+    if strasse:
+        parts.append(str(strasse))
+    plz = obj.get("plz")
+    ort = obj.get("ort")
+    if plz and ort:
+        parts.append(f"{plz} {ort}")
+    elif ort:
+        parts.append(str(ort))
+    elif plz:
+        parts.append(str(plz))
+    land = obj.get("land")
+    if land:
+        parts.append(str(land))
+    return ", ".join(parts) if parts else None
+
+
 def _convert_decimal(value: Any) -> Optional[float]:
     """
     Konvertiert einen Wert zu float (locale-aware).
@@ -305,6 +329,22 @@ async def normalize(
                 if val is not None:
                     break
             raw_values[norm_field] = val
+
+    # -------------------------------------------------------------------------
+    # Schritt 3b: Flatten dict values for string fields (e.g. address objects)
+    # -------------------------------------------------------------------------
+    for field_name, val in list(raw_values.items()):
+        if isinstance(val, dict):
+            field_def = fields_by_name.get(field_name)
+            if field_def and field_def.get("type") == "string":
+                raw_values[field_name] = _flatten_address(val)
+                trace.append({
+                    "field": field_name,
+                    "source_field": mapping.get(field_name),
+                    "raw": val,
+                    "rule": "flatten_dict_to_string",
+                    "confidence": 0.9,
+                })
 
     # -------------------------------------------------------------------------
     # Schritt 4: Wert-Normalisierung via find_canonical für Enum-Felder
