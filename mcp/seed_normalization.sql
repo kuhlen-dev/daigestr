@@ -102,7 +102,8 @@ INSERT INTO normalized_fields (name, label_de, label_en, type, category, descrip
   ('page_count',            'Seitenanzahl',          'Page Count',            'integer',  'quality.meta',       'Anzahl der Seiten',                                    131),
   ('quality_score',         'Qualitätsscore',        'Quality Score',         'decimal',  'quality.meta',       'Qualitätsscore der Extraktion (0–1)',                   132),
   ('completeness_score',    'Vollständigkeitsscore', 'Completeness Score',    'decimal',  'quality.meta',       'Vollständigkeit der extrahierten Felder (0–1)',         133),
-  ('tax_country',           'Steuerland',            'Tax Country',           'enum',     'financial.tax',      'Land für steuerliche Einordnung (ISO 3166-1 Alpha-2)', 35)
+  ('tax_country',           'Steuerland',            'Tax Country',           'enum',     'financial.tax',      'Land für steuerliche Einordnung (ISO 3166-1 Alpha-2)', 35),
+  ('_country_currency',     'Land→Währung',          'Country→Currency',      'enum',     'quality.meta',       'Internes Mapping: ISO-Ländercode → ISO-Währungscode',  900)
 ON CONFLICT (name) DO UPDATE SET
   label_de         = EXCLUDED.label_de,
   label_en         = EXCLUDED.label_en,
@@ -236,6 +237,27 @@ INSERT INTO normalized_values (field_name, canonical_value, aliases, is_default,
   ('tax_country', 'IT', ARRAY['Italien', 'Italy', 'Italia', 'ita'],                        false, 'Italien',        80),
   ('tax_country', 'ES', ARRAY['Spanien', 'Spain', 'España', 'esp'],                        false, 'Spanien',        90),
   ('tax_country', 'PL', ARRAY['Polen', 'Poland', 'Polska', 'pol'],                         false, 'Polen',         100)
+ON CONFLICT (field_name, canonical_value) DO UPDATE SET
+  aliases     = EXCLUDED.aliases,
+  is_default  = EXCLUDED.is_default,
+  description = EXCLUDED.description,
+  sort_order  = EXCLUDED.sort_order,
+  updated_at  = now();
+
+-- Country → Currency mapping (used by normalizer for currency defaults)
+INSERT INTO normalized_values (field_name, canonical_value, aliases, is_default, description, sort_order) VALUES
+  ('_country_currency', 'EUR', ARRAY['DE','AT','FR','ES','IT','NL','BE','IE','PT','FI','GR','LU','SK','SI','EE','LV','LT','CY','MT','HR'], true,  'Euro (Eurozone)',  10),
+  ('_country_currency', 'CHF', ARRAY['CH','LI'],                                                                                          false, 'Schweizer Franken', 20),
+  ('_country_currency', 'GBP', ARRAY['GB'],                                                                                               false, 'Britisches Pfund',  30),
+  ('_country_currency', 'USD', ARRAY['US'],                                                                                               false, 'US-Dollar',         40),
+  ('_country_currency', 'PLN', ARRAY['PL'],                                                                                               false, 'Polnischer Zloty',  50),
+  ('_country_currency', 'SEK', ARRAY['SE'],                                                                                               false, 'Schwedische Krone',  60),
+  ('_country_currency', 'DKK', ARRAY['DK'],                                                                                               false, 'Dänische Krone',    70),
+  ('_country_currency', 'NOK', ARRAY['NO'],                                                                                               false, 'Norwegische Krone',  80),
+  ('_country_currency', 'CZK', ARRAY['CZ'],                                                                                               false, 'Tschechische Krone', 90),
+  ('_country_currency', 'HUF', ARRAY['HU'],                                                                                               false, 'Ungarischer Forint', 100),
+  ('_country_currency', 'RON', ARRAY['RO'],                                                                                               false, 'Rumänischer Leu',   110),
+  ('_country_currency', 'BGN', ARRAY['BG'],                                                                                               false, 'Bulgarischer Lew',  120)
 ON CONFLICT (field_name, canonical_value) DO UPDATE SET
   aliases     = EXCLUDED.aliases,
   is_default  = EXCLUDED.is_default,

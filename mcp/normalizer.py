@@ -469,16 +469,17 @@ async def normalize(
                 "confidence": 0.3,
             })
 
-    # Währungs-Default: EUR wenn Land=DE und keine Währung erkannt
+    # Währungs-Default aus DB (Country → Currency Mapping)
     if normalized.get("currency") is None and "currency" in fields_by_name:
         vendor_c = normalized.get("vendor_country", NORMALIZE_FALLBACK_COUNTRY)
-        if vendor_c == "DE":
-            normalized["currency"] = "EUR"
+        currency = find_canonical("_country_currency", vendor_c)
+        if currency:
+            normalized["currency"] = currency
             trace.append({
                 "field": "currency",
                 "source_field": None,
                 "raw": None,
-                "rule": "default_eur_for_de",
+                "rule": "default_currency_from_country",
                 "confidence": 0.7,
             })
 
