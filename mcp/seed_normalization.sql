@@ -134,11 +134,11 @@ ON CONFLICT (field_name, canonical_value) DO UPDATE SET
 
 -- payment_method
 INSERT INTO normalized_values (field_name, canonical_value, aliases, is_default, description, sort_order) VALUES
-  ('payment_method', 'lastschrift',  ARRAY['SEPA', 'Einzug', 'Bankeinzug', 'Lastschrift', 'Abbuchung', 'sepa-lastschrift', 'direct debit'], true,  'SEPA-Lastschrift',     10),
+  ('payment_method', 'lastschrift',  ARRAY['SEPA', 'Einzug', 'Bankeinzug', 'Lastschrift', 'Abbuchung', 'sepa-lastschrift', 'direct debit', 'SEPA-Lastschrift', 'Einzugsermächtigung'], true,  'SEPA-Lastschrift',     10),
   ('payment_method', 'ueberweisung', ARRAY['Überweisung', 'Banküberweisung', 'überweisung', 'transfer', 'bank transfer'],                   false, 'Banküberweisung',      20),
-  ('payment_method', 'kreditkarte',  ARRAY['Visa', 'Mastercard', 'Amex', 'credit card', 'Kreditkarte', 'kreditkarte'],                      false, 'Kreditkartenzahlung',  30),
+  ('payment_method', 'kreditkarte',  ARRAY['Visa', 'Mastercard', 'Amex', 'credit card', 'Kreditkarte', 'kreditkarte', 'EC-Karte', 'Debitkarte', 'Kartenzahlung', 'girocard'], false, 'Kreditkartenzahlung',  30),
   ('payment_method', 'paypal',       ARRAY['PayPal', 'Paypal', 'paypal.com'],                                                               false, 'PayPal',               40),
-  ('payment_method', 'rechnung',     ARRAY['Zahlung per Rechnung', 'auf Rechnung', 'invoice', 'per Rechnung'],                              false, 'Zahlung per Rechnung', 50)
+  ('payment_method', 'rechnung',     ARRAY['Zahlung per Rechnung', 'auf Rechnung', 'invoice', 'per Rechnung', 'Vorkasse', 'Vorauszahlung'], false, 'Zahlung per Rechnung', 50)
 ON CONFLICT (field_name, canonical_value) DO UPDATE SET
   aliases     = EXCLUDED.aliases,
   is_default  = EXCLUDED.is_default,
@@ -162,11 +162,11 @@ ON CONFLICT (field_name, canonical_value) DO UPDATE SET
 
 -- tax_category
 INSERT INTO normalized_values (field_name, canonical_value, aliases, is_default, description, sort_order) VALUES
-  ('tax_category', 'werbungskosten',                ARRAY['Werbungskosten', 'WK', 'Berufliche Ausgaben', 'Anlage N'],                                                               false, 'Werbungskosten (§9 EStG)',                    10),
-  ('tax_category', 'sonderausgaben',                ARRAY['Sonderausgaben', 'SA', 'Vorsorgeaufwendungen', 'Anlage Vorsorgeaufwand'],                                                false, 'Sonderausgaben (§10 EStG)',                   20),
-  ('tax_category', 'aussergewoehnliche_belastung',  ARRAY['Außergewöhnliche Belastungen', 'agB', 'AB', 'außergewöhnliche Belastung', 'Anlage agB'],                                 false, 'Außergewöhnliche Belastungen (§33 EStG)',     30),
-  ('tax_category', 'haushaltsnahe_dienstleistung',  ARRAY['Haushaltsnahe Dienstleistungen', 'HnD', 'haushaltsnahe Dienstleistung', '§35a EStG', 'Handwerkerleistungen'],            false, 'Haushaltsnahe Dienstleistungen (§35a EStG)', 40),
-  ('tax_category', 'betriebsausgaben',              ARRAY['Betriebsausgaben', 'BA', 'Anlage EÜR', 'betriebliche Ausgaben', 'Geschäftsausgaben'],                                    false, 'Betriebsausgaben (§4 EStG)',                  50)
+  ('tax_category', 'werbungskosten',                ARRAY['Werbungskosten', 'WK', 'Berufliche Ausgaben', 'Anlage N', 'berufliche Aufwendungen', 'Arbeitnehmer-Pauschbetrag'],          false, 'Werbungskosten (§9 EStG)',                    10),
+  ('tax_category', 'sonderausgaben',                ARRAY['Sonderausgaben', 'SA', 'Vorsorgeaufwendungen', 'Anlage Vorsorgeaufwand', 'Sonderausgabe', 'Versicherungsbeiträge', 'Altersvorsorge'], false, 'Sonderausgaben (§10 EStG)',                   20),
+  ('tax_category', 'aussergewoehnliche_belastung',  ARRAY['Außergewöhnliche Belastungen', 'agB', 'AB', 'außergewöhnliche Belastung', 'Anlage agB', 'Krankheitskosten', 'Pflegekosten'], false, 'Außergewöhnliche Belastungen (§33 EStG)',     30),
+  ('tax_category', 'haushaltsnahe_dienstleistung',  ARRAY['Haushaltsnahe Dienstleistungen', 'HnD', 'haushaltsnahe Dienstleistung', '§35a EStG', 'Handwerkerleistungen', 'Handwerkerleistung', 'Handwerkerrechnung'], false, 'Haushaltsnahe Dienstleistungen (§35a EStG)', 40),
+  ('tax_category', 'betriebsausgaben',              ARRAY['Betriebsausgaben', 'BA', 'Anlage EÜR', 'betriebliche Ausgaben', 'Geschäftsausgaben', 'Betriebsausgabe'],                  false, 'Betriebsausgaben (§4 EStG)',                  50)
 ON CONFLICT (field_name, canonical_value) DO UPDATE SET
   aliases     = EXCLUDED.aliases,
   is_default  = EXCLUDED.is_default,
@@ -192,11 +192,11 @@ ON CONFLICT (field_name, canonical_value) DO UPDATE SET
 
 -- insurance_type
 INSERT INTO normalized_values (field_name, canonical_value, aliases, is_default, description, sort_order) VALUES
-  ('insurance_type', 'kranken',            ARRAY['KV', 'PKV', 'GKV', 'Krankenversicherung', 'Kranken', 'private Krankenversicherung'],   false, 'Krankenversicherung',       10),
-  ('insurance_type', 'haftpflicht',        ARRAY['PHV', 'Privathaftpflicht', 'Haftpflicht', 'Haftpflichtversicherung'],                  false, 'Haftpflichtversicherung',   20),
-  ('insurance_type', 'kfz',               ARRAY['KFZ', 'Auto', 'Kfz-Versicherung', 'Kraftfahrzeugversicherung', 'Fahrzeugversicherung'], false, 'Kfz-Versicherung',          30),
-  ('insurance_type', 'berufsunfaehigkeit', ARRAY['BU', 'Berufsunfähigkeit', 'Berufsunfähigkeitsversicherung', 'BU-Versicherung'],        false, 'Berufsunfähigkeitsversicherung', 40),
-  ('insurance_type', 'leben',             ARRAY['LV', 'Lebensversicherung', 'Leben', 'Risikolebensversicherung'],                        false, 'Lebensversicherung',        50)
+  ('insurance_type', 'kranken',            ARRAY['KV', 'PKV', 'GKV', 'Krankenversicherung', 'Kranken', 'private Krankenversicherung', 'Gesetzliche Krankenversicherung', 'Private Krankenversicherung', 'Zusatzversicherung', 'Zahnzusatz'], false, 'Krankenversicherung',       10),
+  ('insurance_type', 'haftpflicht',        ARRAY['PHV', 'Privathaftpflicht', 'Haftpflicht', 'Haftpflichtversicherung', 'Tierhalterhaftpflicht', 'Haus- und Grundbesitzerhaftpflicht'], false, 'Haftpflichtversicherung',   20),
+  ('insurance_type', 'kfz',               ARRAY['KFZ', 'Auto', 'Kfz-Versicherung', 'Kraftfahrzeugversicherung', 'Fahrzeugversicherung', 'Kfz-Haftpflicht', 'Kfz-Teilkasko', 'Kfz-Vollkasko', 'Motorradversicherung'], false, 'Kfz-Versicherung',          30),
+  ('insurance_type', 'berufsunfaehigkeit', ARRAY['BU', 'Berufsunfähigkeit', 'Berufsunfähigkeitsversicherung', 'BU-Versicherung', 'Erwerbsminderung', 'Dienstunfähigkeit'], false, 'Berufsunfähigkeitsversicherung', 40),
+  ('insurance_type', 'leben',             ARRAY['LV', 'Lebensversicherung', 'Leben', 'Risikolebensversicherung', 'Sterbegeldversicherung', 'Kapitallebensversicherung'], false, 'Lebensversicherung',        50)
 ON CONFLICT (field_name, canonical_value) DO UPDATE SET
   aliases     = EXCLUDED.aliases,
   is_default  = EXCLUDED.is_default,
@@ -207,11 +207,11 @@ ON CONFLICT (field_name, canonical_value) DO UPDATE SET
 -- vendor_country / recipient_country / tax_country (shared enum set, inserted per field)
 INSERT INTO normalized_values (field_name, canonical_value, aliases, is_default, description, sort_order) VALUES
   ('vendor_country', 'DE', ARRAY['Deutschland', 'Germany', 'Allemagne', 'ger', 'deu'],          true,  'Deutschland',    10),
-  ('vendor_country', 'AT', ARRAY['Österreich', 'Austria', 'Autriche', 'aut'],                   false, 'Österreich',     20),
+  ('vendor_country', 'AT', ARRAY['Österreich', 'Austria', 'Autriche', 'aut', 'Oesterreich'],     false, 'Österreich',     20),
   ('vendor_country', 'CH', ARRAY['Schweiz', 'Switzerland', 'Suisse', 'che'],                    false, 'Schweiz',        30),
   ('vendor_country', 'FR', ARRAY['Frankreich', 'France', 'fra'],                                false, 'Frankreich',     40),
   ('vendor_country', 'US', ARRAY['USA', 'United States', 'Amerika', 'usa'],                     false, 'USA',            50),
-  ('vendor_country', 'GB', ARRAY['Großbritannien', 'United Kingdom', 'UK', 'England', 'gbr'],   false, 'Großbritannien', 60),
+  ('vendor_country', 'GB', ARRAY['Großbritannien', 'United Kingdom', 'UK', 'England', 'gbr', 'Grossbritannien'], false, 'Großbritannien', 60),
   ('vendor_country', 'NL', ARRAY['Niederlande', 'Netherlands', 'Holland', 'nld'],               false, 'Niederlande',    70),
   ('vendor_country', 'IT', ARRAY['Italien', 'Italy', 'Italia', 'ita'],                          false, 'Italien',        80),
   ('vendor_country', 'ES', ARRAY['Spanien', 'Spain', 'España', 'esp'],                          false, 'Spanien',        90),
@@ -225,11 +225,11 @@ ON CONFLICT (field_name, canonical_value) DO UPDATE SET
 
 INSERT INTO normalized_values (field_name, canonical_value, aliases, is_default, description, sort_order) VALUES
   ('recipient_country', 'DE', ARRAY['Deutschland', 'Germany', 'Allemagne', 'ger', 'deu'],        true,  'Deutschland',    10),
-  ('recipient_country', 'AT', ARRAY['Österreich', 'Austria', 'Autriche', 'aut'],                 false, 'Österreich',     20),
+  ('recipient_country', 'AT', ARRAY['Österreich', 'Austria', 'Autriche', 'aut', 'Oesterreich'],   false, 'Österreich',     20),
   ('recipient_country', 'CH', ARRAY['Schweiz', 'Switzerland', 'Suisse', 'che'],                  false, 'Schweiz',        30),
   ('recipient_country', 'FR', ARRAY['Frankreich', 'France', 'fra'],                              false, 'Frankreich',     40),
   ('recipient_country', 'US', ARRAY['USA', 'United States', 'Amerika', 'usa'],                   false, 'USA',            50),
-  ('recipient_country', 'GB', ARRAY['Großbritannien', 'United Kingdom', 'UK', 'England', 'gbr'], false, 'Großbritannien', 60),
+  ('recipient_country', 'GB', ARRAY['Großbritannien', 'United Kingdom', 'UK', 'England', 'gbr', 'Grossbritannien'], false, 'Großbritannien', 60),
   ('recipient_country', 'NL', ARRAY['Niederlande', 'Netherlands', 'Holland', 'nld'],             false, 'Niederlande',    70),
   ('recipient_country', 'IT', ARRAY['Italien', 'Italy', 'Italia', 'ita'],                        false, 'Italien',        80),
   ('recipient_country', 'ES', ARRAY['Spanien', 'Spain', 'España', 'esp'],                        false, 'Spanien',        90),
@@ -243,11 +243,11 @@ ON CONFLICT (field_name, canonical_value) DO UPDATE SET
 
 INSERT INTO normalized_values (field_name, canonical_value, aliases, is_default, description, sort_order) VALUES
   ('tax_country', 'DE', ARRAY['Deutschland', 'Germany', 'Allemagne', 'ger', 'deu'],        true,  'Deutschland',    10),
-  ('tax_country', 'AT', ARRAY['Österreich', 'Austria', 'Autriche', 'aut'],                 false, 'Österreich',     20),
+  ('tax_country', 'AT', ARRAY['Österreich', 'Austria', 'Autriche', 'aut', 'Oesterreich'],   false, 'Österreich',     20),
   ('tax_country', 'CH', ARRAY['Schweiz', 'Switzerland', 'Suisse', 'che'],                  false, 'Schweiz',        30),
   ('tax_country', 'FR', ARRAY['Frankreich', 'France', 'fra'],                              false, 'Frankreich',     40),
   ('tax_country', 'US', ARRAY['USA', 'United States', 'Amerika', 'usa'],                   false, 'USA',            50),
-  ('tax_country', 'GB', ARRAY['Großbritannien', 'United Kingdom', 'UK', 'England', 'gbr'], false, 'Großbritannien', 60),
+  ('tax_country', 'GB', ARRAY['Großbritannien', 'United Kingdom', 'UK', 'England', 'gbr', 'Grossbritannien'], false, 'Großbritannien', 60),
   ('tax_country', 'NL', ARRAY['Niederlande', 'Netherlands', 'Holland', 'nld'],             false, 'Niederlande',    70),
   ('tax_country', 'IT', ARRAY['Italien', 'Italy', 'Italia', 'ita'],                        false, 'Italien',        80),
   ('tax_country', 'ES', ARRAY['Spanien', 'Spain', 'España', 'esp'],                        false, 'Spanien',        90),
