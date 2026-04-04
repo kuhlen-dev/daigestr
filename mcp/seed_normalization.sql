@@ -114,6 +114,22 @@ ON CONFLICT (name) DO UPDATE SET
   sort_order       = EXCLUDED.sort_order,
   updated_at       = now();
 
+-- line_items is an array type — set is_array flag
+UPDATE normalized_fields SET is_array = true, updated_at = now() WHERE name = 'line_items';
+
+-- vendor_email / vendor_phone (after vendor_country, sort_order 165/166)
+INSERT INTO normalized_fields (name, label_de, label_en, type, category, description, validation_rules, default_value, default_context, is_array, sort_order, active) VALUES
+  ('vendor_email', 'E-Mail Absender',  'Vendor Email', 'string', 'party.vendor', 'E-Mail-Adresse des Absenders/Lieferanten', NULL, NULL, NULL, false, 165, true),
+  ('vendor_phone', 'Telefon Absender', 'Vendor Phone', 'string', 'party.vendor', 'Telefonnummer des Absenders/Lieferanten',  NULL, NULL, NULL, false, 166, true)
+ON CONFLICT (name) DO UPDATE SET
+  label_de         = EXCLUDED.label_de,
+  label_en         = EXCLUDED.label_en,
+  type             = EXCLUDED.type,
+  category         = EXCLUDED.category,
+  description      = EXCLUDED.description,
+  sort_order       = EXCLUDED.sort_order,
+  updated_at       = now();
+
 
 -- =============================================================================
 -- 3. normalized_values (~200+ rows)

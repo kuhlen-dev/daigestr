@@ -298,15 +298,13 @@ async def normalize(
     context: dict = {}
     # Vendor country aus Extracted oder Meta
     vendor_country = (
-        _resolve_dot_path(extracted, "_meta.lieferant.land")
-        or _resolve_dot_path(extracted, "vendor_country")
+        _resolve_dot_path(extracted, "vendor_country")
         or _resolve_dot_path(extracted, "_meta.absender.land")
         or meta.get("vendor_country")
     )
     recipient_country = (
         _resolve_dot_path(extracted, "_meta.empfaenger.land")
         or _resolve_dot_path(extracted, "recipient_country")
-        or _resolve_dot_path(extracted, "_meta.empfaenger.land")
         or meta.get("recipient_country")
     )
     context["vendor_country"] = vendor_country or NORMALIZE_FALLBACK_COUNTRY
