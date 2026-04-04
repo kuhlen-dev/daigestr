@@ -74,6 +74,47 @@ def init_normalization_db() -> None:
             "ON normalized_fields(category)"
         )
 
+        # meta_path column for fallback resolution (T-DAI-093)
+        cur.execute("""
+            ALTER TABLE normalized_fields ADD COLUMN IF NOT EXISTS meta_path TEXT
+        """)
+
+        # Idempotent meta_path assignments (run every startup)
+        meta_paths = {
+            'vendor_name': '_meta.absender.firma',
+            'vendor_address': '_meta.absender.adresse',
+            'vendor_email': '_meta.absender.email',
+            'vendor_phone': '_meta.absender.telefon',
+            'vendor_tax_id': '_meta.absender.ust_id',
+            'vendor_slug': '_meta.absender.slug',
+            'vendor_country': '_meta.absender.adresse.land',
+            'bic': '_meta.absender.bic',
+            'iban_vendor': '_meta.absender.iban',
+            'recipient_name': '_meta.empfaenger.name',
+            'recipient_address': '_meta.empfaenger.adresse',
+            'recipient_country': '_meta.empfaenger.adresse.land',
+            'iban_recipient': '_meta.empfaenger_iban',
+            'date_due': '_meta.faelligkeitsdatum',
+            'payment_method': '_meta.zahlungsart',
+            'payment_frequency': '_meta.zahlungsweise',
+            'mandate_reference': '_meta.mandatsreferenz',
+            'order_number': '_meta.bestellnummer',
+            'contract_number': '_meta.vertragsnummer',
+            'auto_renewal': '_meta.automatische_verlaengerung',
+            'summary': '_meta.zusammenfassung',
+            'tax_relevant': '_meta.steuerrelevant',
+            'tax_category': '_meta.steuer_kategorie',
+            'tax_rate': '_meta.mwst_satz',
+            'amount_tax': '_meta.mwst_betrag',
+            'reference_number': '_meta.aktenzeichen',
+            'invoice_number': '_meta.dokumenten_id',
+        }
+        for field_name, meta_path in meta_paths.items():
+            cur.execute(
+                "UPDATE normalized_fields SET meta_path = %s WHERE name = %s AND (meta_path IS NULL OR meta_path != %s)",
+                (meta_path, field_name, meta_path),
+            )
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS normalized_values (
                 id SERIAL PRIMARY KEY,

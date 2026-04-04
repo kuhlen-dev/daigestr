@@ -329,6 +329,38 @@ async def normalize(
             raw_values[norm_field] = val
 
     # -------------------------------------------------------------------------
+    # Schritt 3a: meta_path Fallback — null-Felder über _meta auffüllen
+    # -------------------------------------------------------------------------
+    for field_name in list(raw_values.keys()):
+        if raw_values[field_name] is None:
+            field_def = fields_by_name.get(field_name)
+            if field_def and field_def.get("meta_path"):
+                val = _resolve_dot_path(extracted, field_def["meta_path"])
+                if val is not None:
+                    raw_values[field_name] = val
+                    trace.append({
+                        "field": field_name,
+                        "source_field": field_def["meta_path"],
+                        "raw": val,
+                        "rule": "meta_path_fallback",
+                        "confidence": 0.8,
+                    })
+
+    # Auch Felder mit meta_path die NICHT im Mapping stehen
+    for field_name, field_def in fields_by_name.items():
+        if field_name not in raw_values and field_def.get("meta_path"):
+            val = _resolve_dot_path(extracted, field_def["meta_path"])
+            if val is not None:
+                raw_values[field_name] = val
+                trace.append({
+                    "field": field_name,
+                    "source_field": field_def["meta_path"],
+                    "raw": val,
+                    "rule": "meta_path_universal",
+                    "confidence": 0.7,
+                })
+
+    # -------------------------------------------------------------------------
     # Schritt 3b: Flatten dict values for string fields (e.g. address objects)
     # -------------------------------------------------------------------------
     for field_name, val in list(raw_values.items()):

@@ -148,6 +148,35 @@ UPDATE normalized_fields SET validation_rules = '{"pattern": "^[A-Z]{3}$"}'::jso
 UPDATE normalized_fields SET validation_rules = '{"min": 0, "max": 1}'::jsonb WHERE name = 'quality_score';
 UPDATE normalized_fields SET validation_rules = '{"min": 0, "max": 1}'::jsonb WHERE name = 'completeness_score';
 
+-- meta_path Fallbacks (T-DAI-093)
+UPDATE normalized_fields SET meta_path = '_meta.absender.firma' WHERE name = 'vendor_name';
+UPDATE normalized_fields SET meta_path = '_meta.absender.adresse' WHERE name = 'vendor_address';
+UPDATE normalized_fields SET meta_path = '_meta.absender.email' WHERE name = 'vendor_email';
+UPDATE normalized_fields SET meta_path = '_meta.absender.telefon' WHERE name = 'vendor_phone';
+UPDATE normalized_fields SET meta_path = '_meta.absender.ust_id' WHERE name = 'vendor_tax_id';
+UPDATE normalized_fields SET meta_path = '_meta.absender.slug' WHERE name = 'vendor_slug';
+UPDATE normalized_fields SET meta_path = '_meta.absender.adresse.land' WHERE name = 'vendor_country';
+UPDATE normalized_fields SET meta_path = '_meta.absender.bic' WHERE name = 'bic';
+UPDATE normalized_fields SET meta_path = '_meta.absender.iban' WHERE name = 'iban_vendor';
+UPDATE normalized_fields SET meta_path = '_meta.empfaenger.name' WHERE name = 'recipient_name';
+UPDATE normalized_fields SET meta_path = '_meta.empfaenger.adresse' WHERE name = 'recipient_address';
+UPDATE normalized_fields SET meta_path = '_meta.empfaenger.adresse.land' WHERE name = 'recipient_country';
+UPDATE normalized_fields SET meta_path = '_meta.empfaenger_iban' WHERE name = 'iban_recipient';
+UPDATE normalized_fields SET meta_path = '_meta.faelligkeitsdatum' WHERE name = 'date_due';
+UPDATE normalized_fields SET meta_path = '_meta.zahlungsart' WHERE name = 'payment_method';
+UPDATE normalized_fields SET meta_path = '_meta.zahlungsweise' WHERE name = 'payment_frequency';
+UPDATE normalized_fields SET meta_path = '_meta.mandatsreferenz' WHERE name = 'mandate_reference';
+UPDATE normalized_fields SET meta_path = '_meta.bestellnummer' WHERE name = 'order_number';
+UPDATE normalized_fields SET meta_path = '_meta.vertragsnummer' WHERE name = 'contract_number';
+UPDATE normalized_fields SET meta_path = '_meta.automatische_verlaengerung' WHERE name = 'auto_renewal';
+UPDATE normalized_fields SET meta_path = '_meta.zusammenfassung' WHERE name = 'summary';
+UPDATE normalized_fields SET meta_path = '_meta.steuerrelevant' WHERE name = 'tax_relevant';
+UPDATE normalized_fields SET meta_path = '_meta.steuer_kategorie' WHERE name = 'tax_category';
+UPDATE normalized_fields SET meta_path = '_meta.mwst_satz' WHERE name = 'tax_rate';
+UPDATE normalized_fields SET meta_path = '_meta.mwst_betrag' WHERE name = 'amount_tax';
+UPDATE normalized_fields SET meta_path = '_meta.aktenzeichen' WHERE name = 'reference_number';
+UPDATE normalized_fields SET meta_path = '_meta.dokumenten_id' WHERE name = 'invoice_number';
+
 
 -- =============================================================================
 -- 3. normalized_values (~200+ rows)
