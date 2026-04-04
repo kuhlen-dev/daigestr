@@ -130,6 +130,24 @@ ON CONFLICT (name) DO UPDATE SET
   sort_order       = EXCLUDED.sort_order,
   updated_at       = now();
 
+-- Validation Rules (T-DAI-079)
+UPDATE normalized_fields SET validation_rules = '{"pattern": "^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$"}'::jsonb WHERE name = 'iban_vendor';
+UPDATE normalized_fields SET validation_rules = '{"pattern": "^[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}$"}'::jsonb WHERE name = 'iban_recipient';
+UPDATE normalized_fields SET validation_rules = '{"pattern": "^\\+[0-9]{7,15}$"}'::jsonb WHERE name = 'phone_number';
+UPDATE normalized_fields SET validation_rules = '{"min": 0, "max": 100}'::jsonb WHERE name = 'tax_rate';
+UPDATE normalized_fields SET validation_rules = '{"min": 0}'::jsonb WHERE name = 'amount';
+UPDATE normalized_fields SET validation_rules = '{"min": 0}'::jsonb WHERE name = 'amount_net';
+UPDATE normalized_fields SET validation_rules = '{"min": 0}'::jsonb WHERE name = 'amount_tax';
+UPDATE normalized_fields SET validation_rules = '{"min": 0}'::jsonb WHERE name = 'tax_deductible_amount';
+UPDATE normalized_fields SET validation_rules = '{"min": 0}'::jsonb WHERE name = 'reimbursement_rate';
+UPDATE normalized_fields SET validation_rules = '{"min": 0}'::jsonb WHERE name = 'own_share';
+UPDATE normalized_fields SET validation_rules = '{"pattern": "^[A-Z]{2}$"}'::jsonb WHERE name = 'vendor_country';
+UPDATE normalized_fields SET validation_rules = '{"pattern": "^[A-Z]{2}$"}'::jsonb WHERE name = 'recipient_country';
+UPDATE normalized_fields SET validation_rules = '{"pattern": "^[A-Z]{2}$"}'::jsonb WHERE name = 'tax_country';
+UPDATE normalized_fields SET validation_rules = '{"pattern": "^[A-Z]{3}$"}'::jsonb WHERE name = 'currency';
+UPDATE normalized_fields SET validation_rules = '{"min": 0, "max": 1}'::jsonb WHERE name = 'quality_score';
+UPDATE normalized_fields SET validation_rules = '{"min": 0, "max": 1}'::jsonb WHERE name = 'completeness_score';
+
 
 -- =============================================================================
 -- 3. normalized_values (~200+ rows)
