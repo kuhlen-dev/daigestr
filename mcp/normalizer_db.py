@@ -427,6 +427,15 @@ def update_value(value_id: int, **fields) -> Optional[dict]:
         _return_conn(conn)
 
 
+def _normalize_umlauts(text: str) -> str:
+    """Normalize German umlauts: ä→ae, ö→oe, ü→ue, ß→ss."""
+    return (text
+        .replace("ä", "ae").replace("Ä", "Ae")
+        .replace("ö", "oe").replace("Ö", "Oe")
+        .replace("ü", "ue").replace("Ü", "Ue")
+        .replace("ß", "ss"))
+
+
 def find_canonical(field_name: str, raw_value: str) -> Optional[str]:
     """
     Looks up the canonical_value for a raw input string via:
@@ -469,7 +478,24 @@ def find_canonical(field_name: str, raw_value: str) -> Optional[str]:
             (field_name, raw_value),
         )
         row = cur.fetchone()
-        return row["canonical_value"] if row else None
+        if row:
+            return row["canonical_value"]
+
+        # Step 4: Umlaut-normalized fallback
+        normalized_input = _normalize_umlauts(raw_value).lower()
+        cur.execute(
+            "SELECT canonical_value, aliases FROM normalized_values "
+            "WHERE field_name = %s AND active = true",
+            (field_name,),
+        )
+        for r in cur.fetchall():
+            if _normalize_umlauts(r["canonical_value"]).lower() == normalized_input:
+                return r["canonical_value"]
+            for alias in (r["aliases"] or []):
+                if _normalize_umlauts(alias).lower() == normalized_input:
+                    return r["canonical_value"]
+
+        return None
     finally:
         _return_conn(conn)
 
