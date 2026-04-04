@@ -446,6 +446,21 @@ async def normalize(
     if isinstance(line_items, list):
         normalized["line_items_count"] = len(line_items)
 
+    # page_count aus Dokument-Metadaten
+    if normalized.get("page_count") is None:
+        pc = meta.get("pages_processed") or meta.get("page_count")
+        if pc is not None:
+            try:
+                normalized["page_count"] = int(pc)
+            except (ValueError, TypeError):
+                pass
+
+    # language aus Request-Parameter
+    if normalized.get("language") is None:
+        lang = meta.get("language")
+        if lang:
+            normalized["language"] = lang
+
     # tax_country: vendor_country wenn Transaktion innerhalb DE, sonst vendor_country
     tax_country = context["vendor_country"]
     context["tax_country"] = tax_country
@@ -550,6 +565,11 @@ async def normalize(
 
     quality_score = round(scored_weight / total_weight, 3) if total_weight > 0 else 0.0
 
+    # completeness_score: Anteil belegter Felder an allen gemappten Feldern
+    total_mapped = len([f for f in mapping if not f.startswith("_")])
+    filled_mapped = len([f for f in mapping if not f.startswith("_") and normalized.get(f) is not None])
+    completeness_score = round(filled_mapped / total_mapped, 3) if total_mapped > 0 else 0.0
+
     # -------------------------------------------------------------------------
     # Schritt 12: Traceability vervollständigen
     # -------------------------------------------------------------------------
@@ -581,6 +601,8 @@ async def normalize(
     context["validation_errors"] = validation_errors
 
     normalized["_quality_score"] = quality_score
+    normalized["quality_score"] = quality_score
+    normalized["completeness_score"] = completeness_score
 
     confidence_dict: dict[str, float] = {}
     for t in trace:
