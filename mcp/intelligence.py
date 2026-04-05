@@ -66,7 +66,7 @@ def _load_meta_schema() -> dict:
         pass
     log.warning("meta_schema_fallback_hardcoded")
     return {
-        "absender": {"name": "string | null", "firma": "string | null", "slug": "string",
+        "absender": {"name": "string | null — Persönlicher Ansprechpartner/Sachbearbeiter. NUR natürliche Person, NIEMALS Firmenname. null wenn keine Person erkennbar.", "firma": "string | null — IMMER der offizielle Firmenname/Organisation, auch wenn Kontaktperson genannt. Bei Rechnungen: Rechnungssteller aus Briefkopf/Impressum, NICHT Sachbearbeiter. null nur bei Privatpersonen.", "slug": "string",
                      "adresse": {"strasse": "string | null", "plz": "string | null", "ort": "string | null", "land": "string | null"},
                      "ust_id": "string | null", "bic": "string | null", "iban": "string | null"},
         "empfaenger": {"name": "string | null", "slug": "string",
@@ -78,7 +78,7 @@ def _load_meta_schema() -> dict:
         "faelligkeitsdatum": "string | null", "zahlungsart": "string | null",
         "zahlungsweise": "string | null", "mandatsreferenz": "string | null",
         "bestellnummer": "string | null", "vertragsnummer": "string | null",
-        "empfaenger_iban": "string | null", "automatische_verlaengerung": "boolean | null",
+        "empfaenger_iban": "string | null", "automatische_verlaengerung": "boolean | null — true bei Abos, Mobilfunkverträgen, Versicherungspolicen, Mietverträgen, Internet/DSL-Verträgen, Energieverträgen — es sei denn explizit feste Laufzeit ohne Verlängerung. false nur wenn explizit keine automatische Verlängerung. null wenn unklar oder kein Vertragscharakter.",
     }
 
 _META_SCHEMA: dict | None = None
@@ -632,7 +632,7 @@ async def extract_structured_data(
         "\n\nZUSÄTZLICH zu den Schema-Feldern extrahiere IMMER einen '_meta' Block mit folgenden Feldern:\n"
         + json.dumps(get_meta_schema(), indent=2, ensure_ascii=False)
         + "\n\nAbsender/Empfänger-Regeln:"
-        + "\n- absender: Wer hat das Dokument erstellt/verschickt? Bei Firmen: firma='Telekom Deutschland GmbH', name=null. Bei Personen mit Firma: name='Thomas Weber', firma='Schornsteinfeger Weber'."
+        + "\n- absender: Wer hat das Dokument erstellt/verschickt? Bei Firmen: firma='Telekom Deutschland GmbH', name=null. Bei Personen mit Firma: name='Thomas Weber', firma='Schornsteinfeger Weber'. WICHTIG: firma ist IMMER der offizielle Firmenname aus Briefkopf/Impressum — NICHT der Kundenberater oder Sachbearbeiter. Beispiel: 'Ihr Ansprechpartner: Sherife Berisha, IONOS SE' → firma='IONOS SE', name='Sherife Berisha'."
         + "\n- empfaenger: An wen ist das Dokument gerichtet? Bei Kassenbons ohne Empfänger: name=null."
         + "\n- Adresse nur befüllen wenn im Dokument erkennbar."
         + "\n- slug: Der geläufigste, kürzeste Name unter dem man den Absender/Empfänger kennt. "
