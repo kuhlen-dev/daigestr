@@ -37,6 +37,25 @@ def _make_mistral_response(doc_type: str, confidence: float) -> dict:
     }
 
 
+def _mock_prompt(category: str, name: str, language: str = "de") -> str:
+    """Minimale DB-Prompts für classify_document-Tests ohne echte Prompt-Tabelle."""
+    prompts = {
+        ("classify", "system_de"): "Du bist ein Experte für Dokumentenklassifizierung. Antworte ausschließlich mit validem JSON.",
+        ("classify", "user_de"): (
+            "Klassifiziere dieses Dokument.\n"
+            "Verfügbare Typen (ID: Beschreibung):\n{categories_lines}\n\n"
+            "Dokument:\n{truncated_markdown}"
+        ),
+        ("classify", "system_en"): "You are an expert document classifier. Respond exclusively with valid JSON.",
+        ("classify", "user_en"): (
+            "Classify this document.\n"
+            "Available types (ID: description):\n{categories_lines}\n\n"
+            "Document:\n{truncated_markdown}"
+        ),
+    }
+    return prompts[(category, name)]
+
+
 def _make_db_with_templates(templates: list[dict]) -> sqlite3.Connection:
     """Erstellt eine In-Memory SQLite-DB mit Templates."""
     conn = sqlite3.connect(":memory:")
@@ -90,28 +109,19 @@ class TestGetClassifyCategoriesFromDb:
         assert any("supplier_invoice" in c for c in categories), f"Expected supplier_invoice in {categories}"
         assert any("Lieferantenrechnung" in c for c in categories), f"Expected Lieferantenrechnung in {categories}"
 
-    def test_classify_fallback_to_defaults(self):
-        """Leere DB → DEFAULT_CLASSIFY_CATEGORIES werden als Fallback verwendet."""
-        # DB mit keinen Einträgen
+    def test_classify_raises_when_no_templates_enabled(self):
+        """Leere Registry ist ein Konfigurationsfehler, kein stiller Fallback."""
         mock_conn = _make_db_with_templates([])
 
         with patch.object(_server, "get_db_connection", return_value=mock_conn):
-            categories = get_classify_categories_from_db()
+            with pytest.raises(RuntimeError, match="Keine aktivierten Templates"):
+                get_classify_categories_from_db()
 
-        # Fallback: DEFAULT_CLASSIFY_CATEGORIES als "id: id"-Format
-        for default_cat in _server.DEFAULT_CLASSIFY_CATEGORIES:
-            assert any(default_cat.strip() in c for c in categories), \
-                f"Expected {default_cat} in fallback categories {categories}"
-
-    def test_classify_fallback_on_db_error(self):
-        """DB-Fehler → graceful Fallback auf DEFAULT_CLASSIFY_CATEGORIES."""
+    def test_classify_propagates_db_error(self):
+        """DB-Fehler bleiben sichtbar statt auf Default-Kategorien zurückzufallen."""
         with patch.object(_server, "get_db_connection", side_effect=Exception("DB not available")):
-            categories = get_classify_categories_from_db()
-
-        # Fallback muss alle Default-Kategorien enthalten
-        for default_cat in _server.DEFAULT_CLASSIFY_CATEGORIES:
-            assert any(default_cat.strip() in c for c in categories), \
-                f"Expected {default_cat} in fallback categories {categories}"
+            with pytest.raises(Exception, match="DB not available"):
+                get_classify_categories_from_db()
 
     def test_classify_cache(self):
         """Zweiter Aufruf nutzt Cache, nicht die DB."""
@@ -178,6 +188,7 @@ class TestClassifyDocumentWithRegistry:
         api_response = _make_mistral_response("reimbursement_notice", 0.93)
 
         with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
+             patch.object(_server, "get_prompt", side_effect=_mock_prompt), \
              patch.object(_server, "get_db_connection", return_value=mock_conn), \
              patch.object(_server, "call_mistral_vision_api", new=AsyncMock(return_value=api_response)):
             result = run_async(classify_document(
@@ -198,6 +209,7 @@ class TestClassifyDocumentWithRegistry:
         api_response = _make_mistral_response("completely_unknown_type", 0.8)
 
         with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
+             patch.object(_server, "get_prompt", side_effect=_mock_prompt), \
              patch.object(_server, "get_db_connection", return_value=mock_conn), \
              patch.object(_server, "call_mistral_vision_api", new=AsyncMock(return_value=api_response)):
             result = run_async(classify_document("Beliebiges Dokument"))
@@ -216,6 +228,7 @@ class TestClassifyDocumentWithRegistry:
         api_response = _make_mistral_response("memo", 0.88)
 
         with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
+             patch.object(_server, "get_prompt", side_effect=_mock_prompt), \
              patch.object(_server, "get_db_connection", return_value=mock_conn), \
              patch.object(_server, "get_classify_categories_from_db", return_value=[]) as mock_get_cats, \
              patch.object(_server, "call_mistral_vision_api", new=AsyncMock(return_value=api_response)) as mock_api:
@@ -246,6 +259,7 @@ class TestClassifyDocumentWithRegistry:
         api_response = _make_mistral_response("other", 0.5)
 
         with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
+             patch.object(_server, "get_prompt", side_effect=_mock_prompt), \
              patch.object(_server, "get_db_connection", return_value=mock_conn), \
              patch.object(_server, "call_mistral_vision_api", new=AsyncMock(return_value=api_response)) as mock_api:
             run_async(classify_document("Testdokument"))
@@ -270,6 +284,7 @@ class TestClassifyDocumentWithRegistry:
         api_response = _make_mistral_response("cv", 0.9)  # "cv" ist in DEFAULT aber nicht in DB
 
         with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
+             patch.object(_server, "get_prompt", side_effect=_mock_prompt), \
              patch.object(_server, "get_db_connection", return_value=mock_conn), \
              patch.object(_server, "call_mistral_vision_api", new=AsyncMock(return_value=api_response)):
             result = run_async(classify_document("Lebenslauf von Max Mustermann"))

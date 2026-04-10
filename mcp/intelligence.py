@@ -38,7 +38,6 @@ from settings import (
     OCR_CORRECT_MAX_TOKENS,
     CLASSIFY_MAX_CHARS,
     EXTRACT_MAX_CHARS,
-    DEFAULT_CLASSIFY_CATEGORIES,
     _classify_categories_cache,
     _CLASSIFY_CACHE_TTL,
 )
@@ -52,34 +51,20 @@ log = structlog.get_logger()
 # =============================================================================
 # _meta Block: Steuerrelevanz + Datentyp-Konventionen (T-DAI-062)
 # Alle Werte werden aus der DB geladen (prompt-Tabelle).
-# Hardcoded-Fallbacks nur für den Fall dass die DB leer ist (Erststart).
+# Daigestr ist DB-first/DB-only: fehlende Konfiguration ist ein echter Fehler.
 # =============================================================================
+
+def _require_db_prompt(category: str, name: str, language: str = "de") -> str:
+    """Load a DB-backed prompt via the server override hook."""
+    from templates_db import get_prompt as _get_prompt  # noqa: PLC0415 — lazy import
+
+    return _get("get_prompt", _get_prompt)(category, name, language=language)
+
 
 def _load_meta_schema() -> dict:
     """Load _META_SCHEMA from DB (prompt id='meta.schema'). Cached after first call."""
-    try:
-        from templates_db import get_prompt as _gp
-        raw = _gp("meta", "schema", language="de")
-        if raw:
-            return json.loads(raw)
-    except Exception:
-        pass
-    log.warning("meta_schema_fallback_hardcoded")
-    return {
-        "absender": {"name": "string | null — Persönlicher Ansprechpartner/Sachbearbeiter. NUR natürliche Person, NIEMALS Firmenname. null wenn keine Person erkennbar.", "firma": "string | null — IMMER der offizielle Firmenname/Organisation, auch wenn Kontaktperson genannt. Bei Rechnungen: Rechnungssteller aus Briefkopf/Impressum, NICHT Sachbearbeiter. null nur bei Privatpersonen.", "slug": "string",
-                     "adresse": {"strasse": "string | null", "plz": "string | null", "ort": "string | null", "land": "string | null"},
-                     "ust_id": "string | null", "bic": "string | null", "iban": "string | null"},
-        "empfaenger": {"name": "string | null", "slug": "string",
-                       "adresse": {"strasse": "string | null", "plz": "string | null", "ort": "string | null", "land": "string | null"}},
-        "steuerrelevant": "boolean", "steuerrelevanz_hinweis": "string | null",
-        "steuer_kategorie": "string | null", "steuerjahr": "string | null",
-        "mwst_ausgewiesen": "boolean", "mwst_betrag": "string | null", "mwst_satz": "string | null",
-        "aktenzeichen": "string | null", "dokumenten_id": "string | null", "zusammenfassung": "string | null",
-        "faelligkeitsdatum": "string | null", "zahlungsart": "string | null",
-        "zahlungsweise": "string | null", "mandatsreferenz": "string | null",
-        "bestellnummer": "string | null", "vertragsnummer": "string | null",
-        "empfaenger_iban": "string | null", "automatische_verlaengerung": "boolean | null — true bei Abos, Mobilfunkverträgen, Versicherungspolicen, Mietverträgen, Internet/DSL-Verträgen, Energieverträgen — es sei denn explizit feste Laufzeit ohne Verlängerung. false nur wenn explizit keine automatische Verlängerung. null wenn unklar oder kein Vertragscharakter.",
-    }
+    raw = _require_db_prompt("meta", "schema", language="de")
+    return json.loads(raw)
 
 _META_SCHEMA: dict | None = None
 
@@ -93,16 +78,8 @@ def get_meta_schema() -> dict:
 
 def _load_steuer_signalwoerter() -> list[str]:
     """Load tax signal words from DB (prompt id='meta.steuer_signalwoerter')."""
-    try:
-        from templates_db import get_prompt as _gp
-        raw = _gp("meta", "steuer_signalwoerter", language="de")
-        if raw:
-            return json.loads(raw)
-    except Exception:
-        pass
-    log.warning("steuer_signalwoerter_fallback_hardcoded")
-    return ["Finanzamt", "Steuererklärung", "steuerlich absetzbar", "Werbungskosten",
-            "Sonderausgaben", "Vorsorgeaufwendungen", "Spendenquittung"]
+    raw = _require_db_prompt("meta", "steuer_signalwoerter", language="de")
+    return json.loads(raw)
 
 _STEUER_SIGNALWOERTER: list[str] | None = None
 
@@ -116,15 +93,7 @@ def get_steuer_signalwoerter() -> list[str]:
 
 def _load_datentyp_konventionen() -> str:
     """Load data type conventions from DB (prompt id='meta.datentyp_konventionen')."""
-    try:
-        from templates_db import get_prompt as _gp
-        raw = _gp("meta", "datentyp_konventionen", language="de")
-        if raw:
-            return raw
-    except Exception:
-        pass
-    log.warning("datentyp_konventionen_fallback_hardcoded")
-    return "Datum: YYYY-MM-DD, Betrag: Punkt-Dezimaltrenner, Währung: ISO 4217, IBAN: ohne Leerzeichen, null statt leerer String."
+    return _require_db_prompt("meta", "datentyp_konventionen", language="de")
 
 _DATENTYP_KONVENTIONEN: str | None = None
 
@@ -152,8 +121,9 @@ def get_classify_categories_from_db() -> list[str]:
 
     Returns:
         Liste von Strings im Format "id: display_name", z.B. ["invoice: Rechnung", ...].
-        Bei Fehler oder leerer DB wird auf DEFAULT_CLASSIFY_CATEGORIES zurückgefallen
-        (im Format "id: id" für Rückwärtskompatibilität).
+
+    Raises:
+        RuntimeError: Wenn keine aktivierten Templates vorhanden sind.
     """
     now = time.time()
     cache = _get("_classify_categories_cache", _classify_categories_cache)
@@ -173,16 +143,14 @@ def get_classify_categories_from_db() -> list[str]:
             rows = cur.fetchall()
         finally:
             _return_conn(conn)
-        if rows:
-            categories = [f"{r['id']}: {r['display_name']}" for r in rows]
-            cache["categories"] = categories
-            cache["timestamp"] = now
-            return categories
+        if not rows:
+            raise RuntimeError("Keine aktivierten Templates für Dokumentklassifizierung konfiguriert")
+        categories = [f"{r['id']}: {r['display_name']}" for r in rows]
+        cache["categories"] = categories
+        cache["timestamp"] = now
+        return categories
     except Exception:
-        pass
-
-    # Fallback auf hardcodierte Liste (Format: "id: id" für einheitliche Verarbeitung)
-    return [f"{c.strip()}: {c.strip()}" for c in DEFAULT_CLASSIFY_CATEGORIES]
+        raise
 
 
 # =============================================================================
@@ -220,17 +188,7 @@ async def dual_pass_validate(
         log.warning("dual_pass_validate_skipped_no_api_key")
         return markdown
 
-    from templates_db import get_prompt as _get_prompt  # noqa: PLC0415 — lazy import (avoid circular)
-    try:
-        _tmpl = _get("get_prompt", _get_prompt)("validate", "dual_pass", language="de")
-        prompt = _tmpl.format(markdown=markdown)
-    except Exception:
-        prompt = (
-            f"Hier ist ein per OCR extrahierter Text und das Originalbild. "
-            f"Vergleiche beides und korrigiere Fehler in Struktur, Tabellen-Spalten und Inhalt. "
-            f"Gib den korrigierten Markdown zurück. Antworte NUR mit dem korrigierten Text.\n\n"
-            f"OCR-Text:\n{markdown}"
-        )
+    prompt = _require_db_prompt("validate", "dual_pass", language="de").format(markdown=markdown)
 
     log.info("dual_pass_validate_start", mimetype=mimetype, markdown_len=len(markdown))
 
@@ -308,48 +266,18 @@ async def classify_document(
     # Markdown auf maximal _classify_max_chars Zeichen kürzen, um Token-Kosten zu begrenzen
     truncated_markdown = markdown[:_classify_max_chars] if len(markdown) > _classify_max_chars else markdown
 
-    from templates_db import get_prompt as _get_prompt  # noqa: PLC0415 — lazy import (avoid circular)
-    _gp = _get("get_prompt", _get_prompt)
     if language == "de":
-        try:
-            system_prompt = _gp("classify", "system_de", language="de")
-        except Exception:
-            system_prompt = "Du bist ein Experte für Dokumentenklassifizierung. Antworte ausschließlich mit validem JSON."
-        try:
-            user_tmpl = _gp("classify", "user_de", language="de")
-            user_prompt = user_tmpl.format(
-                categories_lines=categories_lines,
-                truncated_markdown=truncated_markdown,
-            )
-        except Exception:
-            user_prompt = (
-                f"Klassifiziere dieses Dokument. Wähle den spezifischsten Typ.\n"
-                f"Antworte AUSSCHLIESSLICH mit JSON: {{\"type\": \"template_id\", \"confidence\": 0.95}}\n\n"
-                f"Verfügbare Typen (ID: Beschreibung):\n{categories_lines}\n\n"
-                f"\"confidence\": Zahl zwischen 0.0 (sehr unsicher) und 1.0 (sehr sicher)\n"
-                f"Verwende GENAU eine der Typ-IDs. Bevorzuge den spezifischsten Typ.\n\n"
-                f"Dokument:\n{truncated_markdown}"
-            )
+        system_prompt = _require_db_prompt("classify", "system_de", language="de")
+        user_prompt = _require_db_prompt("classify", "user_de", language="de").format(
+            categories_lines=categories_lines,
+            truncated_markdown=truncated_markdown,
+        )
     else:
-        try:
-            system_prompt = _gp("classify", "system_en", language="en")
-        except Exception:
-            system_prompt = "You are an expert document classifier. Respond exclusively with valid JSON."
-        try:
-            user_tmpl = _gp("classify", "user_en", language="en")
-            user_prompt = user_tmpl.format(
-                categories_lines=categories_lines,
-                truncated_markdown=truncated_markdown,
-            )
-        except Exception:
-            user_prompt = (
-                f"Classify this document. Choose the most specific type.\n"
-                f"Respond EXCLUSIVELY with JSON: {{\"type\": \"template_id\", \"confidence\": 0.95}}\n\n"
-                f"Available types (ID: description):\n{categories_lines}\n\n"
-                f"\"confidence\": number between 0.0 (very uncertain) and 1.0 (very certain)\n"
-                f"Use EXACTLY one of the type IDs. Prefer the most specific type.\n\n"
-                f"Document:\n{truncated_markdown}"
-            )
+        system_prompt = _require_db_prompt("classify", "system_en", language="en")
+        user_prompt = _require_db_prompt("classify", "user_en", language="en").format(
+            categories_lines=categories_lines,
+            truncated_markdown=truncated_markdown,
+        )
 
     payload = {
         "model": _text_model,
@@ -435,62 +363,12 @@ async def correct_ocr_text(text: str, language: str = "de") -> dict[str, Any]:
             "tokens": 0,
         }
 
-    from templates_db import get_prompt as _get_prompt  # noqa: PLC0415 — lazy import (avoid circular)
-    _gp = _get("get_prompt", _get_prompt)
     if language == "de":
-        try:
-            system_prompt = _gp("ocr_correct", "system_de", language="de")
-        except Exception:
-            system_prompt = (
-                "Du bist ein Experte für OCR-Fehlerkorrektur. "
-                "Korrigiere ausschließlich offensichtliche OCR-Artefakte, verändere KEINE inhaltlichen Fakten."
-            )
-        try:
-            user_tmpl = _gp("ocr_correct", "user_de", language="de")
-            user_prompt = user_tmpl.format(text=text)
-        except Exception:
-            user_prompt = (
-                "Korrigiere OCR-Fehler in diesem Markdown-Text.\n\n"
-                "Erlaubte Korrekturen (NUR diese):\n"
-                "- Zeichen-Verwechslungen: rn→m, 0→O, l→1, fi-Ligaturen, Ü→U etc.\n"
-                "- Zusammengeklebte Wörter: 'dasHaus' → 'das Haus'\n"
-                "- Falsche Worttrennungen: 'Doku-\\nment' → 'Dokument'\n\n"
-                "VERBOTEN:\n"
-                "- Inhaltliche Korrekturen (Fakten, Zahlen, Namen)\n"
-                "- Änderungen an Markdown-Formatierung (#, *, |, ```)\n"
-                "- Umformulierungen\n\n"
-                "Antworte mit dem korrigierten Text, dann genau eine abschließende Zeile:\n"
-                "<<<CORRECTIONS:N>>>\n"
-                "(wobei N die Anzahl der Korrekturen ist)\n\n"
-                f"Text:\n{text}"
-            )
+        system_prompt = _require_db_prompt("ocr_correct", "system_de", language="de")
+        user_prompt = _require_db_prompt("ocr_correct", "user_de", language="de").format(text=text)
     else:
-        try:
-            system_prompt = _gp("ocr_correct", "system_en", language="en")
-        except Exception:
-            system_prompt = (
-                "You are an expert in OCR error correction. "
-                "Correct only obvious OCR artifacts, do NOT change any factual content."
-            )
-        try:
-            user_tmpl = _gp("ocr_correct", "user_en", language="en")
-            user_prompt = user_tmpl.format(text=text)
-        except Exception:
-            user_prompt = (
-                "Correct OCR errors in this Markdown text.\n\n"
-                "Allowed corrections (ONLY these):\n"
-                "- Character confusions: rn→m, 0→O, l→1, fi-ligatures, etc.\n"
-                "- Glued-together words: 'theHouse' → 'the House'\n"
-                "- Wrong hyphenation: 'docu-\\nment' → 'document'\n\n"
-                "FORBIDDEN:\n"
-                "- Content corrections (facts, numbers, names)\n"
-                "- Changes to Markdown formatting (#, *, |, ```)\n"
-                "- Rephrasing\n\n"
-                "Reply with the corrected text, then exactly one closing line:\n"
-                "<<<CORRECTIONS:N>>>\n"
-                "(where N is the number of corrections)\n\n"
-                f"Text:\n{text}"
-            )
+        system_prompt = _require_db_prompt("ocr_correct", "system_en", language="en")
+        user_prompt = _require_db_prompt("ocr_correct", "user_en", language="en").format(text=text)
 
     payload = {
         "model": _text_model,
@@ -655,70 +533,24 @@ async def extract_structured_data(
         + "\n" + get_datentyp_konventionen()
     )
 
-    from templates_db import get_prompt as _get_prompt  # noqa: PLC0415 — lazy import (avoid circular)
-    _gp = _get("get_prompt", _get_prompt)
     _schema_str = json.dumps(schema, indent=2, ensure_ascii=False)
     _doc_truncated = markdown[:_extract_max_chars]
     if language == "de":
-        try:
-            system_prompt = _gp("extract", "system_de", language="de")
-        except Exception:
-            system_prompt = (
-                "Du bist ein Experte für Dokumentenanalyse und Datenextraktion. "
-                "Antworte ausschließlich mit validem JSON."
-            )
-        try:
-            user_tmpl = _gp("extract", "user_de", language="de")
-            user_prompt = user_tmpl.format(
-                schema_str=_schema_str,
-                template_hints=template_hints,
-                meta_instruction=meta_instruction,
-                markdown=_doc_truncated,
-            )
-        except Exception:
-            user_prompt = (
-                "Extrahiere strukturierte Daten aus diesem Dokument gemäß dem JSON-Schema.\n\n"
-                "Regeln:\n"
-                "- Extrahiere NUR Werte die explizit im Dokument stehen — erfinde KEINE Werte\n"
-                "- Fehlende Felder: null (niemals raten oder interpolieren)\n"
-                "- Arrays: leeres Array [] wenn keine Einträge vorhanden\n"
-                "- Zahlen: exakt wie im Dokument (keine Umrechnung, keine Rundung)\n\n"
-                "Antworte AUSSCHLIESSLICH mit dem JSON-Objekt. Kein Markdown, keine Erklärungen.\n\n"
-                f"Schema:\n{_schema_str}"
-                f"{template_hints}"
-                f"{meta_instruction}\n\n"
-                f"Dokument:\n{_doc_truncated}"
-            )
+        system_prompt = _require_db_prompt("extract", "system_de", language="de")
+        user_prompt = _require_db_prompt("extract", "user_de", language="de").format(
+            schema_str=_schema_str,
+            template_hints=template_hints,
+            meta_instruction=meta_instruction,
+            markdown=_doc_truncated,
+        )
     else:
-        try:
-            system_prompt = _gp("extract", "system_en", language="en")
-        except Exception:
-            system_prompt = (
-                "You are an expert in document analysis and data extraction. "
-                "Respond exclusively with valid JSON."
-            )
-        try:
-            user_tmpl = _gp("extract", "user_en", language="en")
-            user_prompt = user_tmpl.format(
-                schema_str=_schema_str,
-                template_hints=template_hints,
-                meta_instruction=meta_instruction,
-                markdown=_doc_truncated,
-            )
-        except Exception:
-            user_prompt = (
-                "Extract structured data from this document according to the JSON schema.\n\n"
-                "Rules:\n"
-                "- Extract ONLY values explicitly stated in the document — do NOT invent values\n"
-                "- Missing fields: null (never guess or interpolate)\n"
-                "- Arrays: empty array [] if no entries present\n"
-                "- Numbers: exactly as in the document (no conversion, no rounding)\n\n"
-                "Respond EXCLUSIVELY with the JSON object. No Markdown, no explanations.\n\n"
-                f"Schema:\n{_schema_str}"
-                f"{template_hints}"
-                f"{meta_instruction}\n\n"
-                f"Document:\n{_doc_truncated}"
-            )
+        system_prompt = _require_db_prompt("extract", "system_en", language="en")
+        user_prompt = _require_db_prompt("extract", "user_en", language="en").format(
+            schema_str=_schema_str,
+            template_hints=template_hints,
+            meta_instruction=meta_instruction,
+            markdown=_doc_truncated,
+        )
 
     payload = {
         "model": _text_model,

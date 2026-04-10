@@ -550,19 +550,8 @@ async def _convert_auto_impl(
         if prompt:
             vision_prompt = prompt
         else:
-            try:
-                from templates_db import get_prompt as _get_prompt  # noqa: PLC0415
-                vision_prompt = _get("get_prompt", _get_prompt)("vision", "default", language=language)
-            except Exception:
-                vision_prompt = (
-                    "Analysiere dieses Bild und gib den Inhalt als Markdown zurück.\n\n"
-                    "- Wenn Text sichtbar ist: extrahiere ihn vollständig und strukturiert "
-                    "(Überschriften, Listen, Tabellen in Markdown-Syntax)\n"
-                    "- Wenn es ein Diagramm, Chart oder Grafik ist: beschreibe die dargestellten Daten präzise\n"
-                    "- Wenn es ein Foto ohne Text ist: beschreibe den Bildinhalt in einem kurzen Absatz\n"
-                    "- Wenn die Bildqualität zu schlecht ist: schreibe [UNLESERLICH]\n\n"
-                    "Antworte ausschließlich mit dem Markdown-Ergebnis."
-                )
+            from templates_db import get_prompt as _get_prompt  # noqa: PLC0415
+            vision_prompt = _get("get_prompt", _get_prompt)("vision", "default", language=language)
 
         result = await _analyze_vision(
             processed_data,

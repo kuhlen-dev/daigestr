@@ -7,7 +7,7 @@ except ImportError:
     pass
 
 """
-Daigestr — Document Intelligence Service v8.1.2
+Daigestr — Document Intelligence Service v8.1.3
 
 Bietet zwei Schnittstellen:
 - MCP (Port 8080): Für Claude und andere MCP-Clients
