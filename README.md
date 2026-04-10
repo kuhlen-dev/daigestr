@@ -4,7 +4,7 @@
 
 Most document-to-Markdown tools work fine until you hand them a real-world file: a scanned invoice, a DOCX full of charts, an Excel with merged cells across 12 sheets, or a meeting recording. Then they silently fail, return empty text, or lose all structure. This service fixes that.
 
-Built on Microsoft's [markitdown](https://github.com/microsoft/markitdown), extended with Mistral OCR-3, Vision AI, audio transcription, a Template Registry with auto-extract, a Normalization Layer that maps extracted fields to 52 unified field names across 143 document types, and a hybrid routing engine that picks the best tool for each document — automatically. Two interfaces: **MCP server** (for Claude and AI agents) and **REST API** (for n8n, workflows, and custom integrations). Self-hosted in two Docker containers. Current version: **v8.3.1**.
+Built on Microsoft's [markitdown](https://github.com/microsoft/markitdown), extended with Mistral OCR-3, Vision AI, audio transcription, a Template Registry with auto-extract, a Normalization Layer that maps extracted fields to 52 unified field names across 143 document types, and a hybrid routing engine that picks the best tool for each document — automatically. Two interfaces: **MCP server** (for Claude and AI agents) and **REST API** (for n8n, workflows, and custom integrations). Self-hosted in two Docker containers. Current version: **v8.3.2**.
 
 ---
 
@@ -885,7 +885,6 @@ The `pipeline_steps` field in the response metadata lists every stage that ran.
 | `webhook_url` | `string` | — | URL to POST the result to when conversion completes (especially useful with async jobs) |
 | `normalize` | `bool` | auto | Force or disable normalization. By default, normalization runs automatically when a mapping exists for the detected template. Set to `true` to force or `false` to disable. |
 | `compact` | `bool` | `false` | Return compact format: normalized fields grouped by category, shorter output |
-| `password` | `string` | — | Password for protected PDFs (reserved, not yet implemented) |
 | `meta` | `object` | `{}` | Arbitrary pass-through metadata |
 
 ---
@@ -1532,6 +1531,7 @@ Test modules:
 | Version | Date | Highlights |
 |---------|------|-----------|
 | **7.0.0** | April 2026 | **Normalization Layer** — 13-step pipeline mapping extracted fields to 52 unified field names across 143 templates (100% coverage). Admin REST API (15 endpoints), in-memory cache, batch validation, correction feedback. Auto-normalization on extract when mapping exists. New modules: `normalizer.py`, `normalizer_db.py`, `normalizer_cache.py`, `api_rest_normalize.py`. Seed data: 18 categories, 52 fields, 200+ values, 143 template mappings. `_META_SCHEMA`, `_STEUER_SIGNALWOERTER`, `_DATENTYP_KONVENTIONEN` moved from hardcoded to PostgreSQL prompt table. |
+| **8.3.2** | April 2026 | Public surface cleanup. Das nicht implementierte `password`-Feld wurde aus dem öffentlichen Convert-Request und der Dokumentation entfernt, statt weiter als Schein-Feature beworben zu werden. |
 | **8.3.1** | April 2026 | Folder contract parity. `convert_folder_contents()` reicht `input_meta`, `template` und `mode` jetzt pro Datei an `convert_auto()` durch, statt diese Optionen still zu verlieren. |
 | **8.2.3** | April 2026 | Monotone Async-Job-States. Verspätete Progress-Updates dürfen `completed` oder `failed` nicht mehr auf `processing` zurücksetzen. |
 | **8.2.2** | April 2026 | Tempfile cleanup fix. Async-URL-Jobs räumen heruntergeladene Arbeitsdateien wieder auf, und PDF-Slicing löscht jetzt sowohl das ursprüngliche Temp-PDF als auch die geslicte Zwischen-Datei. |

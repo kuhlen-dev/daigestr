@@ -203,19 +203,18 @@ class TestHighAccuracyNoKeyWarning:
 
 
 # ---------------------------------------------------------------------------
-# Tests: output_format und password — Reserved for future use
+# Tests: output_format
 # ---------------------------------------------------------------------------
 
 
 class TestReservedFields:
-    """output_format und password sind als 'Reserved for future use' markiert — müssen weiterhin akzeptiert werden."""
+    """output_format bleibt ein gültiges Request-Feld."""
 
     def test_output_format_still_accepted(self):
         """output_format ist noch im Modell (Reserved) und wird akzeptiert."""
         req = ConvertRequest(path="/data/test.pdf", output_format="markdown")
         assert req.output_format == "markdown"
 
-    def test_password_still_accepted(self):
-        """password ist noch im Modell (Reserved) und wird akzeptiert."""
-        req = ConvertRequest(path="/data/test.pdf", password="secret")
-        assert req.password == "secret"
+    def test_password_removed_from_model_surface(self):
+        """password ist kein öffentliches Request-Feld mehr."""
+        assert "password" not in ConvertRequest.model_fields

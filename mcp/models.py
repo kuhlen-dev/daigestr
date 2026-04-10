@@ -182,7 +182,6 @@ class ConvertRequest(BaseModel):
     url: Optional[str] = Field(None, description="URL zu Datei oder Webseite")
 
     # Optionen
-    password: Optional[str] = Field(None, description="Passwort für geschützte PDFs")  # Reserved for future use
     output_format: str = Field("markdown", description="Ausgabeformat: 'markdown', 'text', 'html'")
 
     @field_validator("output_format")
