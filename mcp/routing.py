@@ -763,6 +763,8 @@ async def _convert_auto_impl(
     # Dokument → MarkItDown (mit optionalem Scanned-PDF-Routing)
     elif ext in _markitdown_extensions or ext:
         temp_path = _temp_dir / f"{hashlib.md5(file_data).hexdigest()}_{filename}"
+        original_temp_path = temp_path
+        sliced_temp_path: Path | None = None
         try:
             temp_path.write_bytes(file_data)
 
@@ -923,6 +925,7 @@ async def _convert_auto_impl(
                     _sliced_path = _temp_dir / f"sliced_{temp_path.name}"
                     _mkit_doc.save(str(_sliced_path))
                     _mkit_doc.close()
+                    sliced_temp_path = _sliced_path
                     temp_path = _sliced_path
                     log.info("pdf_page_slice_done", indices=_page_indices, sliced_path=str(_sliced_path))
                 except Exception as _slice_err:
@@ -1153,6 +1156,8 @@ async def _convert_auto_impl(
                 return _err
         finally:
             temp_path.unlink(missing_ok=True)
+            if sliced_temp_path is not None and original_temp_path != sliced_temp_path:
+                original_temp_path.unlink(missing_ok=True)
 
     else:
         meta["duration_ms"] = int((time.time() - start_time) * 1000)

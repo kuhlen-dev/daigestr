@@ -850,6 +850,7 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
     _convert_auto = _get("convert_auto", convert_auto)
     _job_update = _get("job_update", job_update)
     _job_set_result = _get("job_set_result", job_set_result)
+    temp_path: Path | None = None
 
     _job_update(job_id, "processing", json.dumps({"message": "Conversion started"}))
     try:
@@ -950,6 +951,9 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
         # Webhook auch bei Fehler senden
         if request.webhook_url:
             await _fire_webhook(request.webhook_url, error_result)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
 
 
 @app.post("/v1/convert/async")
