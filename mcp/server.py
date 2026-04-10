@@ -7,7 +7,7 @@ except ImportError:
     pass
 
 """
-Daigestr — Document Intelligence Service v3.1.0
+Daigestr — Document Intelligence Service v8.1.2
 
 Bietet zwei Schnittstellen:
 - MCP (Port 8080): Für Claude und andere MCP-Clients
@@ -203,6 +203,7 @@ from normalizer_cache import cache_reset as normalizer_cache_reset  # noqa: F401
 # Re-export templates_db functions for backwards-compatibility
 from templates_db import (  # noqa: F401
     init_templates_db,
+    check_persistence_health,
     get_all_template_ids,
     get_template_by_id,
     search_templates,

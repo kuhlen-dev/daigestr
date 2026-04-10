@@ -77,6 +77,65 @@ def _return_conn(conn) -> None:
         pass
 
 
+def check_persistence_health() -> dict:
+    """
+    Verify PostgreSQL connectivity and presence of critical Daigestr tables.
+
+    Returns a small health payload that can be exposed via /v1/health without
+    duplicating DB-specific logic in higher layers.
+    """
+    required_tables = [
+        "template",
+        "prompt",
+        "scoring_weight",
+        "cache",
+        "job",
+        "audit_log",
+        "normalized_categories",
+        "normalized_fields",
+        "normalized_values",
+        "normalized_test_fixtures",
+        "extraction_corrections",
+    ]
+
+    _get_db_conn = _get("get_db_connection", get_db_connection)
+    conn = None
+    try:
+        conn = _get_db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT 1 AS ok")
+        cur.fetchone()
+        cur.execute(
+            "SELECT tablename FROM pg_tables "
+            "WHERE schemaname = 'public' AND tablename = ANY(%s)",
+            (required_tables,),
+        )
+        rows = cur.fetchall()
+        present_tables = sorted(r["tablename"] for r in rows)
+        missing_tables = sorted(set(required_tables) - set(present_tables))
+        return {
+            "ready": not missing_tables,
+            "database_url_configured": bool(DATABASE_URL),
+            "connection_ok": True,
+            "required_tables_checked": required_tables,
+            "present_tables": present_tables,
+            "missing_tables": missing_tables,
+        }
+    except Exception as exc:
+        return {
+            "ready": False,
+            "database_url_configured": bool(DATABASE_URL),
+            "connection_ok": False,
+            "required_tables_checked": required_tables,
+            "present_tables": [],
+            "missing_tables": required_tables,
+            "error": str(exc),
+        }
+    finally:
+        if conn is not None:
+            _return_conn(conn)
+
+
 def init_templates_db() -> None:
     """Erstellt die Tabellen beim ersten Start und lädt seed.sql wenn leer."""
     conn = get_db_connection()

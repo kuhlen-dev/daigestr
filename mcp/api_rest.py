@@ -70,7 +70,7 @@ from intelligence import (
 )
 from templates_db import _return_conn as _db_return_conn
 from templates_db import (
-    get_all_template_ids, search_templates, cache_clear,
+    get_all_template_ids, search_templates, cache_clear, check_persistence_health,
     job_create, job_update, job_set_result, job_get, job_delete, job_list,
 )
 from routing import (
@@ -768,11 +768,19 @@ async def api_health() -> HealthResponse:
     """Health-Check Endpoint."""
     uptime = int(time.time() - START_TIME)
     mistral_configured = bool(MISTRAL_API_KEY)
+    _check_persistence = _get("check_persistence_health", check_persistence_health)
+    persistence = _check_persistence()
+    status = "ok" if persistence.get("ready") else "error"
 
     return HealthResponse(
-        status="ok",
+        status=status,
         version=VERSION,
         meta={
+            "persistence_ready": persistence.get("ready", False),
+            "database_url_configured": persistence.get("database_url_configured", False),
+            "database_connection_ok": persistence.get("connection_ok", False),
+            "missing_tables": persistence.get("missing_tables", []),
+            "persistence_error": persistence.get("error"),
             "mistral_api_configured": mistral_configured,
             "vision_model": MISTRAL_VISION_MODEL,
             "mistral_ocr_configured": mistral_configured and MISTRAL_OCR_ENABLED,
