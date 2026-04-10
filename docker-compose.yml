@@ -23,13 +23,13 @@ services:
     build:
       context: ./mcp
       args:
-        DAIGESTR_VERSION: ${DAIGESTR_VERSION:-8.1.3}
+        DAIGESTR_VERSION: ${DAIGESTR_VERSION:-8.2.1}
     container_name: daigestr
     restart: unless-stopped
     env_file: .env
     # Ports in docker-compose.override.yml (localhost-only)
     environment:
-      - DAIGESTR_VERSION=${DAIGESTR_VERSION:-8.1.3}
+      - DAIGESTR_VERSION=${DAIGESTR_VERSION:-8.2.1}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-daigestr}:${POSTGRES_PASSWORD:-daigestr}@daigestr-postgres:5432/${POSTGRES_DB:-daigestr}
     depends_on:
       daigestr-postgres:

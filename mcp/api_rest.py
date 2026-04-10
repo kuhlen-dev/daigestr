@@ -381,11 +381,13 @@ async def _api_convert_impl(request: ConvertRequest) -> ConvertResponse:
                     chunk_size=request.chunk_size,
                     extract_schema=effective_schema,
                     accuracy=request.accuracy,
+                    ocr_embed=request.ocr_embed,
                     auto_extract=request.auto_extract,
                     min_confidence=request.min_confidence,
                     mode=request.mode,
                     output_format=request.output_format,
                     pages=request.pages,
+                    no_cache=request.no_cache,
                     compact=request.compact,
                     template=request.template,
                 )

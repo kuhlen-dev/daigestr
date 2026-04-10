@@ -4,7 +4,7 @@
 
 Most document-to-Markdown tools work fine until you hand them a real-world file: a scanned invoice, a DOCX full of charts, an Excel with merged cells across 12 sheets, or a meeting recording. Then they silently fail, return empty text, or lose all structure. This service fixes that.
 
-Built on Microsoft's [markitdown](https://github.com/microsoft/markitdown), extended with Mistral OCR-3, Vision AI, audio transcription, a Template Registry with auto-extract, a Normalization Layer that maps extracted fields to 52 unified field names across 143 document types, and a hybrid routing engine that picks the best tool for each document — automatically. Two interfaces: **MCP server** (for Claude and AI agents) and **REST API** (for n8n, workflows, and custom integrations). Self-hosted in two Docker containers. Current version: **v8.1.3**.
+Built on Microsoft's [markitdown](https://github.com/microsoft/markitdown), extended with Mistral OCR-3, Vision AI, audio transcription, a Template Registry with auto-extract, a Normalization Layer that maps extracted fields to 52 unified field names across 143 document types, and a hybrid routing engine that picks the best tool for each document — automatically. Two interfaces: **MCP server** (for Claude and AI agents) and **REST API** (for n8n, workflows, and custom integrations). Self-hosted in two Docker containers. Current version: **v8.2.1**.
 
 ---
 
@@ -1532,6 +1532,7 @@ Test modules:
 | Version | Date | Highlights |
 |---------|------|-----------|
 | **7.0.0** | April 2026 | **Normalization Layer** — 13-step pipeline mapping extracted fields to 52 unified field names across 143 templates (100% coverage). Admin REST API (15 endpoints), in-memory cache, batch validation, correction feedback. Auto-normalization on extract when mapping exists. New modules: `normalizer.py`, `normalizer_db.py`, `normalizer_cache.py`, `api_rest_normalize.py`. Seed data: 18 categories, 52 fields, 200+ values, 143 template mappings. `_META_SCHEMA`, `_STEUER_SIGNALWOERTER`, `_DATENTYP_KONVENTIONEN` moved from hardcoded to PostgreSQL prompt table. |
+| **8.2.1** | April 2026 | URL parity fix for REST conversion. Nicht-HTML-URLs reichen `ocr_embed` und `no_cache` jetzt wie Datei- und Base64-Pfade an `convert_auto()` durch. |
 | **8.1.3** | April 2026 | DB-only prompt and registry semantics. DB-gesteuerte Prompts, `_meta` Konfiguration und Klassifizierungs-Kategorien fallen nicht mehr still auf Hardcode zurück; fehlende Registry-/Prompt-Daten sind jetzt sichtbare Konfigurationsfehler. |
 | **8.1.2** | April 2026 | DB-backed health/readiness semantics. `/v1/health` now reports persistence readiness based on PostgreSQL connectivity plus critical Daigestr tables instead of blindly returning `ok`. |
 | **8.1.1** | April 2026 | DB-required startup bootstrap. PostgreSQL-backed template registry, audit log and normalization DB now initialize centrally before startup; if persistence bootstrap fails, Daigestr stops before serving REST or MCP traffic. |

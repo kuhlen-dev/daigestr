@@ -109,6 +109,7 @@ class TestUrlGoesthroughConvertAuto:
         markitdown_result = {"success": True, "markdown": "# PDF Content"}
 
         with patch.object(_server_api, "httpx", httpx_mock), \
+             patch.object(_server_api, "CACHE_ENABLED", False), \
              patch.object(_server_api, "detect_mimetype_from_bytes", return_value="application/pdf"), \
              patch.object(_server_api, "is_scanned_pdf", return_value=False), \
              patch.object(_server_api, "convert_with_markitdown", return_value=markitdown_result), \
@@ -178,6 +179,53 @@ class TestUrlGoesthroughConvertAuto:
 
         assert result.success is False
         assert result.error.code == "CONVERSION_FAILED"
+
+    def test_url_non_html_passes_ocr_embed_and_no_cache(self):
+        """Nicht-HTML-URL reicht ocr_embed und no_cache an convert_auto() durch."""
+        from models import ConvertRequest
+
+        pdf_bytes = b"%PDF-1.4 test content"
+
+        head_resp = MagicMock()
+        head_resp.headers = {"content-type": "application/pdf"}
+
+        get_resp = MagicMock()
+        get_resp.headers = {"content-type": "application/pdf"}
+        get_resp.content = pdf_bytes
+        get_resp.raise_for_status = MagicMock()
+
+        client = AsyncMock()
+        client.head = AsyncMock(return_value=head_resp)
+        client.get = AsyncMock(return_value=get_resp)
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+
+        httpx_mock = MagicMock()
+        httpx_mock.AsyncClient = MagicMock(return_value=client)
+
+        captured_kwargs = {}
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.markdown = "# PDF Content"
+        mock_result.meta = MagicMock()
+
+        async def capturing_convert_auto(**kwargs):
+            captured_kwargs.update(kwargs)
+            return mock_result
+
+        with patch.object(_server_api, "httpx", httpx_mock), \
+             patch.object(_server_api, "convert_auto", new=AsyncMock(side_effect=capturing_convert_auto)), \
+             patch("pathlib.Path.write_bytes", return_value=None), \
+             patch("pathlib.Path.unlink", return_value=None):
+            request = ConvertRequest(
+                url="https://example.com/doc.pdf",
+                ocr_embed=True,
+                no_cache=True,
+            )
+            run_async(_server_api.api_convert(request))
+
+        assert captured_kwargs["ocr_embed"] is True
+        assert captured_kwargs["no_cache"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -409,6 +457,8 @@ class TestAccuracyHighActivatesOcrCorrectForImages:
             return correction_result
 
         with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
+             patch.object(_server, "CACHE_ENABLED", False), \
+             patch.object(_server, "get_prompt", return_value="Bildanalyse-Prompt"), \
              patch.object(_server, "call_mistral_vision_api", new=AsyncMock(
                  side_effect=[vision_resp, dual_pass_resp]
              )), \
@@ -442,6 +492,8 @@ class TestAccuracyHighActivatesOcrCorrectForImages:
             return {"success": True, "corrected_text": text, "corrections_count": 0}
 
         with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
+             patch.object(_server, "CACHE_ENABLED", False), \
+             patch.object(_server, "get_prompt", return_value="Bildanalyse-Prompt"), \
              patch.object(_server, "call_mistral_vision_api", new=AsyncMock(return_value=vision_resp)), \
              patch.object(_server, "correct_ocr_text", new=AsyncMock(side_effect=capturing_correct_ocr_text)):
             result = run_async(convert_auto(
@@ -484,6 +536,7 @@ class TestAudioHasAccuracyModeInMeta:
         fake_audio = b"RIFF" + b"\x00" * 40
 
         with patch.object(_server, "transcribe_audio", return_value=transcription_result), \
+             patch.object(_server, "CACHE_ENABLED", False), \
              patch.object(_server, "detect_mimetype_from_bytes", return_value="audio/wav"), \
              patch.object(_server, "TEMP_DIR", Path("/tmp/markitdown_test")), \
              patch("pathlib.Path.write_bytes", return_value=None), \
@@ -516,6 +569,7 @@ class TestAudioHasAccuracyModeInMeta:
         fake_audio = b"RIFF" + b"\x00" * 40
 
         with patch.object(_server, "transcribe_audio", return_value=transcription_result), \
+             patch.object(_server, "CACHE_ENABLED", False), \
              patch.object(_server, "detect_mimetype_from_bytes", return_value="audio/wav"), \
              patch.object(_server, "TEMP_DIR", Path("/tmp/markitdown_test")), \
              patch("pathlib.Path.write_bytes", return_value=None), \
