@@ -680,3 +680,72 @@ class TestFolderPassesAllOptions:
         assert len(captured_kwargs) >= 1
         assert all(kw.get("classify") is True for kw in captured_kwargs), \
             f"classify=True wurde nicht durchgereicht: {captured_kwargs}"
+
+    def test_folder_passes_template_to_convert_auto(self, tmp_path):
+        """convert_folder_contents mit template=invoice → wird an convert_auto durchgereicht."""
+        test_file = tmp_path / "invoice.txt"
+        test_file.write_bytes(b"Invoice content")
+
+        captured_kwargs = []
+
+        async def capturing_convert_auto(**kwargs):
+            captured_kwargs.append(kwargs)
+            return self._make_mock_result()
+
+        with patch.object(_server, "convert_auto", new=AsyncMock(side_effect=capturing_convert_auto)):
+            result = run_async(convert_folder_contents(
+                folder_path=tmp_path,
+                input_meta={},
+                template="invoice",
+            ))
+
+        assert result.success is True
+        assert len(captured_kwargs) >= 1
+        assert all(kw.get("template") == "invoice" for kw in captured_kwargs), \
+            f"template='invoice' wurde nicht durchgereicht: {captured_kwargs}"
+
+    def test_folder_passes_mode_to_convert_auto(self, tmp_path):
+        """convert_folder_contents mit mode=full → wird an convert_auto durchgereicht."""
+        test_file = tmp_path / "doc.txt"
+        test_file.write_bytes(b"Some content")
+
+        captured_kwargs = []
+
+        async def capturing_convert_auto(**kwargs):
+            captured_kwargs.append(kwargs)
+            return self._make_mock_result()
+
+        with patch.object(_server, "convert_auto", new=AsyncMock(side_effect=capturing_convert_auto)):
+            result = run_async(convert_folder_contents(
+                folder_path=tmp_path,
+                input_meta={},
+                mode="full",
+            ))
+
+        assert result.success is True
+        assert len(captured_kwargs) >= 1
+        assert all(kw.get("mode") == "full" for kw in captured_kwargs), \
+            f"mode='full' wurde nicht durchgereicht: {captured_kwargs}"
+
+    def test_folder_passes_input_meta_to_convert_auto(self, tmp_path):
+        """convert_folder_contents reicht input_meta pro Datei weiter statt es zu verwerfen."""
+        test_file = tmp_path / "doc.txt"
+        test_file.write_bytes(b"Some content")
+
+        captured_kwargs = []
+        folder_meta = {"batch_id": "B-42", "customer": "acme"}
+
+        async def capturing_convert_auto(**kwargs):
+            captured_kwargs.append(kwargs)
+            return self._make_mock_result()
+
+        with patch.object(_server, "convert_auto", new=AsyncMock(side_effect=capturing_convert_auto)):
+            result = run_async(convert_folder_contents(
+                folder_path=tmp_path,
+                input_meta=folder_meta,
+            ))
+
+        assert result.success is True
+        assert len(captured_kwargs) >= 1
+        assert all(kw.get("input_meta") == folder_meta for kw in captured_kwargs), \
+            f"input_meta wurde verworfen: {captured_kwargs}"

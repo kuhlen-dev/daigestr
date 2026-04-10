@@ -1240,7 +1240,7 @@ async def convert_folder_contents(
                 filename=file_path.name,
                 source=str(file_path),
                 source_type="file",
-                input_meta={},
+                input_meta=input_meta,
                 language=language,
                 describe_images=describe_images,
                 classify=classify,
@@ -1254,7 +1254,9 @@ async def convert_folder_contents(
                 ocr_embed=ocr_embed,
                 show_formulas=show_formulas,
                 prompt=prompt,
+                template=template,
                 min_confidence=min_confidence,
+                mode=mode or "default",
             )
 
             if result.success:

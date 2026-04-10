@@ -292,7 +292,8 @@ class TestMcpConvertPassesParams:
 
     def test_mcp_convert_unknown_template_returns_error(self):
         """Unbekanntes template gibt Fehler-JSON zurück (kein Exception)."""
-        with patch.object(_server, "get_template_by_id", return_value=None):
+        with patch.object(_server, "get_template_by_id", return_value=None), \
+             patch.dict(mcp_convert.__globals__, {"get_all_template_ids": lambda: ["invoice", "contract"]}):
             result = run_async(mcp_convert(path="/data/test.pdf", template="nonexistent"))
 
         data = json.loads(result)
