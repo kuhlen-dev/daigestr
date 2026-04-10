@@ -477,13 +477,18 @@ def job_create(job_id: str) -> dict:
 
 
 def job_update(job_id: str, status: str, progress_json: Optional[str] = None) -> None:
-    """Aktualisiert Status und Fortschritt eines Jobs."""
+    """Aktualisiert Status und Fortschritt eines Jobs.
+
+    Terminale Zustände sind monoton: verspätete Progress-Updates dürfen einen
+    bereits `completed` oder `failed` markierten Job nicht zurückdrehen.
+    """
     _get_db_conn = _get("get_db_connection", get_db_connection)
     conn = _get_db_conn()
     try:
         cur = conn.cursor()
         cur.execute(
-            "UPDATE job SET status=%s, progress_json=%s, updated_at=now() WHERE id=%s",
+            "UPDATE job SET status=%s, progress_json=%s, updated_at=now() "
+            "WHERE id=%s AND status NOT IN ('completed', 'failed')",
             (status, progress_json, job_id)
         )
         conn.commit()

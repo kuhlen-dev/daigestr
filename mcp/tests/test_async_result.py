@@ -217,16 +217,11 @@ class TestJobResultDB:
 
     def test_progress_update_does_not_wipe_result_json(self):
         """
-        RACE CONDITION TEST: job_update() darf result_json nicht überschreiben.
+        RACE CONDITION TEST: verspätete job_update() Calls dürfen Terminalstatus
+        und result_json nicht mehr verändern.
 
-        Wenn routing._update_progress() NACH job_set_result() feuert,
-        setzt es status zurück auf 'processing'. Kritisch: result_json muss
-        dabei erhalten bleiben.
-
-        Hinweis: Das ist ein bekanntes Verhaltensproblem — job_update setzt
-        status zurück auf 'processing' obwohl das Ergebnis schon gesetzt ist.
-        Dieser Test dokumentiert das Verhalten und prüft dass zumindest
-        result_json erhalten bleibt.
+        Wenn routing._update_progress() NACH job_set_result() feuert, muss der
+        Job trotzdem completed bleiben.
         """
         job_id = str(uuid.uuid4())
         _templates_db.job_create(job_id)
@@ -241,7 +236,9 @@ class TestJobResultDB:
         )
 
         job = _templates_db.job_get(job_id)
-        # result_json muss erhalten geblieben sein (kein Wipe durch job_update)
+        assert job["status"] == "completed", (
+            "BUG: verspätetes job_update() hat den Terminalstatus zurückgedreht."
+        )
         assert job["result_json"] is not None, (
             "BUG: job_update() hat result_json auf NULL gesetzt! "
             "Die SQL-Query darf result_json nicht anfassen."
@@ -471,6 +468,9 @@ class TestRaceCondition:
 
         job = _templates_db.job_get(job_id)
 
+        assert job["status"] == "completed", (
+            f"[Run {run_number}] BUG: verspätetes progress-Update hat status='{job['status']}' hinterlassen."
+        )
         # result_json muss erhalten geblieben sein (kein NULL durch job_update)
         assert job["result_json"] is not None, (
             f"[Run {run_number}] BUG: result_json ist None nach verspätetem progress-Update! "
