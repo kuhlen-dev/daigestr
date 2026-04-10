@@ -27,7 +27,7 @@ COPY scripts/ ./scripts/
 
 RUN mkdir -p /data /tmp/markitdown
 
-ARG DAIGESTR_VERSION=dev
+ARG DAIGESTR_VERSION=8.1.1
 ENV DAIGESTR_VERSION=${DAIGESTR_VERSION}
 
 EXPOSE 8080 8081

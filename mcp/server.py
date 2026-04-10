@@ -278,6 +278,34 @@ from api_mcp import (  # noqa: F401
 md = MarkItDown()
 
 # =============================================================================
+# Persistence Bootstrap
+# =============================================================================
+
+
+def initialize_persistence() -> None:
+    """
+    Initialize all PostgreSQL-backed subsystems before the service starts.
+
+    Daigestr is DB-first/DB-only. If one of the persistence layers cannot be
+    initialized, startup must fail before either REST or MCP begin accepting
+    requests.
+    """
+    init_steps = [
+        ("template_registry", init_templates_db),
+        ("audit_db", init_audit_db),
+        ("normalization_db", init_normalization_db),
+    ]
+
+    for component, init_fn in init_steps:
+        try:
+            init_fn()
+            log.info(f"{component}_initialized", database_url=DATABASE_URL)
+        except Exception as exc:
+            log.error(f"{component}_init_failed", database_url=DATABASE_URL, error=str(exc))
+            raise RuntimeError(f"{component} initialization failed") from exc
+
+
+# =============================================================================
 # Server Start
 # =============================================================================
 
@@ -285,29 +313,9 @@ if __name__ == "__main__":
     from settings import (
         VERSION, DATA_DIR, MISTRAL_VISION_MODEL, MISTRAL_API_KEY,
         MCP_PORT, REST_PORT, MAX_FILE_SIZE_MB, IMAGE_MAX_WIDTH, MAX_RETRIES,
-        DATABASE_URL,
     )
 
-    # Initialize Template Registry DB (PostgreSQL — T-DAI-038)
-    try:
-        init_templates_db()
-        log.info("template_registry_initialized", database_url=DATABASE_URL)
-    except Exception as _db_init_err:
-        log.warning("template_registry_init_failed", error=str(_db_init_err))
-
-    # Initialize Audit Log DB (T-DAI-070)
-    try:
-        init_audit_db()
-        log.info("audit_db_initialized", database_url=DATABASE_URL)
-    except Exception as _audit_init_err:
-        log.warning("audit_db_init_failed", error=str(_audit_init_err))
-
-    # Initialize Normalization DB (T-DAI-050)
-    try:
-        init_normalization_db()
-        log.info("normalization_db_initialized", database_url=DATABASE_URL)
-    except Exception as _norm_init_err:
-        log.warning("normalization_db_init_failed", error=str(_norm_init_err))
+    initialize_persistence()
 
     log.info("server_starting",
              version=VERSION,
