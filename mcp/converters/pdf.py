@@ -384,6 +384,8 @@ def is_scanned_pdf(file_path: Path) -> bool:
 async def convert_scanned_pdf_ocr3(
     file_path: Path,
     page_indices: Optional[list[int]] = None,
+    request_id: Optional[str] = None,
+    attempt_number: Optional[int] = None,
 ) -> dict[str, Any]:
     """
     Konvertiert ein gescanntes PDF via Mistral OCR 3 API (/v1/ocr).
@@ -407,7 +409,13 @@ async def convert_scanned_pdf_ocr3(
             "error": "MISTRAL_API_KEY nicht konfiguriert",
         }
 
-    log.info("ocr3_convert_start", file=str(file_path), model=MISTRAL_OCR_MODEL)
+    log.info(
+        "ocr3_convert_start",
+        file=str(file_path),
+        model=MISTRAL_OCR_MODEL,
+        request_id=request_id,
+        attempt_number=attempt_number,
+    )
 
     try:
         file_data = file_path.read_bytes()
@@ -420,9 +428,15 @@ async def convert_scanned_pdf_ocr3(
         }
 
     try:
-        result = await _get("call_mistral_ocr_api", call_mistral_ocr_api)(file_data, file_path.name)
+        result = await _get("call_mistral_ocr_api", call_mistral_ocr_api)(
+            file_data,
+            file_path.name,
+            request_id=request_id,
+            attempt_number=attempt_number,
+            pipeline_step="convert_scanned_pdf_ocr3",
+        )
     except httpx.TimeoutException:
-        log.error("ocr3_timeout", timeout=MISTRAL_TIMEOUT)
+        log.error("ocr3_timeout", timeout=MISTRAL_TIMEOUT, request_id=request_id, attempt_number=attempt_number)
         return {
             "success": False,
             "error_code": ErrorCode.TIMEOUT,
@@ -434,14 +448,14 @@ async def convert_scanned_pdf_ocr3(
             error_detail = e.response.json().get("error", {}).get("message", str(e))
         except Exception:
             pass
-        log.error("ocr3_api_error", error=error_detail)
+        log.error("ocr3_api_error", error=error_detail, request_id=request_id, attempt_number=attempt_number)
         return {
             "success": False,
             "error_code": ErrorCode.API_ERROR,
             "error": f"Mistral OCR API Fehler: {error_detail}",
         }
     except Exception as e:
-        log.error("ocr3_exception", error=str(e))
+        log.error("ocr3_exception", error=str(e), request_id=request_id, attempt_number=attempt_number)
         return {
             "success": False,
             "error_code": ErrorCode.API_ERROR,
@@ -451,14 +465,14 @@ async def convert_scanned_pdf_ocr3(
     try:
         pages = result.get("pages", [])
     except (AttributeError, TypeError) as e:
-        log.error("ocr3_invalid_response", error=str(e))
+        log.error("ocr3_invalid_response", error=str(e), request_id=request_id, attempt_number=attempt_number)
         return {
             "success": False,
             "error_code": ErrorCode.API_ERROR,
             "error": f"Ungültige OCR-API-Antwort: {str(e)}",
         }
     if not pages:
-        log.warning("ocr3_no_pages", file=str(file_path))
+        log.warning("ocr3_no_pages", file=str(file_path), request_id=request_id, attempt_number=attempt_number)
         return {
             "success": False,
             "error_code": ErrorCode.CONVERSION_FAILED,
@@ -482,11 +496,25 @@ async def convert_scanned_pdf_ocr3(
         page_index = page.get("index", 0) + 1
         page_markdown = page.get("markdown", "")
         markdown_parts.append(f"## Seite {page_index}\n\n{page_markdown}")
-        log.info("convert_progress", step="ocr", detail=f"page {i+1}/{total_pages}", progress=int(10 + 50 * i / total_pages) if total_pages else 10)
+        log.info(
+            "convert_progress",
+            step="ocr",
+            detail=f"page {i+1}/{total_pages}",
+            progress=int(10 + 50 * i / total_pages) if total_pages else 10,
+            request_id=request_id,
+            attempt_number=attempt_number,
+        )
 
     combined_markdown = "\n\n".join(markdown_parts)
 
-    log.info("ocr3_convert_complete", file=str(file_path), pages=len(pages), model=MISTRAL_OCR_MODEL)
+    log.info(
+        "ocr3_convert_complete",
+        file=str(file_path),
+        pages=len(pages),
+        model=MISTRAL_OCR_MODEL,
+        request_id=request_id,
+        attempt_number=attempt_number,
+    )
 
     return {
         "success": True,
@@ -500,6 +528,8 @@ async def convert_scanned_pdf(
     file_path: Path,
     language: str = "de",
     page_indices: Optional[list[int]] = None,
+    request_id: Optional[str] = None,
+    attempt_number: Optional[int] = None,
 ) -> dict[str, Any]:
     """
     Konvertiert ein eingescanntes PDF zu Markdown.
@@ -528,10 +558,15 @@ async def convert_scanned_pdf(
     """
     # Primärer Pfad: Mistral OCR 3
     if _get("MISTRAL_OCR_ENABLED", MISTRAL_OCR_ENABLED):
-        log.info("scanned_pdf_using_ocr3", file=str(file_path), model=MISTRAL_OCR_MODEL)
-        ocr3_result = await _get("convert_scanned_pdf_ocr3", convert_scanned_pdf_ocr3)(file_path, page_indices=page_indices)
+        log.info("scanned_pdf_using_ocr3", file=str(file_path), model=MISTRAL_OCR_MODEL, request_id=request_id, attempt_number=attempt_number)
+        ocr3_result = await _get("convert_scanned_pdf_ocr3", convert_scanned_pdf_ocr3)(
+            file_path,
+            page_indices=page_indices,
+            request_id=request_id,
+            attempt_number=attempt_number,
+        )
         if ocr3_result.get("success"):
-            log.info("scanned_pdf_ocr3_success", file=str(file_path), pages=ocr3_result.get("pages", 0))
+            log.info("scanned_pdf_ocr3_success", file=str(file_path), pages=ocr3_result.get("pages", 0), request_id=request_id, attempt_number=attempt_number)
             return {
                 "success": True,
                 "markdown": ocr3_result["markdown"],
@@ -544,10 +579,12 @@ async def convert_scanned_pdf(
                 "scanned_pdf_ocr3_failed_fallback_to_vision",
                 file=str(file_path),
                 error=ocr3_result.get("error", "unknown"),
+                request_id=request_id,
+                attempt_number=attempt_number,
             )
             # Fallback: Vision-Pfad (weiter unten)
     else:
-        log.info("scanned_pdf_ocr3_disabled_using_vision", file=str(file_path))
+        log.info("scanned_pdf_ocr3_disabled_using_vision", file=str(file_path), request_id=request_id, attempt_number=attempt_number)
 
     # Fallback / direkter Pfad: Mistral Vision (pdf2image)
     if not _get("PDF2IMAGE_AVAILABLE", PDF2IMAGE_AVAILABLE):
@@ -565,7 +602,7 @@ async def convert_scanned_pdf(
             "error": "MISTRAL_API_KEY nicht konfiguriert",
         }
 
-    log.info("scanned_pdf_convert_start", file=str(file_path))
+    log.info("scanned_pdf_convert_start", file=str(file_path), request_id=request_id, attempt_number=attempt_number)
 
     try:
         pages = _get("convert_from_path", convert_from_path)(str(file_path), dpi=PDF_RENDER_DPI)
@@ -613,7 +650,14 @@ async def convert_scanned_pdf(
     total_filtered = len(filtered_pages)
     for i, (page_idx, page_image) in enumerate(filtered_pages):
         page_num = page_idx + 1
-        log.info("convert_progress", step="ocr", detail=f"page {i+1}/{total_filtered}", progress=int(10 + 50 * i / total_filtered) if total_filtered else 10)
+        log.info(
+            "convert_progress",
+            step="ocr",
+            detail=f"page {i+1}/{total_filtered}",
+            progress=int(10 + 50 * i / total_filtered) if total_filtered else 10,
+            request_id=request_id,
+            attempt_number=attempt_number,
+        )
         # PIL Image → bytes (PNG)
         img_buffer = io.BytesIO()
         # Resize wenn nötig, um Tokens zu sparen
@@ -631,6 +675,8 @@ async def convert_scanned_pdf(
             page=page_num,
             total_pages=len(pages),
             image_size=len(image_bytes),
+            request_id=request_id,
+            attempt_number=attempt_number,
         )
 
         vision_result = await _get("analyze_with_mistral_vision", analyze_with_mistral_vision)(
@@ -638,6 +684,11 @@ async def convert_scanned_pdf(
             "image/png",
             vision_prompt,
             language,
+            request_id=request_id,
+            attempt_number=attempt_number,
+            pipeline_step="scanned_pdf_vision_fallback",
+            page=page_num,
+            filename=file_path.name,
         )
 
         page_token_info = {
@@ -661,6 +712,8 @@ async def convert_scanned_pdf(
                 file=str(file_path),
                 page=page_num,
                 tokens=vision_result.get("tokens_total", 0),
+                request_id=request_id,
+                attempt_number=attempt_number,
             )
         else:
             log.warning(
@@ -668,6 +721,8 @@ async def convert_scanned_pdf(
                 file=str(file_path),
                 page=page_num,
                 error=vision_result.get("error", "unknown"),
+                request_id=request_id,
+                attempt_number=attempt_number,
             )
             markdown_parts.append(
                 f"## Seite {page_num}\n\n*Seite konnte nicht verarbeitet werden: "
@@ -682,6 +737,8 @@ async def convert_scanned_pdf(
         pages_total=len(pages),
         pages_processed=pages_processed,
         tokens_total=total_tokens,
+        request_id=request_id,
+        attempt_number=attempt_number,
     )
 
     return {

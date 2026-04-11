@@ -8,6 +8,11 @@ from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 
 MINIMUM_META_FIELDS: dict[str, Any] = {
+    "request_id": None,
+    "job_id": None,
+    "attempt_number": None,
+    "attempt_count": None,
+    "attempt_mode": None,
     "document_type": None,
     "document_type_confidence": None,
     "template_used": None,
@@ -61,6 +66,11 @@ class MetaData(BaseModel):
     size_bytes: Optional[int] = Field(None, description="Dateigröße in Bytes")
     processed_at: Optional[str] = Field(None, description="Verarbeitungszeitpunkt (ISO 8601)")
     duration_ms: Optional[int] = Field(None, description="Verarbeitungsdauer in Millisekunden")
+    request_id: Optional[str] = Field(None, description="Stabile ID für den gesamten Convert-Lauf über alle internen Versuche hinweg")
+    job_id: Optional[str] = Field(None, description="Job-ID bei asynchronen Läufen")
+    attempt_number: Optional[int] = Field(None, description="Nummer des internen Verarbeitungsversuchs innerhalb desselben request_id")
+    attempt_count: Optional[int] = Field(None, description="Gesamtzahl der internen Versuche, die für die finale Antwort verwendet wurden")
+    attempt_mode: Optional[str] = Field(None, description="Mode des Versuchs, der die finale Antwort erzeugt hat")
 
     # Bild-spezifisch
     width: Optional[int] = Field(None, description="Bildbreite in Pixel")

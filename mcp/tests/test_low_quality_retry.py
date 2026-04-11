@@ -40,6 +40,9 @@ def test_retry_on_low_quality_escalates_default_to_full():
     assert impl.await_count == 2
     assert impl.await_args_list[0].kwargs["mode"] == "default"
     assert impl.await_args_list[1].kwargs["mode"] == "full"
+    assert impl.await_args_list[0].kwargs["request_id"] == impl.await_args_list[1].kwargs["request_id"]
+    assert impl.await_args_list[0].kwargs["attempt_number"] == 1
+    assert impl.await_args_list[1].kwargs["attempt_number"] == 2
     assert result.meta.retry_applied is True
     assert result.meta.retry_reason == "low_quality"
     assert result.meta.initial_mode == "default"
@@ -47,6 +50,9 @@ def test_retry_on_low_quality_escalates_default_to_full():
     assert result.meta.initial_quality_score == 0.42
     assert result.meta.final_quality_score == 0.91
     assert result.meta.retry_threshold_used == 0.75
+    assert result.meta.request_id == impl.await_args_list[0].kwargs["request_id"]
+    assert result.meta.attempt_count == 2
+    assert result.meta.attempt_mode == "full"
 
 
 def test_retry_skipped_when_quality_is_high_enough():

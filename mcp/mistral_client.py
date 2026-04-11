@@ -10,11 +10,11 @@ Enthält alle Funktionen für Mistral API-Calls:
 import asyncio
 import base64
 import time
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 import structlog
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import RetryCallState, retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from models import ErrorCode
 from settings import (
@@ -31,6 +31,34 @@ from settings import (
 from utils import _get, _LOADED_BY_SERVER  # noqa: F401
 
 log = structlog.get_logger()
+
+
+def _retry_context(retry_state: RetryCallState) -> dict[str, Any]:
+    kwargs = retry_state.kwargs or {}
+    return {
+        "request_id": kwargs.get("request_id"),
+        "attempt_number": kwargs.get("attempt_number"),
+        "pipeline_step": kwargs.get("pipeline_step"),
+        "page": kwargs.get("page"),
+        "filename": kwargs.get("filename"),
+        "upstream_attempt": retry_state.attempt_number,
+        "call": retry_state.fn.__name__,
+    }
+
+
+def _log_mistral_attempt(retry_state: RetryCallState) -> None:
+    log.info("mistral_api_attempt", **_retry_context(retry_state))
+
+
+def _log_mistral_before_sleep(retry_state: RetryCallState) -> None:
+    ctx = _retry_context(retry_state)
+    outcome = retry_state.outcome
+    if outcome is not None and outcome.failed:
+        exc = outcome.exception()
+        ctx["error"] = str(exc) if exc is not None else None
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+            ctx["status_code"] = exc.response.status_code
+    log.warning("mistral_api_retry_scheduled", **ctx)
 
 
 def _audit(request_id: str, event_type: str, **kwargs) -> None:
@@ -87,9 +115,19 @@ async def _handle_rate_limit(response: "httpx.Response") -> None:
     stop=stop_after_attempt(MAX_RETRIES),
     wait=wait_exponential(multiplier=1, min=1, max=10),
     retry=retry_if_exception_type((httpx.TimeoutException, httpx.HTTPStatusError)),
+    before=_log_mistral_attempt,
+    before_sleep=_log_mistral_before_sleep,
     reraise=True,
 )
-async def call_mistral_vision_api(payload: dict) -> dict:
+async def call_mistral_vision_api(
+    payload: dict,
+    *,
+    request_id: Optional[str] = None,
+    attempt_number: Optional[int] = None,
+    pipeline_step: Optional[str] = None,
+    page: Optional[int] = None,
+    filename: Optional[str] = None,
+) -> dict:
     """Ruft die Mistral Vision API mit Retry-Logik auf."""
     t0 = time.monotonic()
     async with httpx.AsyncClient(timeout=float(MISTRAL_TIMEOUT)) as client:
@@ -108,7 +146,7 @@ async def call_mistral_vision_api(payload: dict) -> dict:
         duration_ms = int((time.monotonic() - t0) * 1000)
         usage = data.get("usage", {})
         _audit(
-            request_id="",
+            request_id=request_id or "",
             event_type="mistral_call",
             detail="vision",
             duration_ms=duration_ms,
@@ -117,6 +155,10 @@ async def call_mistral_vision_api(payload: dict) -> dict:
                 "tokens_prompt": usage.get("prompt_tokens"),
                 "tokens_completion": usage.get("completion_tokens"),
                 "status_code": 200,
+                "attempt_number": attempt_number,
+                "pipeline_step": pipeline_step,
+                "page": page,
+                "filename": filename,
             },
         )
         return data
@@ -126,9 +168,18 @@ async def call_mistral_vision_api(payload: dict) -> dict:
     stop=stop_after_attempt(MAX_RETRIES),
     wait=wait_exponential(multiplier=1, min=1, max=10),
     retry=retry_if_exception_type((httpx.TimeoutException, httpx.HTTPStatusError)),
+    before=_log_mistral_attempt,
+    before_sleep=_log_mistral_before_sleep,
     reraise=True,
 )
-async def call_mistral_ocr_api(file_data: bytes, filename: str) -> dict:
+async def call_mistral_ocr_api(
+    file_data: bytes,
+    filename: str,
+    *,
+    request_id: Optional[str] = None,
+    attempt_number: Optional[int] = None,
+    pipeline_step: Optional[str] = None,
+) -> dict:
     """Ruft die Mistral OCR API (/v1/ocr) auf."""
     b64 = base64.b64encode(file_data).decode("utf-8")
     payload = {
@@ -155,7 +206,7 @@ async def call_mistral_ocr_api(file_data: bytes, filename: str) -> dict:
         duration_ms = int((time.monotonic() - t0) * 1000)
         usage = data.get("usage", {})
         _audit(
-            request_id="",
+            request_id=request_id or "",
             event_type="mistral_call",
             detail="ocr",
             duration_ms=duration_ms,
@@ -164,6 +215,9 @@ async def call_mistral_ocr_api(file_data: bytes, filename: str) -> dict:
                 "tokens_prompt": usage.get("prompt_tokens"),
                 "tokens_completion": usage.get("completion_tokens"),
                 "status_code": 200,
+                "attempt_number": attempt_number,
+                "pipeline_step": pipeline_step,
+                "filename": filename,
             },
         )
         return data
@@ -173,7 +227,12 @@ async def analyze_with_mistral_vision(
     image_data: bytes,
     mimetype: str,
     prompt: str,
-    language: str = "de"
+    language: str = "de",
+    request_id: Optional[str] = None,
+    attempt_number: Optional[int] = None,
+    pipeline_step: Optional[str] = None,
+    page: Optional[int] = None,
+    filename: Optional[str] = None,
 ) -> dict[str, Any]:
     """Analysiert ein Bild mit Mistral Pixtral Vision API."""
     from utils import strip_llm_artifacts  # noqa: PLC0415 — avoid circular at module level
@@ -223,14 +282,38 @@ async def analyze_with_mistral_vision(
     }
 
     try:
-        log.info("vision_api_call", model=vision_model, image_size=len(image_data))
-        result = await _call_fn(payload)
+        log.info(
+            "vision_api_call",
+            model=vision_model,
+            image_size=len(image_data),
+            request_id=request_id,
+            attempt_number=attempt_number,
+            pipeline_step=pipeline_step,
+            page=page,
+            filename=filename,
+        )
+        result = await _call_fn(
+            payload,
+            request_id=request_id,
+            attempt_number=attempt_number,
+            pipeline_step=pipeline_step,
+            page=page,
+            filename=filename,
+        )
 
         content = result["choices"][0]["message"]["content"]
         content = strip_llm_artifacts(content)
         usage = result.get("usage", {})
 
-        log.info("vision_api_success", tokens=usage.get("total_tokens", 0))
+        log.info(
+            "vision_api_success",
+            tokens=usage.get("total_tokens", 0),
+            request_id=request_id,
+            attempt_number=attempt_number,
+            pipeline_step=pipeline_step,
+            page=page,
+            filename=filename,
+        )
         return {
             "success": True,
             "markdown": content,
@@ -243,7 +326,7 @@ async def analyze_with_mistral_vision(
     except httpx.TimeoutException as e:
         log.error("vision_api_timeout", timeout=MISTRAL_TIMEOUT)
         _audit(
-            request_id="",
+            request_id=request_id or "",
             event_type="warning",
             step="vision_timeout",
             level="warning",
@@ -277,9 +360,9 @@ async def analyze_with_mistral_vision(
                 "error_code": ErrorCode.API_ERROR,
                 "error": f"Mistral Vision API unavailable after {MAX_RETRIES} retries (rate limited)"
             }
-        log.error("vision_api_error", error=error_detail)
+        log.error("vision_api_error", error=error_detail, request_id=request_id, attempt_number=attempt_number, pipeline_step=pipeline_step, page=page, filename=filename)
         _audit(
-            request_id="",
+            request_id=request_id or "",
             event_type="warning",
             step="vision_api_error",
             level="warning",
@@ -292,9 +375,9 @@ async def analyze_with_mistral_vision(
             "error": f"Mistral API Fehler: {error_detail}"
         }
     except Exception as e:
-        log.error("vision_api_exception", error=str(e))
+        log.error("vision_api_exception", error=str(e), request_id=request_id, attempt_number=attempt_number, pipeline_step=pipeline_step, page=page, filename=filename)
         _audit(
-            request_id="",
+            request_id=request_id or "",
             event_type="warning",
             step="vision_exception",
             level="warning",

@@ -271,6 +271,8 @@ async def classify_document(
     markdown: str,
     categories: list[str] | None = None,
     language: str = "de",
+    request_id: Optional[str] = None,
+    attempt_number: Optional[int] = None,
 ) -> dict[str, Any]:
     """
     Klassifiziert ein Dokument anhand seines Markdown-Inhalts via Mistral API.
@@ -339,8 +341,19 @@ async def classify_document(
     }
 
     try:
-        log.info("classify_document_start", categories=allowed_ids, text_length=len(truncated_markdown))
-        result = await _call_api(payload)
+        log.info(
+            "classify_document_start",
+            categories=allowed_ids,
+            text_length=len(truncated_markdown),
+            request_id=request_id,
+            attempt_number=attempt_number,
+        )
+        result = await _call_api(
+            payload,
+            request_id=request_id,
+            attempt_number=attempt_number,
+            pipeline_step="classify_document",
+        )
         content = result["choices"][0]["message"]["content"].strip()
 
         # JSON aus der Antwort extrahieren (Modell könnte Markdown-Code-Blöcke liefern)
@@ -361,14 +374,20 @@ async def classify_document(
         # Konfidenz auf gültigen Bereich begrenzen
         confidence = max(0.0, min(1.0, confidence))
 
-        log.info("classify_document_done", document_type=doc_type, confidence=confidence)
+        log.info(
+            "classify_document_done",
+            document_type=doc_type,
+            confidence=confidence,
+            request_id=request_id,
+            attempt_number=attempt_number,
+        )
         return {"document_type": doc_type, "document_type_confidence": confidence}
 
     except json.JSONDecodeError as exc:
-        log.warning("classify_document_json_error", error=str(exc))
+        log.warning("classify_document_json_error", error=str(exc), request_id=request_id, attempt_number=attempt_number)
         return {"document_type": "other", "document_type_confidence": 0.0}
     except Exception as exc:
-        log.warning("classify_document_api_error", error=str(exc))
+        log.warning("classify_document_api_error", error=str(exc), request_id=request_id, attempt_number=attempt_number)
         return {"document_type": "other", "document_type_confidence": 0.0}
 
 
@@ -376,7 +395,12 @@ async def classify_document(
 # OCR-Nachkorrektur via LLM
 # =============================================================================
 
-async def correct_ocr_text(text: str, language: str = "de") -> dict[str, Any]:
+async def correct_ocr_text(
+    text: str,
+    language: str = "de",
+    request_id: Optional[str] = None,
+    attempt_number: Optional[int] = None,
+) -> dict[str, Any]:
     """
     Korrigiert typische OCR-Fehler in einem Text via Mistral API.
 
@@ -436,8 +460,19 @@ async def correct_ocr_text(text: str, language: str = "de") -> dict[str, Any]:
     }
 
     try:
-        log.info("correct_ocr_text_start", text_length=len(text), language=language)
-        result = await _call_api(payload)
+        log.info(
+            "correct_ocr_text_start",
+            text_length=len(text),
+            language=language,
+            request_id=request_id,
+            attempt_number=attempt_number,
+        )
+        result = await _call_api(
+            payload,
+            request_id=request_id,
+            attempt_number=attempt_number,
+            pipeline_step="correct_ocr_text",
+        )
         content = result["choices"][0]["message"]["content"]
         usage = result.get("usage", {})
         tokens_total = usage.get("total_tokens", 0)
@@ -462,6 +497,8 @@ async def correct_ocr_text(text: str, language: str = "de") -> dict[str, Any]:
             "correct_ocr_text_done",
             corrections_count=corrections_count,
             tokens=tokens_total,
+            request_id=request_id,
+            attempt_number=attempt_number,
         )
         return {
             "success": True,
@@ -471,7 +508,7 @@ async def correct_ocr_text(text: str, language: str = "de") -> dict[str, Any]:
         }
 
     except Exception as exc:
-        log.warning("correct_ocr_text_api_error", error=str(exc))
+        log.warning("correct_ocr_text_api_error", error=str(exc), request_id=request_id, attempt_number=attempt_number)
         return {
             "success": False,
             "error": str(exc),
@@ -514,6 +551,8 @@ async def extract_structured_data(
     language: str = "de",
     field_descriptions: Optional[dict | str] = None,
     notes: Optional[str] = None,
+    request_id: Optional[str] = None,
+    attempt_number: Optional[int] = None,
 ) -> dict:
     """
     Extrahiert strukturierte Daten aus Markdown gemäß einem JSON-Schema via Mistral API.
@@ -628,8 +667,15 @@ async def extract_structured_data(
             "extract_structured_data_start",
             schema_keys=list(schema.get("properties", {}).keys()),
             text_length=len(markdown),
+            request_id=request_id,
+            attempt_number=attempt_number,
         )
-        result = await _call_api(payload)
+        result = await _call_api(
+            payload,
+            request_id=request_id,
+            attempt_number=attempt_number,
+            pipeline_step="extract_structured_data",
+        )
         content = result["choices"][0]["message"]["content"].strip()
         usage = result.get("usage", {})
         tokens = usage.get("total_tokens", 0)
@@ -637,7 +683,7 @@ async def extract_structured_data(
         # JSON aus der Antwort extrahieren (Modell könnte Markdown-Code-Blöcke liefern)
         json_match = re.search(r"\{[\s\S]*\}", content)
         if not json_match:
-            log.warning("extract_structured_data_no_json", raw_content=content[:200])
+            log.warning("extract_structured_data_no_json", raw_content=content[:200], request_id=request_id, attempt_number=attempt_number)
             return {
                 "success": False,
                 "error": f"Kein JSON in der API-Antwort gefunden: {content[:100]}",
@@ -653,18 +699,20 @@ async def extract_structured_data(
                 # Schema null-tolerant machen: "type": "string" → "type": ["string", "null"]
                 tolerant_schema = _make_null_tolerant(schema)
                 jsonschema.validate(instance=extracted, schema=tolerant_schema)
-                log.info("extract_structured_data_valid", tokens=tokens)
+                log.info("extract_structured_data_valid", tokens=tokens, request_id=request_id, attempt_number=attempt_number)
             except jsonschema.ValidationError as ve:
                 log.warning(
                     "extract_structured_data_schema_violation",
                     error=str(ve.message),
                     tokens=tokens,
+                    request_id=request_id,
+                    attempt_number=attempt_number,
                 )
                 # Graceful: trotzdem zurückgeben, aber Warnung im Log
         else:
             log.debug("extract_structured_data_no_jsonschema")
 
-        log.info("extract_structured_data_success", tokens=tokens)
+        log.info("extract_structured_data_success", tokens=tokens, request_id=request_id, attempt_number=attempt_number)
         return {
             "success": True,
             "extracted": extracted,
@@ -672,7 +720,7 @@ async def extract_structured_data(
         }
 
     except json.JSONDecodeError as exc:
-        log.warning("extract_structured_data_json_decode_error", error=str(exc))
+        log.warning("extract_structured_data_json_decode_error", error=str(exc), request_id=request_id, attempt_number=attempt_number)
         return {
             "success": False,
             "error": f"JSON-Parsing fehlgeschlagen: {str(exc)}",
@@ -680,7 +728,7 @@ async def extract_structured_data(
             "tokens": 0,
         }
     except Exception as exc:
-        log.error("extract_structured_data_api_error", error=str(exc))
+        log.error("extract_structured_data_api_error", error=str(exc), request_id=request_id, attempt_number=attempt_number)
         return {
             "success": False,
             "error": f"API-Fehler bei Extraktion: {str(exc)}",

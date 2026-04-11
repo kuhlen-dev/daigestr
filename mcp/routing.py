@@ -135,10 +135,41 @@ def _apply_retry_meta(
             "initial_quality_score": initial_quality_score,
             "final_quality_score": final_quality_score,
             "retry_threshold_used": retry_threshold_used,
+            "attempt_count": 2 if retry_applied else 1,
+            "attempt_mode": final_mode,
         }
     )
     response.meta = MetaData(**meta)
     return response
+
+
+def _bind_request_log_context(
+    *,
+    request_id: str,
+    attempt_number: int,
+    attempt_mode: str,
+    filename: str,
+    source_type: str,
+    job_id: Optional[str],
+) -> structlog.stdlib.BoundLogger:
+    """Bind a stable log context for one logical convert attempt."""
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(
+        request_id=request_id,
+        attempt_number=attempt_number,
+        attempt_mode=attempt_mode,
+        filename=filename,
+        source_type=source_type,
+        job_id=job_id,
+    )
+    return log.bind(
+        request_id=request_id,
+        attempt_number=attempt_number,
+        attempt_mode=attempt_mode,
+        filename=filename,
+        source_type=source_type,
+        job_id=job_id,
+    )
 
 
 def _apply_explicit_template_meta(meta: dict[str, Any], template: Optional[str]) -> None:
@@ -265,6 +296,9 @@ async def finalize_url_markdown_response(
     chunk_size: int,
     output_format: str,
     compact: bool,
+    request_id: Optional[str] = None,
+    attempt_number: int = 1,
+    job_id: Optional[str] = None,
 ) -> ConvertResponse:
     """Finalize a URL-derived markdown response with the standard post-processing pipeline."""
     _classify_doc = _get("classify_document", classify_document)
@@ -274,9 +308,23 @@ async def finalize_url_markdown_response(
     _apply_auto = _get("_apply_auto_extract", _apply_auto_extract)
     _chunk_md = _get("chunk_markdown", chunk_markdown)
 
+    request_id = request_id or meta.get("request_id") or str(uuid.uuid4())
+    _attempt_log = _bind_request_log_context(
+        request_id=request_id,
+        attempt_number=attempt_number,
+        attempt_mode=mode,
+        filename=source,
+        source_type="url",
+        job_id=job_id,
+    )
+
     effective_meta = dict(meta)
     effective_meta.setdefault("source", source)
     effective_meta.setdefault("source_type", "url")
+    effective_meta["request_id"] = request_id
+    effective_meta["job_id"] = job_id
+    effective_meta["attempt_number"] = attempt_number
+    effective_meta["attempt_mode"] = mode
     _apply_explicit_template_meta(effective_meta, template)
 
     retry_on_low_quality = QUALITY_RETRY_ENABLED if retry_on_low_quality is None else retry_on_low_quality
@@ -373,7 +421,11 @@ async def finalize_url_markdown_response(
             chunk_size=chunk_size,
             output_format=output_format,
             compact=compact,
+            request_id=request_id,
+            attempt_number=attempt_number + 1,
+            job_id=job_id,
         )
+        _attempt_log.info("convert_retry_completed", retry_reason=retry_reason, next_mode=quality_retry_mode)
         final_score = retried_response.meta.quality_score
         return _apply_retry_meta(
             retried_response,
@@ -433,6 +485,9 @@ async def convert_auto(
     Intelligente Konvertierung basierend auf Dateityp.
     Kein interner Timeout — externe Limits (REST-Client, Brix-Pipeline) steuern.
     """
+    request_id = input_meta.get("_request_id") or str(uuid.uuid4())
+    effective_input_meta = {**input_meta, "_request_id": request_id}
+
     effective_retry_enabled = _get("QUALITY_RETRY_ENABLED", QUALITY_RETRY_ENABLED)
     if retry_on_low_quality is not None:
         effective_retry_enabled = retry_on_low_quality
@@ -446,12 +501,24 @@ async def convert_auto(
         effective_retry_mode = _get("QUALITY_RETRY_MODE", QUALITY_RETRY_MODE)
 
     _convert_auto_impl_fn = _get("_convert_auto_impl", _convert_auto_impl)
+    job_id = effective_input_meta.get("_job_id")
+
+    def _ensure_correlation_meta(resp: ConvertResponse, *, current_mode: str, current_attempt: int, current_attempt_count: int) -> ConvertResponse:
+        meta = resp.meta.model_dump()
+        meta["request_id"] = request_id
+        meta["job_id"] = job_id
+        meta["attempt_number"] = current_attempt
+        meta["attempt_count"] = current_attempt_count
+        meta["attempt_mode"] = current_mode
+        resp.meta = MetaData(**meta)
+        return resp
+
     response = await _convert_auto_impl_fn(
         file_data=file_data,
         filename=filename,
         source=source,
         source_type=source_type,
-        input_meta=input_meta,
+        input_meta=effective_input_meta,
         prompt=prompt,
         language=language,
         describe_images=describe_images,
@@ -476,7 +543,11 @@ async def convert_auto(
         no_cache=no_cache,
         compact=compact,
         template=template,
+        request_id=request_id,
+        attempt_number=1,
+        attempt_count=1,
     )
+    response = _ensure_correlation_meta(response, current_mode=mode, current_attempt=1, current_attempt_count=1)
 
     extraction_requested = bool(auto_extract or extract_schema or template)
     initial_score = getattr(response.meta, "quality_score", None)
@@ -507,7 +578,7 @@ async def convert_auto(
         filename=filename,
         source=source,
         source_type=source_type,
-        input_meta=input_meta,
+        input_meta=effective_input_meta,
         prompt=prompt,
         language=language,
         describe_images=describe_images,
@@ -532,6 +603,15 @@ async def convert_auto(
         no_cache=no_cache,
         compact=compact,
         template=template,
+        request_id=request_id,
+        attempt_number=2,
+        attempt_count=2,
+    )
+    retried_response = _ensure_correlation_meta(
+        retried_response,
+        current_mode=effective_retry_mode,
+        current_attempt=2,
+        current_attempt_count=2,
     )
     final_score = getattr(retried_response.meta, "quality_score", None)
     return _apply_retry_meta(
@@ -576,6 +656,9 @@ async def _convert_auto_impl(
     no_cache: bool = False,
     compact: bool = False,
     template: Optional[str] = None,
+    request_id: Optional[str] = None,
+    attempt_number: int = 1,
+    attempt_count: int = 1,
 ) -> ConvertResponse:
     """
     Eigentliche Konvertierungslogik.
@@ -602,7 +685,7 @@ async def _convert_auto_impl(
                    als unsichtbare Textschicht eingebettet (T-MKIT-033).
     """
     start_time = time.time()
-    request_id = str(uuid.uuid4())
+    request_id = request_id or input_meta.get("_request_id") or str(uuid.uuid4())
 
     # T-DAI-071: Audit-Logging — fire-and-forget
     _audit_enabled = _get("AUDIT_ENABLED", AUDIT_ENABLED)
@@ -617,6 +700,14 @@ async def _convert_auto_impl(
 
     # T-DAI-023: Job-Progress-Updates — _job_id wird aus input_meta gelesen (gesetzt von _run_async_job)
     _job_id = input_meta.get("_job_id")
+    _attempt_log = _bind_request_log_context(
+        request_id=request_id,
+        attempt_number=attempt_number,
+        attempt_mode=mode,
+        filename=filename,
+        source_type=source_type,
+        job_id=_job_id,
+    )
     _job_update_fn = _get("job_update", None)
     try:
         from templates_db import job_update as _default_job_update
@@ -626,7 +717,14 @@ async def _convert_auto_impl(
     _job_completed = False  # Guard: no more status updates after job_set_result
 
     def _update_progress(step: str, detail: str, progress: int) -> None:
-        log.info("convert_progress", step=step, detail=detail, progress=progress)
+        _attempt_log.info(
+            "convert_progress",
+            step=step,
+            detail=detail,
+            progress=progress,
+            attempt_count=attempt_count,
+            source=source,
+        )
         _audit("step", step=step, detail=detail, progress=progress)
         if _job_id and not _job_completed:
             import json as _json
@@ -644,6 +742,11 @@ async def _convert_auto_impl(
         "request",
         detail=filename,
         metadata={
+            "request_id": request_id,
+            "job_id": _job_id,
+            "attempt_number": attempt_number,
+            "attempt_count": attempt_count,
+            "attempt_mode": mode,
             "mode": mode,
             "accuracy": accuracy,
             "describe_images": describe_images,
@@ -720,6 +823,10 @@ async def _convert_auto_impl(
                 _cm = _cr.meta.model_dump()
                 _cm["cached"] = True
                 _cm["request_id"] = request_id
+                _cm["job_id"] = _job_id
+                _cm["attempt_number"] = attempt_number
+                _cm["attempt_count"] = attempt_count
+                _cm["attempt_mode"] = mode
                 _cr.meta = MetaData(**_cm)
                 _audit(
                     "response",
@@ -814,6 +921,10 @@ async def _convert_auto_impl(
         "format": ext.lstrip("."),
         "size_bytes": len(file_data),
         "request_id": request_id,
+        "job_id": _job_id,
+        "attempt_number": attempt_number,
+        "attempt_count": attempt_count,
+        "attempt_mode": mode,
     }
     _apply_explicit_template_meta(meta, template)
 
@@ -857,7 +968,11 @@ async def _convert_auto_impl(
             processed_data,
             mimetype or "image/jpeg",
             vision_prompt,
-            language
+            language,
+            request_id=request_id,
+            attempt_number=attempt_number,
+            pipeline_step="image_vision",
+            filename=filename,
         )
 
         meta["duration_ms"] = int((time.time() - start_time) * 1000)
@@ -884,7 +999,12 @@ async def _convert_auto_impl(
             # AC-015: OCR-Nachkorrektur via LLM (T-MKIT-022: auch bei accuracy="high" automatisch aktiv)
             if ocr_correct or accuracy == "high":
                 log.info("ocr_correct_start", path="vision", accuracy=accuracy)
-                correction = await _correct_ocr(markdown, language=language)
+                correction = await _correct_ocr(
+                    markdown,
+                    language=language,
+                    request_id=request_id,
+                    attempt_number=attempt_number,
+                )
                 if correction["success"]:
                     markdown = correction["corrected_text"]
                     meta["ocr_corrected"] = True
@@ -909,7 +1029,13 @@ async def _convert_auto_impl(
             meta["pipeline_steps"] = pipeline_steps
 
             if classify:
-                classify_result = await _classify_doc(markdown, classify_categories, language)
+                classify_result = await _classify_doc(
+                    markdown,
+                    classify_categories,
+                    language,
+                    request_id=request_id,
+                    attempt_number=attempt_number,
+                )
                 meta.update(classify_result)
             # AC-010: Quality Scoring
             meta.update(_calc_quality(markdown, meta))
@@ -929,7 +1055,13 @@ async def _convert_auto_impl(
                 response = await _apply_auto(response, meta, markdown, language, min_confidence, hints)
             # AC-014-2/AC-014-3: Strukturierte Extraktion falls Schema gesetzt
             elif extract_schema:
-                extraction = await _extract_struct(markdown, extract_schema, language)
+                extraction = await _extract_struct(
+                    markdown,
+                    extract_schema,
+                    language,
+                    request_id=request_id,
+                    attempt_number=attempt_number,
+                )
                 if extraction["success"]:
                     response.extracted = extraction["extracted"]
                     if accuracy == "high":
@@ -1096,8 +1228,21 @@ async def _convert_auto_impl(
             if ext == ".pdf":
                 _update_progress("scan_detection", filename, 5)
             if ext == ".pdf" and _is_scanned(temp_path):
-                log.info("scanned_pdf_detected", file=filename)
-                result = await _convert_scanned(temp_path, language=language, page_indices=_page_indices)
+                log.info(
+                    "scanned_pdf_detected",
+                    file=filename,
+                    request_id=request_id,
+                    job_id=_job_id,
+                    attempt_number=attempt_number,
+                    attempt_mode=mode,
+                )
+                result = await _convert_scanned(
+                    temp_path,
+                    language=language,
+                    page_indices=_page_indices,
+                    request_id=request_id,
+                    attempt_number=attempt_number,
+                )
                 meta["duration_ms"] = int((time.time() - start_time) * 1000)
 
                 if result["success"]:
@@ -1121,7 +1266,12 @@ async def _convert_auto_impl(
                     # AC-015: OCR-Nachkorrektur via LLM (nur wenn explizit aktiviert ODER accuracy=high)
                     if ocr_correct or accuracy == "high":
                         log.info("ocr_correct_start", path="scanned_pdf", accuracy=accuracy)
-                        correction = await _correct_ocr(scanned_markdown, language=language)
+                        correction = await _correct_ocr(
+                            scanned_markdown,
+                            language=language,
+                            request_id=request_id,
+                            attempt_number=attempt_number,
+                        )
                         if correction["success"]:
                             scanned_markdown = correction["corrected_text"]
                             meta["ocr_corrected"] = True
@@ -1152,7 +1302,13 @@ async def _convert_auto_impl(
 
                     if classify:
                         _update_progress("classify", filename, 70)
-                        classify_result = await _classify_doc(scanned_markdown, classify_categories, language)
+                        classify_result = await _classify_doc(
+                            scanned_markdown,
+                            classify_categories,
+                            language,
+                            request_id=request_id,
+                            attempt_number=attempt_number,
+                        )
                         meta.update(classify_result)
                     # AC-010: Quality Scoring
                     meta.update(_calc_quality(scanned_markdown, meta))
@@ -1189,7 +1345,13 @@ async def _convert_auto_impl(
                     # AC-014-2/AC-014-3: Strukturierte Extraktion falls Schema gesetzt
                     elif extract_schema:
                         _update_progress("extract", filename, 80)
-                        extraction = await _extract_struct(scanned_markdown, extract_schema, language)
+                        extraction = await _extract_struct(
+                            scanned_markdown,
+                            extract_schema,
+                            language,
+                            request_id=request_id,
+                            attempt_number=attempt_number,
+                        )
                         if extraction["success"]:
                             response.extracted = extraction["extracted"]
                             if accuracy == "high":
@@ -1390,7 +1552,13 @@ async def _convert_auto_impl(
 
                 if classify:
                     _update_progress("classify", filename, 70)
-                    classify_result = await _classify_doc(markdown, classify_categories, language)
+                    classify_result = await _classify_doc(
+                        markdown,
+                        classify_categories,
+                        language,
+                        request_id=request_id,
+                        attempt_number=attempt_number,
+                    )
                     meta.update(classify_result)
 
                 # AC-010: Quality Scoring
@@ -1429,7 +1597,13 @@ async def _convert_auto_impl(
                 elif extract_schema:
                     _update_progress("extract", filename, 80)
                     # AC-014-2/AC-014-3: Strukturierte Extraktion falls Schema gesetzt (kein ZUGFeRD)
-                    extraction = await _extract_struct(markdown, extract_schema, language)
+                    extraction = await _extract_struct(
+                        markdown,
+                        extract_schema,
+                        language,
+                        request_id=request_id,
+                        attempt_number=attempt_number,
+                    )
                     if extraction["success"]:
                         response.extracted = extraction["extracted"]
                         if accuracy == "high":
