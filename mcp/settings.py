@@ -68,6 +68,8 @@ RATE_LIMIT_MAX_WAIT_SECONDS = int(os.getenv("RATE_LIMIT_MAX_WAIT_SECONDS", "60")
 QUALITY_RETRY_ENABLED = os.getenv("QUALITY_RETRY_ENABLED", "false").lower() == "true"
 QUALITY_RETRY_THRESHOLD = float(os.getenv("QUALITY_RETRY_THRESHOLD", "0.75"))
 QUALITY_RETRY_MODE = os.getenv("QUALITY_RETRY_MODE", "full")
+if QUALITY_RETRY_MODE != "full":
+    raise ValueError("QUALITY_RETRY_MODE must be 'full'")
 
 # Scanned PDF Detection
 SCAN_THRESHOLD_CHARS = int(os.getenv("SCAN_THRESHOLD_CHARS", "50"))

@@ -549,6 +549,36 @@ class TestExtractHasAccuracy:
         assert captured.no_cache is True
         assert captured.compact is True
 
+    def test_extract_request_retry_fields_passed_to_convert(self):
+        """api_extract() reicht Retry-Konfiguration an ConvertRequest durch."""
+        from models import ExtractRequest
+
+        convert_req_captured = []
+
+        mock_response = MagicMock()
+        mock_response.success = True
+        mock_response.markdown = "# Test"
+        mock_response.meta = MagicMock()
+
+        async def capturing_api_convert(req):
+            convert_req_captured.append(req)
+            return mock_response
+
+        with patch.object(_server_api, "api_convert", new=AsyncMock(side_effect=capturing_api_convert)):
+            request = ExtractRequest(
+                path="/data/test.pdf",
+                extract_schema={"type": "object", "properties": {"name": {"type": "string"}}},
+                retry_on_low_quality=True,
+                quality_retry_threshold=0.72,
+                quality_retry_mode="full",
+            )
+            run_async(_server_api.api_extract(request))
+
+        captured = convert_req_captured[0]
+        assert captured.retry_on_low_quality is True
+        assert captured.quality_retry_threshold == 0.72
+        assert captured.quality_retry_mode == "full"
+
 
 # ---------------------------------------------------------------------------
 # Test: accuracy="high" aktiviert ocr_correct bei Bildern

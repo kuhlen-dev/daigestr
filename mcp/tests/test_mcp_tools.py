@@ -564,6 +564,31 @@ class TestMcpExtractSignature:
         assert call_kwargs.get("no_cache") is True
         assert call_kwargs.get("compact") is True
 
+    def test_mcp_convert_passes_quality_retry_params_to_convert_auto(self):
+        with patch.object(_server, "resolve_path") as mock_resolve, \
+             patch.object(_server, "convert_auto", new=AsyncMock()) as mock_convert_auto:
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+            mock_path.name = "test.pdf"
+            mock_path.read_bytes.return_value = b"%PDF"
+            mock_resolve.return_value = mock_path
+
+            mock_convert_auto.return_value = MagicMock(
+                model_dump_json=MagicMock(return_value='{"success": true}')
+            )
+
+            run_async(mcp_convert(
+                path="/data/test.pdf",
+                retry_on_low_quality=True,
+                quality_retry_threshold=0.71,
+                quality_retry_mode="full",
+            ))
+
+        call_kwargs = mock_convert_auto.call_args.kwargs
+        assert call_kwargs.get("retry_on_low_quality") is True
+        assert call_kwargs.get("quality_retry_threshold") == 0.71
+        assert call_kwargs.get("quality_retry_mode") == "full"
+
     def test_mcp_convert_url_applies_standard_finalization(self):
         """mcp_convert(url=...) nutzt die gemeinsame URL-Finalisierung inklusive HTML und Meta-Score."""
         convert_url_result = {"success": True, "markdown": "# HTML Page", "title": "Test"}
