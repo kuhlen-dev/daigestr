@@ -935,6 +935,9 @@ async def describe_page_images(
     page_images: list[dict],
     language: str = "de",
     progress_callback=None,
+    request_id: Optional[str] = None,
+    attempt_number: Optional[int] = None,
+    filename: Optional[str] = None,
 ) -> list[dict]:
     """Beschreibt gerenderte PDF-Seiten via Vision API.
 
@@ -945,6 +948,9 @@ async def describe_page_images(
         page_images: Liste von Dicts mit 'name', 'data' (bytes), 'page_number'.
         language: Antwortsprache ('de' oder 'en').
         progress_callback: Optional callback(detail, progress_pct).
+        request_id: Stabile Request-Korrelation für Logs und Upstream-Calls.
+        attempt_number: Interne Attempt-Nummer innerhalb eines logischen Runs.
+        filename: Ursprünglicher Dateiname für Upstream-Observability.
 
     Returns:
         Liste von Dicts mit 'name', 'description', 'page_number', 'tokens'.
@@ -973,16 +979,24 @@ async def describe_page_images(
         mimetype = "image/png"
 
         _progress = int(30 + 40 * i / total) if total else 30
-        log.info("describe_page", page=page_num, size=len(data))
+        log.info("describe_page", page=page_num, size=len(data), request_id=request_id, attempt_number=attempt_number, filename=filename)
         if progress_callback:
             progress_callback(f"page {page_num}/{total}", _progress)
 
         try:
             result = await _get("analyze_with_mistral_vision", analyze_with_mistral_vision)(
-                data, mimetype, prompt, language
+                data,
+                mimetype,
+                prompt,
+                language,
+                request_id=request_id,
+                attempt_number=attempt_number,
+                pipeline_step="describe_page",
+                page=page_num,
+                filename=filename,
             )
         except Exception as e:
-            log.warning("describe_page_failed", page=page_num, error=str(e))
+            log.warning("describe_page_failed", page=page_num, error=str(e), request_id=request_id, attempt_number=attempt_number, filename=filename)
             continue
 
         if result["success"]:
@@ -993,7 +1007,7 @@ async def describe_page_images(
                 "tokens": result.get("tokens_total", 0),
             })
         else:
-            log.warning("describe_page_vision_failed", page=page_num, error=result.get("error"))
+            log.warning("describe_page_vision_failed", page=page_num, error=result.get("error"), request_id=request_id, attempt_number=attempt_number, filename=filename)
 
     return results
 

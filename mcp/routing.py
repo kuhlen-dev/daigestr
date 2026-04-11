@@ -1531,6 +1531,12 @@ async def _convert_auto_impl(
                         _dp_sig = _insp_pages.signature(_describe_page_imgs)
                         if "progress_callback" in _dp_sig.parameters:
                             _dp_kwargs["progress_callback"] = lambda detail, pct: _update_progress("describe_page", detail, pct)
+                        if "request_id" in _dp_sig.parameters:
+                            _dp_kwargs["request_id"] = request_id
+                        if "attempt_number" in _dp_sig.parameters:
+                            _dp_kwargs["attempt_number"] = attempt_number
+                        if "filename" in _dp_sig.parameters:
+                            _dp_kwargs["filename"] = filename
                         _page_descs = await _describe_page_imgs(_page_images, **_dp_kwargs)
                         markdown = _insert_page_desc(markdown, _page_descs)
                         meta["pages_described"] = len(_page_descs)

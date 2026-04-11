@@ -5,6 +5,7 @@ Alle Tests laufen ohne Docker-Container und ohne echte API-Calls.
 Alle externen Abhängigkeiten werden per unittest.mock gemockt.
 """
 
+import importlib
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,6 +18,7 @@ from conftest import load_server_module, run_async, PNG_100x100
 # Einmal laden; alle Tests in diesem Modul teilen diese Instanz
 _server = load_server_module(use_real_pil=False)
 convert_auto = _server.convert_auto
+_images = importlib.import_module("converters.images")
 
 
 # ---------------------------------------------------------------------------
@@ -435,6 +437,39 @@ class TestModeFullPageRendering:
         assert _server.render_pdf_pages_as_images.called, "Page rendering should be called"
         assert not _server.extract_images_from_pdf.called, \
             "Individual image extraction should NOT be called in full mode for PDFs"
+
+def test_describe_page_images_propagates_request_context_to_vision():
+    captured = {}
+
+    async def fake_analyze(data, mimetype, prompt, language, **kwargs):
+        captured.update(kwargs)
+        return {
+            "success": True,
+            "markdown": "Page description",
+            "tokens_total": 42,
+        }
+
+    with patch.object(
+        _images,
+        "_get",
+        side_effect=lambda name, default=None: fake_analyze if name == "analyze_with_mistral_vision" else default,
+    ):
+        result = run_async(
+            _images.describe_page_images(
+                [{"name": "page_1.png", "data": PNG_100x100, "page_number": 1}],
+                language="de",
+                request_id="req-123",
+                attempt_number=2,
+                filename="doc.pdf",
+            )
+        )
+
+    assert result[0]["description"] == "Page description"
+    assert captured["request_id"] == "req-123"
+    assert captured["attempt_number"] == 2
+    assert captured["pipeline_step"] == "describe_page"
+    assert captured["page"] == 1
+    assert captured["filename"] == "doc.pdf"
 
 
 # ---------------------------------------------------------------------------
