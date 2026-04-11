@@ -194,3 +194,21 @@ class TestClassifyDocument:
 
         assert result["document_type"] == "invoice"
         assert abs(result["document_type_confidence"] - 0.75) < 1e-9
+
+    def test_classify_prompt_allows_literal_json_example(self):
+        """JSON-Beispiele im Prompt dürfen keine KeyError-Formatfehler auslösen."""
+        api_response = _make_mistral_response("invoice", 0.92)
+        prompt_with_literal_json = (
+            'Klassifiziere dieses Dokument.\n'
+            'Antworte nur mit JSON: {"type": "template_id", "confidence": 0.95}\n\n'
+            'Typen:\n{categories_lines}\n\n'
+            'Dokument:\n{truncated_markdown}'
+        )
+
+        with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
+             patch.object(_server, "get_prompt", return_value=prompt_with_literal_json), \
+             patch.object(_server, "call_mistral_vision_api", new=AsyncMock(return_value=api_response)):
+            result = run_async(classify_document("Rechnung Nr. 1234\nBetrag: 100 EUR"))
+
+        assert result["document_type"] == "invoice"
+        assert abs(result["document_type_confidence"] - 0.92) < 1e-9

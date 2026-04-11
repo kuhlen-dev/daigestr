@@ -61,6 +61,24 @@ def _require_db_prompt(category: str, name: str, language: str = "de") -> str:
     return _get("get_prompt", _get_prompt)(category, name, language=language)
 
 
+def _render_prompt_template(template: str, **values: Any) -> str:
+    """Render known DB placeholders without breaking on literal JSON braces."""
+    sentinel_map: dict[str, Any] = {}
+    rendered = template
+    for key, value in values.items():
+        placeholder = "{" + key + "}"
+        sentinel = f"__DAIGESTR_PROMPT_{key.upper()}__"
+        rendered = rendered.replace(placeholder, sentinel)
+        sentinel_map[sentinel] = value
+
+    rendered = rendered.replace("{", "{{").replace("}", "}}")
+
+    for sentinel in sentinel_map:
+        rendered = rendered.replace(sentinel, "{" + sentinel + "}")
+
+    return rendered.format(**sentinel_map)
+
+
 def _load_meta_schema() -> dict:
     """Load _META_SCHEMA from DB (prompt id='meta.schema'). Cached after first call."""
     raw = _require_db_prompt("meta", "schema", language="de")
@@ -188,7 +206,10 @@ async def dual_pass_validate(
         log.warning("dual_pass_validate_skipped_no_api_key")
         return markdown
 
-    prompt = _require_db_prompt("validate", "dual_pass", language="de").format(markdown=markdown)
+    prompt = _render_prompt_template(
+        _require_db_prompt("validate", "dual_pass", language="de"),
+        markdown=markdown,
+    )
 
     log.info("dual_pass_validate_start", mimetype=mimetype, markdown_len=len(markdown))
 
@@ -268,13 +289,15 @@ async def classify_document(
 
     if language == "de":
         system_prompt = _require_db_prompt("classify", "system_de", language="de")
-        user_prompt = _require_db_prompt("classify", "user_de", language="de").format(
+        user_prompt = _render_prompt_template(
+            _require_db_prompt("classify", "user_de", language="de"),
             categories_lines=categories_lines,
             truncated_markdown=truncated_markdown,
         )
     else:
         system_prompt = _require_db_prompt("classify", "system_en", language="en")
-        user_prompt = _require_db_prompt("classify", "user_en", language="en").format(
+        user_prompt = _render_prompt_template(
+            _require_db_prompt("classify", "user_en", language="en"),
             categories_lines=categories_lines,
             truncated_markdown=truncated_markdown,
         )
@@ -365,10 +388,16 @@ async def correct_ocr_text(text: str, language: str = "de") -> dict[str, Any]:
 
     if language == "de":
         system_prompt = _require_db_prompt("ocr_correct", "system_de", language="de")
-        user_prompt = _require_db_prompt("ocr_correct", "user_de", language="de").format(text=text)
+        user_prompt = _render_prompt_template(
+            _require_db_prompt("ocr_correct", "user_de", language="de"),
+            text=text,
+        )
     else:
         system_prompt = _require_db_prompt("ocr_correct", "system_en", language="en")
-        user_prompt = _require_db_prompt("ocr_correct", "user_en", language="en").format(text=text)
+        user_prompt = _render_prompt_template(
+            _require_db_prompt("ocr_correct", "user_en", language="en"),
+            text=text,
+        )
 
     payload = {
         "model": _text_model,
@@ -537,7 +566,8 @@ async def extract_structured_data(
     _doc_truncated = markdown[:_extract_max_chars]
     if language == "de":
         system_prompt = _require_db_prompt("extract", "system_de", language="de")
-        user_prompt = _require_db_prompt("extract", "user_de", language="de").format(
+        user_prompt = _render_prompt_template(
+            _require_db_prompt("extract", "user_de", language="de"),
             schema_str=_schema_str,
             template_hints=template_hints,
             meta_instruction=meta_instruction,
@@ -545,7 +575,8 @@ async def extract_structured_data(
         )
     else:
         system_prompt = _require_db_prompt("extract", "system_en", language="en")
-        user_prompt = _require_db_prompt("extract", "user_en", language="en").format(
+        user_prompt = _render_prompt_template(
+            _require_db_prompt("extract", "user_en", language="en"),
             schema_str=_schema_str,
             template_hints=template_hints,
             meta_instruction=meta_instruction,

@@ -2759,7 +2759,7 @@ INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'classify',
     'user_de',
     'Klassifiziere dieses Dokument. Wähle den spezifischsten Typ.
-Antworte AUSSCHLIESSLICH mit JSON: {"type": "template_id", "confidence": 0.95}
+Antworte AUSSCHLIESSLICH mit JSON: {{"type": "template_id", "confidence": 0.95}}
 
 Verfügbare Typen (ID: Beschreibung):
 {categories_lines}
@@ -2780,7 +2780,7 @@ INSERT INTO prompt (id, category, name, content_de, content_en) VALUES (
     'user_en',
     NULL,
     'Classify this document. Choose the most specific type.
-Respond EXCLUSIVELY with JSON: {"type": "template_id", "confidence": 0.95}
+Respond EXCLUSIVELY with JSON: {{"type": "template_id", "confidence": 0.95}}
 
 Available types (ID: description):
 {categories_lines}
