@@ -1,38 +1,70 @@
 # Daigestr — Document Intelligence Service
 
-**Drop in any document. Get back clean Markdown — with tables intact, scans OCR'd, images described, and data extracted.**
+**Turn messy business documents into reliable Markdown and structured data.**
 
-Most document-to-Markdown tools work fine until you hand them a real-world file: a scanned invoice, a DOCX full of charts, an Excel with merged cells across 12 sheets, or a meeting recording. Then they silently fail, return empty text, or lose all structure. This service fixes that.
+Daigestr is built for the moment where generic document conversion stops being useful: scanned invoices, ugly PDFs, DOCX reports with embedded charts, mixed-language mail attachments, or folders full of tax and operations documents. Those are the files that break downstream automation, force manual review, and make "just feed it into RAG" collapse in production.
 
-Built on Microsoft's [markitdown](https://github.com/microsoft/markitdown), extended with Mistral OCR-3, Vision AI, audio transcription, a Template Registry with auto-extract, a Normalization Layer that maps extracted fields to 52 unified field names across 143 document types, and a hybrid routing engine that picks the best tool for each document — automatically. Two interfaces: **MCP server** (for Claude and AI agents) and **REST API** (for n8n, workflows, and custom integrations). Self-hosted in two Docker containers. Current version: **v8.4.1**.
+Daigestr routes each document through the right path for that document: OCR for scans, better table handling for PDFs, image understanding for embedded visuals, classification and schema extraction for business workflows, and normalization for consistent downstream fields. It exposes the same core engine via **REST** for workflows and **MCP** for agents. It is self-hosted, DB-backed, and configured through `.env`.
+
+Current version: **v8.4.1**
+
+---
+
+## Why It Exists
+
+Most teams do not actually want "document conversion". They want one of these outcomes:
+
+- searchable, usable Markdown for LLMs, RAG, or archives
+- structured business data from messy source documents
+- a stable automation endpoint that does not fall apart on the first ugly PDF
+- one ingestion service instead of a pile of format-specific scripts and SaaS calls
+
+Generic converters usually work on clean samples and fail on production inputs:
+
+- **Scanned PDFs return little or nothing.** No text layer means no useful output unless OCR is part of the pipeline.
+- **Tables break at page boundaries.** Data that belongs together comes back fragmented and unreliable.
+- **Embedded visuals are lost.** Charts, diagrams, screenshots, and figures disappear into placeholders.
+- **Extraction is bolted on later.** You get text first, then have to build classification, schema extraction, and normalization separately.
+- **Automation contracts drift.** Different document types produce different shapes, names, and quality, so downstream systems become fragile.
+
+Daigestr exists to close that gap for self-hosted workflows.
+
+## What Daigestr Does
+
+Daigestr is a document ingestion engine with one job: make real-world documents usable in automation.
+
+- **Converts to Markdown** with format-aware routing instead of one blind code path for every file.
+- **Handles scans and bad PDFs** with OCR and higher-accuracy processing paths.
+- **Preserves more structure** for tables, pages, and embedded content.
+- **Extracts structured data** either from a supplied schema or from templates stored in PostgreSQL.
+- **Auto-classifies and auto-extracts** when you want one-call ingestion without choosing a template first.
+- **Normalizes extracted data** into stable downstream fields where mappings exist.
+- **Supports async jobs and webhooks** for workflow execution, not just synchronous API calls.
+- **Exposes REST and MCP** so the same core service works in classic pipelines and agent-based systems.
 
 ---
 
-## The Problem
+## Who It Is For
 
-You need documents as Markdown — for RAG pipelines, LLM context, search indexing, or archiving. Microsoft's markitdown handles clean text files well. But production documents are rarely clean:
+- teams building document-heavy automations in n8n, internal tools, or backend services
+- AI and RAG pipelines that need cleaner Markdown than generic converters produce
+- finance, tax, ops, and backoffice workflows that need extraction plus normalization
+- self-hosted environments where documents should stay in your own stack
 
-- **Scanned PDFs come back empty.** No embedded text layer → no output. Your invoices, contracts, and forms vanish.
-- **Multi-page tables get cut at page boundaries.** A 200-row dataset split across 4 pages becomes 4 unrelated fragments.
-- **Images in DOCX and PPTX are silently dropped.** Charts, architecture diagrams, screenshots — replaced with `[image]` placeholders.
-- **No intelligence.** No OCR, no document classification, no field extraction. Need invoice numbers or contract dates? Build it yourself.
-- **No audio or video.** Meeting recordings, training videos, voice memos — completely out of scope.
-- **One tool for every format.** A scanned PDF and a clean text PDF hit the exact same code path, with very different results.
+## What Makes It Different
 
-## The Solution
+- **It is opinionated about ugly inputs.** The focus is not "supports many file types"; the focus is "still useful when the file is messy".
+- **It combines conversion and extraction.** You do not need one tool for Markdown, another for classification, another for schema extraction, and another for normalization.
+- **It is DB-backed, not prompt-sprawl in code.** Templates, prompts, and normalization logic live in the configured persistence layer.
+- **It is automation-first.** Health, async jobs, templates, normalization, and webhook delivery are first-class concerns.
+- **It is agent-ready without being agent-only.** MCP is there when you need it, but the REST API remains the operational backbone.
 
-This service wraps markitdown and routes each document through the best available tool for that specific format and situation:
+## Typical Outcomes
 
-- **Hybrid Routing:** file type + content analysis determines the processing path. A scanned PDF gets OCR-3; a text PDF with tables gets pdfplumber with cross-page merging; a DOCX with diagrams gets Vision.
-- **Mistral OCR-3 for scans** — dedicated `/v1/ocr` endpoint with high accuracy ([Mistral benchmarks](https://mistral.ai/news/mistral-ocr-3): 96.6% table accuracy, 88.9% handwriting recognition). Vision model as fallback for page-by-page rendering.
-- **Cross-Page Table Merger** — consecutive tables are compared by column count; headers are deduplicated; the result is a single coherent table regardless of page breaks.
-- **Document Intelligence** — classify document type with confidence score, extract structured fields against any JSON Schema, quality scoring on every response.
-- **High-Accuracy Pipeline** — OCR-3 → LLM correction → dual-pass Vision cross-validation → schema extraction. The original image goes back to the Vision model alongside the OCR output so structural errors and column misalignments get caught and fixed.
-- **Audio and video** — faster-whisper with automatic language detection, ffmpeg audio extraction, model caching.
-- **Template Registry with Auto-Extract.** PostgreSQL-backed template database with CRUD API. `auto_extract: true` classifies the document, finds the matching template, and extracts structured data — one call, zero configuration. Every extraction includes a `_meta` block with tax relevance.
-- **37 configurable ENV variables.** Nothing is hardcoded. Model selection, timeouts, thresholds, chunk sizes — all adjustable without touching source code.
-
----
+- convert a scanned invoice PDF into searchable Markdown and extracted invoice fields
+- ingest a folder of mixed documents and keep classification and extraction consistent
+- route telecom, tax, contract, or CV documents through template-backed extraction
+- normalize extracted values so downstream systems do not need document-specific logic
 
 ## What It Looks Like
 
@@ -237,7 +269,7 @@ The architecture diagram was converted to Mermaid syntax (renderable in GitHub, 
 
 ## The Gap This Fills
 
-| Feature | markitdown (vanilla) | Unstructured.io | Azure Doc Intelligence | This Service |
+| Feature | markitdown (vanilla) | Unstructured.io | Azure Doc Intelligence | Daigestr |
 |---------|---------------------|-----------------|----------------------|--------------|
 | Scanned PDF / OCR | No | Yes | Yes | Yes (Mistral OCR-3) |
 | Cross-page table merging | No | Partial | Yes | Yes |
@@ -253,7 +285,7 @@ The architecture diagram was converted to Mermaid syntax (renderable in GitHub, 
 | Request-level cache | No | No | No | Yes (configurable TTL, clearable via API) |
 | Quality scoring | No | No | No | Yes (per-response score + grade) |
 | MCP interface | No | No | No | Yes (SSE + stdio) |
-| Self-hosted | Yes | Yes | No (cloud only) | Yes (Docker, single container) |
+| Self-hosted | Yes | Yes | No (cloud only) | Yes (Docker Compose, app + PostgreSQL) |
 | Deployment complexity | Minimal | Heavy (PyTorch + models) | Cloud SaaS | Minimal (docker compose up) |
 | Pricing | Free | Open source / paid SaaS | Per-page API cost | API cost only (Mistral) |
 
@@ -316,7 +348,7 @@ The container is lightweight by design — no PyTorch, no Java, no GPU required.
 | **GPU** | Not required | Optional | Set `WHISPER_DEVICE=cuda` for faster audio transcription |
 | **Network** | Outbound HTTPS | — | Required for Mistral API calls (Vision, OCR, classification) |
 
-Without the Mistral API key, the service still works for basic document conversion (PDF, DOCX, XLSX, etc. via markitdown) — Vision, OCR, classification, and extraction features are gracefully disabled.
+Without the Mistral API key, the service still handles basic file conversion paths, but OCR, Vision, classification, and extraction features are unavailable. PostgreSQL remains required for the DB-backed runtime.
 
 ### Installation
 
@@ -391,28 +423,32 @@ services:
   daigestr:
     build:
       context: ./mcp
-    env_file: .env          # All configuration via .env
+      args:
+        DAIGESTR_VERSION: ${DAIGESTR_VERSION:-8.4.1}
+    env_file: .env
     ports:
-      - "18005:8080"        # MCP Server (SSE)
-      - "18006:8081"        # REST API (Swagger at /docs)
+      - "${MCP_HOST_BIND:-0.0.0.0}:${MCP_HOST_PORT:-18005}:8080"
+      - "${REST_HOST_BIND:-0.0.0.0}:${REST_HOST_PORT:-18006}:8081"
+    environment:
+      - DAIGESTR_VERSION=${DAIGESTR_VERSION:-8.4.1}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-daigestr}:${POSTGRES_PASSWORD:-daigestr}@daigestr-postgres:5432/${POSTGRES_DB:-daigestr}
     volumes:
-      - ./data:/data        # Document storage
+      - ./data:/data
 
   daigestr-postgres:
-    image: postgres:16
-    env_file: .env          # POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+    image: postgres:16-alpine
+    env_file: .env
     ports:
       - "${POSTGRES_HOST_PORT:-15432}:5432"
     volumes:
       - daigestr-pgdata:/var/lib/postgresql/data
-      - ./mcp/seed.sql:/docker-entrypoint-initdb.d/seed.sql
 ```
 
-The Template Registry, request cache, and async jobs are stored in the `daigestr-postgres` PostgreSQL container and persist across restarts via the `daigestr-pgdata` volume. On first start, `seed.sql` seeds the database with default templates. All server settings are controlled through `.env`. See `.env.example` for the complete list of available variables with descriptions.
+The Template Registry, request cache, async jobs, prompts, and normalization data live in `daigestr-postgres` and persist via the `daigestr-pgdata` volume. All server settings are controlled through `.env`. See `.env.example` for the available variables.
 
 ### Dev Mode
 
-A `docker-compose.override.yml` is included that mounts all source files as volumes. Code changes are immediately available inside the container — only a container restart is needed, no rebuild.
+A local `docker-compose.override.yml` is included for development mounts. It is intentionally ignored by Git and can be adapted per machine without affecting tracked deployment config.
 
 ```bash
 # Restart after code change (no rebuild needed)
@@ -695,7 +731,7 @@ curl -X DELETE http://localhost:18006/v1/jobs/abc123
 curl http://localhost:18006/v1/jobs
 ```
 
-Job statuses: `pending` → `running` → `completed` (or `failed`). Results are kept in memory until deleted or the container restarts.
+Job statuses are `queued` → `processing` → `completed` (or `failed`). Results and status are stored in PostgreSQL, not just in process memory.
 
 ### Webhook callback
 
@@ -909,7 +945,7 @@ When you pass `classify: true`, the document type is identified (invoice, contra
 
 ### Optional: Normalized Data
 
-When `auto_extract` or `template` is used and a normalize mapping exists for the detected template, the response includes `normalized` — a dict with unified field names across all 143 document types. Enable `compact: true` for a shorter version grouped by category.
+When `auto_extract` or `template` is used and a normalize mapping exists for the detected template, the response includes `normalized` — a dict with unified downstream field names. Enable `compact: true` for a shorter version grouped by category.
 
 | Field | Present When |
 |-------|-------------|
@@ -998,7 +1034,7 @@ On error:
 
 ## Template Registry
 
-Templates live in a **PostgreSQL database** (`daigestr-postgres` container) — not hardcoded. The registry ships with 3 seed templates (`invoice`, `cv`, `contract`) and can be extended to 100+ templates via the CRUD API. Each template contains a JSON Schema for extraction, classification keywords, and optional tax relevance metadata.
+Templates live in a **PostgreSQL database** (`daigestr-postgres`) and are not hardcoded in the request path. The registry is seeded on bootstrap and can be extended through the CRUD and bulk APIs. Each template contains a JSON Schema plus matching metadata such as keywords, senders, and priority.
 
 ### How It Works
 
@@ -1026,17 +1062,9 @@ Each template in the registry has these fields:
 | `version` | Schema version for tracking updates |
 | `source` | Who created it: `seed`, `manual`, `claude`, `import` |
 
-### Seed Templates
+### Seeded Registry
 
-On first start, 3 templates are loaded from `seed.sql`:
-
-| Template | Category | Fields |
-|----------|----------|--------|
-| `invoice` | finanzen | invoice_number, date, vendor, total_amount, currency, line_items |
-| `cv` | personal | name, email, phone, education, experience, skills |
-| `contract` | recht | contract_type, parties, effective_date, expiration_date, key_terms |
-
-Additional templates are added via the API — the registry is designed for 100+ templates covering invoices, insurance, government documents, tax forms, contracts, and more.
+On first start, the database is seeded with a broader template and normalization baseline. The exact seeded set evolves with the project; use `GET /v1/templates` to inspect the current live registry on your instance.
 
 ### Template CRUD API
 
@@ -1160,6 +1188,10 @@ All settings are controlled via environment variables. Copy `.env.example` to `.
 |----------|---------|-------------|
 | `MCP_PORT` | `8080` | Internal MCP server port |
 | `REST_PORT` | `8081` | Internal REST API port |
+| `MCP_HOST_BIND` | `0.0.0.0` | Host bind address for the published MCP port |
+| `MCP_HOST_PORT` | `18005` | Published host port for MCP |
+| `REST_HOST_BIND` | `0.0.0.0` | Host bind address for the published REST port |
+| `REST_HOST_PORT` | `18006` | Published host port for REST |
 | `MCP_TRANSPORT` | `sse` | MCP transport: `sse` or `stdio` |
 | `DATA_DIR` | `/data` | Container path for document storage |
 | `TEMP_DIR` | `/tmp/markitdown` | Temporary file storage |
@@ -1320,7 +1352,7 @@ Images smaller than `MIN_IMAGE_SIZE_PX` in either dimension are skipped.
 
 ### Normalization Layer
 
-**Automatic field harmonization across 143 document types.** When extracting data from an invoice, a payslip, and an insurance claim, each template uses different field names — `brutto` vs `gesamtbetrag` vs `total_amount`. The Normalization Layer maps all of them to 52 unified field names like `amount`, `vendor_name`, `date_issued`.
+**Automatic field harmonization across many document types.** When extracting data from an invoice, a payslip, and an insurance claim, each template uses different field names — `brutto` vs `gesamtbetrag` vs `total_amount`. The Normalization Layer maps them onto a smaller stable field vocabulary for downstream systems.
 
 The 13-step pipeline runs automatically after extraction when a mapping exists:
 1. Mapping resolution (template → field assignments)
@@ -1339,7 +1371,7 @@ The 13-step pipeline runs automatically after extraction when a mapping exists:
 
 **Admin API:** 15 REST endpoints under `/v1/normalized/` for managing fields, categories, values, mappings, and correction feedback. Coverage report shows which templates have mappings.
 
-**Seed data:** 18 categories, 52 fields, 200+ allowed values, and 143 template mappings ship with the container — 100% coverage out of the box.
+**Seed data:** the project ships with a seeded normalization baseline so the system is usable immediately after bootstrap, while still allowing live extension through the admin APIs.
 
 ### Output Formats
 
@@ -1391,7 +1423,7 @@ The service runs as **two Docker containers (`daigestr` + `daigestr-postgres`)**
 | `normalizer_cache.py` | In-memory cache with version-hash invalidation for normalization schema |
 | `normalizer_db.py` | PostgreSQL CRUD for 6 normalization tables (fields, categories, values, mappings, fixtures, corrections) |
 | `api_rest_normalize.py` | FastAPI router — 15 normalization admin endpoints, prefix `/v1/normalized` |
-| `seed_normalization.sql` | Seed data: 18 categories, 52 fields, 200+ values, 143 template mappings |
+| `seed_normalization.sql` | Seed data for normalization categories, fields, values, and mappings |
 | `api_mcp.py` | FastMCP instance, all MCP tools |
 | `renderers/html.py` | Markdown → full HTML (Mermaid.js, highlight.js, CSS) |
 | `renderers/text.py` | Markdown → plain text (strip Markdown syntax) |
@@ -1454,8 +1486,8 @@ The service runs as **two Docker containers (`daigestr` + `daigestr-postgres`)**
 │          │  templates_db.py       │                 │
 │          │  Template Registry     │                 │
 │          │  (PostgreSQL + CRUD)   │                 │
-│          │  seed.sql → 3 default  │                 │
-│          │  + bulk import → 100+  │                 │
+│          │  bootstrap seeds       │                 │
+│          │  registry + prompts    │                 │
 │          │  Request Cache (TTL)   │                 │
 │          └────────────────────────┘                 │
 │                       │                             │
@@ -1494,7 +1526,7 @@ cd mcp
 python3 -m pytest tests/ -v
 ```
 
-787 unit tests cover every feature: scanned PDF detection and OCR routing, cross-page table merging, image classification and type-specific conversion, audio transcription, Excel multi-sheet and chart extraction, DOCX extras, code block detection, LLM artifact stripping, quality scoring, smart chunking, the high-accuracy pipeline, hidden data extraction (ZUGFeRD, XMP, EXIF, IPTC, hidden sheets, hidden slides), email metadata, calendar events, document properties, OCR embedding, Template Registry (CRUD, bulk, search, categories), auto-extract pipeline, _meta block extraction, classify with registry IDs, and all configuration paths.
+The pytest suite covers the core pipeline areas: scanned PDF detection and OCR routing, table extraction, image enrichment, audio transcription, schema extraction, template registry behavior, normalization, output rendering, and configuration handling.
 
 Test modules:
 
