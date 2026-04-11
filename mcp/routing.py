@@ -373,7 +373,16 @@ async def finalize_url_markdown_response(
     response = create_success_response(markdown_text, meta=effective_meta)
 
     if auto_extract and not extract_schema:
-        response = await _apply_auto(response, effective_meta, markdown_text, language, min_confidence, hints)
+        response = await _apply_auto(
+            response,
+            effective_meta,
+            markdown_text,
+            language,
+            min_confidence,
+            hints,
+            request_id=effective_meta.get("request_id"),
+            attempt_number=effective_meta.get("attempt_number"),
+        )
     elif extract_schema:
         extraction = await _extract_struct(markdown_text, extract_schema, language)
         if extraction["success"]:
@@ -1052,7 +1061,16 @@ async def _convert_auto_impl(
             response = create_success_response(markdown, meta=meta)
             # T-MKIT-036: Auto-Extract (classify → template lookup → extraction)
             if auto_extract and not extract_schema:
-                response = await _apply_auto(response, meta, markdown, language, min_confidence, hints)
+                response = await _apply_auto(
+                    response,
+                    meta,
+                    markdown,
+                    language,
+                    min_confidence,
+                    hints,
+                    request_id=request_id,
+                    attempt_number=attempt_number,
+                )
             # AC-014-2/AC-014-3: Strukturierte Extraktion falls Schema gesetzt
             elif extract_schema:
                 extraction = await _extract_struct(
@@ -1165,7 +1183,16 @@ async def _convert_auto_impl(
 
             # T-MKIT-036: Auto-Extract
             if auto_extract and not extract_schema:
-                response = await _apply_auto(response, meta, markdown, language, min_confidence, hints)
+                response = await _apply_auto(
+                    response,
+                    meta,
+                    markdown,
+                    language,
+                    min_confidence,
+                    hints,
+                    request_id=request_id,
+                    attempt_number=attempt_number,
+                )
                 if "extraction" not in audio_pipeline_steps:
                     audio_pipeline_steps.append("extraction")
                 meta["pipeline_steps"] = audio_pipeline_steps
@@ -1341,7 +1368,16 @@ async def _convert_auto_impl(
                     # T-MKIT-036: Auto-Extract (classify → template lookup → extraction)
                     if auto_extract and not extract_schema:
                         _update_progress("extract", filename, 80)
-                        response = await _apply_auto(response, meta, scanned_markdown, language, min_confidence, scanned_hints)
+                        response = await _apply_auto(
+                            response,
+                            meta,
+                            scanned_markdown,
+                            language,
+                            min_confidence,
+                            scanned_hints,
+                            request_id=request_id,
+                            attempt_number=attempt_number,
+                        )
                     # AC-014-2/AC-014-3: Strukturierte Extraktion falls Schema gesetzt
                     elif extract_schema:
                         _update_progress("extract", filename, 80)
@@ -1585,7 +1621,16 @@ async def _convert_auto_impl(
                 # T-MKIT-036: Auto-Extract (classify → template lookup → extraction)
                 if auto_extract and not extract_schema:
                     _update_progress("extract", filename, 80)
-                    response = await _apply_auto(response, meta, markdown, language, min_confidence, doc_hints)
+                    response = await _apply_auto(
+                        response,
+                        meta,
+                        markdown,
+                        language,
+                        min_confidence,
+                        doc_hints,
+                        request_id=request_id,
+                        attempt_number=attempt_number,
+                    )
                 # T-MKIT-024: ZUGFeRD Daten direkt als extracted verwenden (kein LLM nötig)
                 elif extract_schema and meta.get("zugferd") is not None:
                     _update_progress("extract", filename, 80)

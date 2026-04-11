@@ -1179,6 +1179,8 @@ async def _apply_auto_extract(
     language: str,
     min_confidence: float,
     hints: list[str],
+    request_id: Optional[str] = None,
+    attempt_number: Optional[int] = None,
 ) -> "ConvertResponse":
     """Führt Auto-Extract nach der Konvertierung durch (T-MKIT-036).
 
@@ -1193,7 +1195,13 @@ async def _apply_auto_extract(
 
     # Schritt 1: Klassifizierung wenn noch nicht vorhanden
     if not meta.get("document_type"):
-        classify_result = await _classify(markdown, None, language)
+        classify_result = await _classify(
+            markdown,
+            None,
+            language,
+            request_id=request_id,
+            attempt_number=attempt_number,
+        )
         meta.update(classify_result)
         response.meta = MetaData(**{k: v for k, v in meta.items()})
 
@@ -1210,6 +1218,8 @@ async def _apply_auto_extract(
                 markdown, schema, language,
                 field_descriptions=tmpl.get("field_descriptions"),
                 notes=tmpl.get("notes"),
+                request_id=request_id,
+                attempt_number=attempt_number,
             )
             if extraction["success"]:
                 response.extracted = extraction["extracted"]

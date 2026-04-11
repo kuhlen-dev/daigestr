@@ -680,7 +680,7 @@ class TestAccuracyHighActivatesOcrCorrectForImages:
 
         ocr_correct_called = []
 
-        async def capturing_correct_ocr_text(text, language="de"):
+        async def capturing_correct_ocr_text(text, language="de", **_kwargs):
             ocr_correct_called.append(True)
             return correction_result
 
@@ -715,7 +715,7 @@ class TestAccuracyHighActivatesOcrCorrectForImages:
 
         ocr_correct_called = []
 
-        async def capturing_correct_ocr_text(text, language="de"):
+        async def capturing_correct_ocr_text(text, language="de", **_kwargs):
             ocr_correct_called.append(True)
             return {"success": True, "corrected_text": text, "corrections_count": 0}
 
