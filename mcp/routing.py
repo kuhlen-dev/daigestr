@@ -1652,6 +1652,9 @@ def _build_tips_dict() -> dict:
             "template": {"type": "str", "default": None, "description": "Shortcut for extract_schema. Available: invoice, cv, contract"},
             "auto_extract": {"type": "bool", "default": False, "description": "Automatically classify document, find matching template, and extract structured data — all in one call. No template or extract_schema needed."},
             "min_confidence": {"type": "float", "default": 0.7, "description": "Minimum classification confidence for auto_extract to use a template (0.0-1.0)"},
+            "retry_on_low_quality": {"type": "bool|null", "default": None, "description": "Allow Daigestr to retry once with a stronger mode when the initial quality score is too low. Null = env default."},
+            "quality_retry_threshold": {"type": "float|null", "default": None, "description": "Quality threshold for the retry decision. Null = env default."},
+            "quality_retry_mode": {"values": ["full"], "default": None, "description": "Escalation mode for low-quality retry. Currently only 'full' is supported."},
             "describe_images": {"type": "bool", "default": False, "description": "Extract embedded images from PDF, DOCX, PPTX, ODT, ODP, HTML and auto-classify each one: diagrams → Mermaid syntax, charts → data tables, photos → descriptions, text scans → OCR, decorative → skipped"},
             "ocr_correct": {"type": "bool", "default": False, "description": "LLM post-correction for OCR errors"},
             "ocr_embed": {"type": "bool", "default": False, "description": "Embed OCR text layer into PDF — creates searchable PDF output"},
@@ -1670,10 +1673,20 @@ def _build_tips_dict() -> dict:
         },
         "response_fields": {
             "markdown": "Always present — the converted document as Markdown",
-            "extracted": "Only present when extract_schema or template is set — structured JSON",
+            "extracted": "Present when extract_schema, template, or auto_extract produced structured JSON. Otherwise null.",
             "chunks": "Only present when chunk=true — list of text segments with metadata",
             "meta": "Always present — processing metadata (quality_score, duration, pipeline_steps, etc.)",
             "html": "Only present when output_format='html' — standalone HTML page with CSS and Mermaid rendering",
+        },
+        "canonical_meta_fields": {
+            "meta.document_type": "Canonical document classification output.",
+            "meta.document_type_confidence": "Confidence for meta.document_type.",
+            "meta.template_used": "Canonical template identifier used or selected for extraction.",
+            "meta.template_version": "Version of the template recorded in meta.template_used.",
+            "meta.quality_score": "Canonical document/conversion quality score.",
+            "meta.quality_grade": "Grade derived from meta.quality_score.",
+            "meta.retry_applied": "True when low-quality escalation was executed.",
+            "meta.retry_reason": "Reason for retry decision: low_quality or missing_quality_score.",
         },
         "v3_meta_fields": {
             "zugferd": "ZUGFeRD/Factur-X structured invoice data (auto-extracted from PDF when present)",
@@ -1692,11 +1705,10 @@ def _build_tips_dict() -> dict:
             "description": "Automatische Normalisierung extrahierter Daten in einheitliche Feldnamen",
             "how_it_works": "Bei convert/extract: Wenn ein Mapping für den Template-Typ existiert, werden extrahierte Felder automatisch normalisiert",
             "parameters": {
-                "normalize": "true/false — Normalisierung erzwingen oder deaktivieren (Default: auto wenn Mapping vorhanden)",
                 "compact": "true/false — Kompakt-Format mit Kategorie-Gruppierung",
             },
             "response_fields": {
-                "normalized": "Normalisierte Daten mit einheitlichen Feldnamen, Typen, Validierung und Qualitäts-Score",
+                "normalized": "Normalisierte Daten mit einheitlichen Feldnamen, Typen und normalizer-spezifischen Scores",
                 "compact": "Verdichtete Version gruppiert nach Kategorien (nur wenn compact=true)",
             },
             "admin_endpoints": [
@@ -1710,12 +1722,17 @@ def _build_tips_dict() -> dict:
                 "POST/GET /v1/normalized/corrections — Korrektur-Feedback",
             ],
             "response_structure": {
-                "normalized": "Flat dict with field values. Contains _quality_score (0.0-1.0). Null fields included unless compact=true.",
+                "normalized": "Flat dict with field values. Contains normalizer-specific _quality_score and quality_score. Null fields included unless compact=true.",
                 "normalized_confidence": "Flat dict parallel to normalized. Keys = field names, Values = confidence float (0.0-1.0).",
                 "normalized_version": "String — version hash of the normalization rules.",
                 "normalized_warnings": "Array of strings — warnings (missing fields, validation errors).",
                 "normalized_trace": "Array of objects — step-by-step audit trail. Each entry: {field, source_field, raw, rule, confidence}.",
                 "normalized_context": "Dict with context: vendor_country, recipient_country, tax_country, quality_score, validation_errors.",
+            },
+            "score_semantics": {
+                "meta.quality_score": "Primary document/conversion quality score used for retry decisions and contract-level quality reporting.",
+                "normalized._quality_score": "Normalizer-internal quality score for the normalized payload only.",
+                "normalized.quality_score": "Alias of normalized._quality_score inside normalized output.",
             },
         },
         "note_mcp_vs_rest": "MCP tool 'convert' uses 'base64_data' parameter (not 'base64' like REST API)",
