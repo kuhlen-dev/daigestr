@@ -246,13 +246,25 @@ async def mcp_extract(
     filename: Optional[str] = None,
     url: Optional[str] = None,
     template: Optional[str] = None,
+    prompt: Optional[str] = None,
     language: str = "de",
     meta: Optional[dict] = None,
     accuracy: str = "standard",
     ocr_correct: bool = False,
     classify: bool = False,
+    classify_categories: Optional[list] = None,
+    describe_images: bool = False,
+    chunk: bool = False,
+    chunk_size: int = 512,
+    ocr_embed: bool = False,
+    show_formulas: bool = False,
     auto_extract: bool = False,
     min_confidence: float = 0.7,
+    mode: str = "default",
+    output_format: str = "markdown",
+    pages: Optional[str] = None,
+    no_cache: bool = False,
+    compact: bool = False,
 ) -> str:
     """
     Converts a file and extracts structured data in one step.
@@ -277,13 +289,25 @@ async def mcp_extract(
         url: URL zu Datei oder Webseite (alternativ zu path/base64_data).
         template: Vordefinierter Template-Name ('invoice', 'cv', 'contract') als
                   Alternative zu extract_schema.
+        prompt: Optionaler Custom-Prompt für Vision.
         language: Antwortsprache ('de' oder 'en').
         meta: Beliebige Metadaten (werden durchgereicht).
         accuracy: Accuracy-Modus: 'standard' (Default) oder 'high'.
         ocr_correct: OCR-Nachkorrektur via LLM aktivieren.
         classify: Dokumenttyp via LLM klassifizieren.
+        classify_categories: Erlaubte Klassifizierungs-Kategorien.
+        describe_images: Eingebettete Bilder via Vision beschreiben.
+        chunk: Smart Chunking aktivieren.
+        chunk_size: Chunk-Größe in Tokens (Default: 512).
+        ocr_embed: OCR-Text als Textschicht in gescannte PDFs einbetten.
+        show_formulas: Excel-Formeln im Output annotieren.
         auto_extract: Wenn True, wird Dokumenttyp klassifiziert, ein passendes Template gesucht und Daten extrahiert.
         min_confidence: Minimale Klassifizierungs-Konfidenz für auto_extract (Default: 0.7).
+        mode: Processing mode. 'default', 'full', 'deep'.
+        output_format: Ausgabeformat: 'markdown', 'html', 'text'.
+        pages: Seitenauswahl für PDFs.
+        no_cache: Cache für diesen Request umgehen.
+        compact: Null-Felder aus dem normalisierten Output entfernen.
     """
     # Patchable symbols via _get() for test-patchability
     _resolve_path = _get("resolve_path", resolve_path)
@@ -319,13 +343,25 @@ async def mcp_extract(
             source=str(file_path),
             source_type="file",
             input_meta=meta or {},
+            prompt=prompt,
             language=language,
+            describe_images=describe_images,
             extract_schema=effective_schema,
             accuracy=accuracy,
             ocr_correct=ocr_correct,
             classify=classify,
+            classify_categories=classify_categories,
+            show_formulas=show_formulas,
+            chunk=chunk,
+            chunk_size=chunk_size,
+            ocr_embed=ocr_embed,
             auto_extract=auto_extract,
             min_confidence=min_confidence,
+            mode=mode,
+            output_format=output_format,
+            pages=pages,
+            no_cache=no_cache,
+            compact=compact,
         )
     elif base64_data and filename:
         try:
@@ -338,13 +374,25 @@ async def mcp_extract(
             source="base64",
             source_type="base64",
             input_meta=meta or {},
+            prompt=prompt,
             language=language,
+            describe_images=describe_images,
             extract_schema=effective_schema,
             accuracy=accuracy,
             ocr_correct=ocr_correct,
             classify=classify,
+            classify_categories=classify_categories,
+            show_formulas=show_formulas,
+            chunk=chunk,
+            chunk_size=chunk_size,
+            ocr_embed=ocr_embed,
             auto_extract=auto_extract,
             min_confidence=min_confidence,
+            mode=mode,
+            output_format=output_format,
+            pages=pages,
+            no_cache=no_cache,
+            compact=compact,
         )
     elif url:
         _convert_url = _get("convert_url", convert_url)

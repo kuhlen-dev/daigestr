@@ -395,6 +395,21 @@ class TestMcpExtractSignature:
         assert "classify" in params, "mcp_extract fehlt 'classify' Parameter"
         assert params["classify"] is False
 
+    def test_mcp_extract_has_convert_wrapper_parity_params(self):
+        params = _get_params(mcp_extract)
+        assert "prompt" in params
+        assert "classify_categories" in params
+        assert "describe_images" in params
+        assert "chunk" in params
+        assert "chunk_size" in params
+        assert "ocr_embed" in params
+        assert "show_formulas" in params
+        assert "mode" in params
+        assert "output_format" in params
+        assert "pages" in params
+        assert "no_cache" in params
+        assert "compact" in params
+
     def test_mcp_extract_schema_is_optional(self):
         """extract_schema muss Optional sein (None als Default)."""
         params = _get_params(mcp_extract)
@@ -489,3 +504,50 @@ class TestMcpExtractSignature:
 
         call_kwargs = mock_convert_auto.call_args.kwargs
         assert call_kwargs.get("classify") is True
+
+    def test_mcp_extract_passes_wrapper_parity_params_to_convert_auto(self):
+        """mcp_extract reicht die erweiterten Convert-Wrapper-Felder an convert_auto durch."""
+        schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+
+        with patch.object(_server, "resolve_path") as mock_resolve, \
+             patch.object(_server, "convert_auto", new=AsyncMock()) as mock_convert_auto:
+            mock_path = MagicMock()
+            mock_path.exists.return_value = True
+            mock_path.name = "test.pdf"
+            mock_path.read_bytes.return_value = b"%PDF"
+            mock_resolve.return_value = mock_path
+
+            mock_convert_auto.return_value = MagicMock(
+                model_dump_json=MagicMock(return_value='{"success": true}')
+            )
+
+            run_async(mcp_extract(
+                extract_schema=schema,
+                path="/data/test.pdf",
+                prompt="extract carefully",
+                classify_categories=["invoice", "receipt"],
+                describe_images=True,
+                chunk=True,
+                chunk_size=256,
+                ocr_embed=True,
+                show_formulas=True,
+                mode="full",
+                output_format="html",
+                pages="2-4",
+                no_cache=True,
+                compact=True,
+            ))
+
+        call_kwargs = mock_convert_auto.call_args.kwargs
+        assert call_kwargs.get("prompt") == "extract carefully"
+        assert call_kwargs.get("classify_categories") == ["invoice", "receipt"]
+        assert call_kwargs.get("describe_images") is True
+        assert call_kwargs.get("chunk") is True
+        assert call_kwargs.get("chunk_size") == 256
+        assert call_kwargs.get("ocr_embed") is True
+        assert call_kwargs.get("show_formulas") is True
+        assert call_kwargs.get("mode") == "full"
+        assert call_kwargs.get("output_format") == "html"
+        assert call_kwargs.get("pages") == "2-4"
+        assert call_kwargs.get("no_cache") is True
+        assert call_kwargs.get("compact") is True

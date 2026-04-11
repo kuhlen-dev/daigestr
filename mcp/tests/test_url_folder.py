@@ -388,6 +388,23 @@ class TestExtractHasAccuracy:
         assert hasattr(req, "classify")
         assert req.classify is False
 
+    def test_extract_request_has_convert_parity_fields(self):
+        """ExtractRequest trägt die zentralen Convert-Wrapper-Felder."""
+        from models import ExtractRequest
+
+        req = ExtractRequest(path="/data/test.pdf", extract_schema={"type": "object"})
+        assert req.output_format == "markdown"
+        assert req.prompt is None
+        assert req.classify_categories is None
+        assert req.chunk is False
+        assert req.chunk_size == 512
+        assert req.ocr_embed is False
+        assert req.show_formulas is False
+        assert req.mode == "default"
+        assert req.pages is None
+        assert req.no_cache is False
+        assert req.compact is False
+
     def test_extract_request_accuracy_passed_to_convert(self):
         """
         api_extract() übergibt accuracy/ocr_correct/describe_images/classify
@@ -425,6 +442,52 @@ class TestExtractHasAccuracy:
         assert captured.ocr_correct is True
         assert captured.describe_images is True
         assert captured.classify is True
+
+    def test_extract_request_full_wrapper_parity_passed_to_convert(self):
+        """api_extract() reicht die relevanten Convert-Wrapper-Felder vollständig durch."""
+        from models import ExtractRequest
+
+        convert_req_captured = []
+
+        mock_response = MagicMock()
+        mock_response.success = True
+        mock_response.markdown = "# Test"
+        mock_response.meta = MagicMock()
+
+        async def capturing_api_convert(req):
+            convert_req_captured.append(req)
+            return mock_response
+
+        with patch.object(_server_api, "api_convert", new=AsyncMock(side_effect=capturing_api_convert)):
+            request = ExtractRequest(
+                path="/data/test.pdf",
+                extract_schema={"type": "object", "properties": {"name": {"type": "string"}}},
+                output_format="html",
+                prompt="extract carefully",
+                classify_categories=["invoice", "receipt"],
+                chunk=True,
+                chunk_size=256,
+                ocr_embed=True,
+                show_formulas=True,
+                mode="full",
+                pages="1-3",
+                no_cache=True,
+                compact=True,
+            )
+            run_async(_server_api.api_extract(request))
+
+        captured = convert_req_captured[0]
+        assert captured.output_format == "html"
+        assert captured.prompt == "extract carefully"
+        assert captured.classify_categories == ["invoice", "receipt"]
+        assert captured.chunk is True
+        assert captured.chunk_size == 256
+        assert captured.ocr_embed is True
+        assert captured.show_formulas is True
+        assert captured.mode == "full"
+        assert captured.pages == "1-3"
+        assert captured.no_cache is True
+        assert captured.compact is True
 
 
 # ---------------------------------------------------------------------------

@@ -314,6 +314,17 @@ class ExtractRequest(BaseModel):
     min_confidence: float = Field(0.7, ge=0.0, le=1.0, description="Minimum classification confidence for auto_extract to use a template. Below this threshold, only markdown is returned without extraction.")
 
     # Optionen
+    output_format: str = Field("markdown", description="Ausgabeformat: 'markdown', 'text', 'html'")
+
+    @field_validator("output_format")
+    @classmethod
+    def validate_extract_output_format(cls, v: str) -> str:
+        if v not in ("markdown", "html", "text"):
+            raise ValueError(f"output_format must be 'markdown', 'html', or 'text', got '{v}'")
+        return v
+
+    # Vision-spezifisch
+    prompt: Optional[str] = Field(None, description="Custom Prompt für Vision-Analyse")
     language: str = Field("de", description="Sprache für Vision-Antwort: 'de', 'en'")
 
     # Accuracy-Modus (T-MKIT-022)
@@ -334,9 +345,42 @@ class ExtractRequest(BaseModel):
 
     # Klassifizierung (T-MKIT-022)
     classify: bool = Field(False, description="When true, detects the document type (invoice, contract, cv, etc.) and returns it in meta.document_type with a confidence score.")
+    classify_categories: Optional[list[str]] = Field(None, description="Custom Klassifizierungs-Kategorien")
+
+    # Smart Chunking
+    chunk: bool = Field(False, description="When true, splits the Markdown output into RAG-ready chunks returned in the 'chunks' field.")
+    chunk_size: int = Field(512, ge=1, description="Approximate chunk size in tokens (heuristic: characters / 4). Only used when chunk=true.")
+
+    # OCR Embed
+    ocr_embed: bool = Field(False, description="When true and the document is a scanned PDF, embeds the OCR text as an invisible text layer into the PDF, making it searchable.")
+
+    # Excel-spezifisch
+    show_formulas: bool = Field(False, description="When true, Excel formula cells display as '42 [=SUM(A1:A10)]' instead of just the computed value.")
+
+    # Processing Mode
+    mode: str = Field("default", description="Processing mode. 'default': use individual parameter settings. 'full': enable all features with page-rendering for PDFs. 'deep': like full, plus per-image extraction.")
+
+    @field_validator("mode")
+    @classmethod
+    def validate_extract_mode(cls, v: str) -> str:
+        if v not in ("default", "full", "deep"):
+            raise ValueError(f"mode must be 'default', 'full' or 'deep', got '{v}'")
+        return v
+
+    # PDF Page Selection
+    pages: Optional[str] = Field(None, description="Page selection for PDFs. Syntax: '1-3', '7,14,22', '10-20,!15'. Null = all pages.")
 
     # Meta Pass-through
     meta: dict[str, Any] = Field(default_factory=dict, description="Beliebige Metadaten (werden durchgereicht)")
+
+    # Webhook
+    webhook_url: Optional[str] = Field(None, description="URL to POST the result to when conversion completes")
+
+    # Cache control
+    no_cache: bool = Field(False, description="When true, bypass cache and force fresh conversion. Result is still cached for future requests.")
+
+    # Normalisierung
+    compact: bool = Field(False, description="When true, removes null fields from the normalized output to reduce response size.")
 
 
 class TemplateResponse(BaseModel):
