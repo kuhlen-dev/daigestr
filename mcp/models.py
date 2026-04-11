@@ -2,9 +2,35 @@
 Daigestr — Datenmodelle und Schemas
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 from pydantic import BaseModel, Field, ConfigDict, field_validator
+
+
+MINIMUM_META_FIELDS: dict[str, Any] = {
+    "document_type": None,
+    "document_type_confidence": None,
+    "template_used": None,
+    "template_version": None,
+    "quality_score": None,
+    "quality_grade": None,
+    "accuracy_mode": None,
+    "pipeline_steps": None,
+}
+
+
+SUCCESS_RESPONSE_DEFAULTS: dict[str, Any] = {
+    "html": None,
+    "extracted": None,
+    "chunks": None,
+    "enriched_pdf": None,
+    "normalized": None,
+    "normalized_version": None,
+    "normalized_warnings": None,
+    "normalized_trace": None,
+    "normalized_context": None,
+    "normalized_confidence": None,
+}
 
 
 # =============================================================================
@@ -415,11 +441,12 @@ def create_success_response(
     meta: Optional[dict[str, Any]] = None
 ) -> ConvertResponse:
     """Erstellt eine einheitliche Erfolgsantwort."""
-    enriched_meta = meta or {}
-    enriched_meta["processed_at"] = datetime.utcnow().isoformat() + "Z"
+    enriched_meta = {**MINIMUM_META_FIELDS, **(meta or {})}
+    enriched_meta["processed_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     return ConvertResponse(
         success=True,
         markdown=markdown,
-        meta=MetaData(**enriched_meta)
+        meta=MetaData(**enriched_meta),
+        **SUCCESS_RESPONSE_DEFAULTS,
     )
