@@ -318,6 +318,7 @@ async def normalize(
     )
     context["vendor_country"] = vendor_country or NORMALIZE_FALLBACK_COUNTRY
     context["recipient_country"] = recipient_country or NORMALIZE_FALLBACK_COUNTRY
+    context["document_quality_score"] = meta.get("quality_score")
     # tax_country wird in Schritt 7 gesetzt
 
     # -------------------------------------------------------------------------
