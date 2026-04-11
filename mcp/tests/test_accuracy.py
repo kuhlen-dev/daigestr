@@ -564,6 +564,52 @@ class TestRateLimitHandling:
         # Muss auf RATE_LIMIT_MAX_WAIT_SECONDS (60) gecappt sein
         assert sleep_calls[0] <= 60
 
+    def test_rate_limit_logs_and_audits_request_context(self):
+        """429-Handling trägt request_id, attempt und Schritt in Log und Audit."""
+        mc = _load_mistral_client_module()
+
+        response_429 = self._make_429_response(retry_after="5")
+        response_429.raise_for_status.side_effect = _real_httpx.HTTPStatusError(
+            "429", request=MagicMock(), response=response_429
+        )
+
+        async def mock_sleep(_seconds):
+            return None
+
+        with patch("asyncio.sleep", new=mock_sleep), \
+             patch.object(mc.log, "warning") as log_warning, \
+             patch.object(mc, "_audit") as audit_mock:
+            with pytest.raises(_real_httpx.HTTPStatusError):
+                run_async(
+                    mc._handle_rate_limit(
+                        response_429,
+                        request_id="req-123",
+                        attempt_number=2,
+                        pipeline_step="extract_structured_data",
+                        page=4,
+                        filename="scan.pdf",
+                        upstream_attempt=3,
+                    )
+                )
+
+        log_warning.assert_called_once_with(
+            "rate_limited",
+            retry_after=5,
+            request_id="req-123",
+            attempt_number=2,
+            pipeline_step="extract_structured_data",
+            page=4,
+            filename="scan.pdf",
+            upstream_attempt=3,
+        )
+        audit_mock.assert_called_once()
+        assert audit_mock.call_args.kwargs["request_id"] == "req-123"
+        assert audit_mock.call_args.kwargs["metadata"]["attempt_number"] == 2
+        assert audit_mock.call_args.kwargs["metadata"]["pipeline_step"] == "extract_structured_data"
+        assert audit_mock.call_args.kwargs["metadata"]["page"] == 4
+        assert audit_mock.call_args.kwargs["metadata"]["filename"] == "scan.pdf"
+        assert audit_mock.call_args.kwargs["metadata"]["upstream_attempt"] == 3
+
     def test_all_retries_exhausted_returns_clear_error(self):
         """
         Wenn alle Retries fehlschlagen (429): analyze_with_mistral_vision gibt

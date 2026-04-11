@@ -278,11 +278,43 @@ class TestConvertScannedPdf:
         pdf = tmp_path / "scan.pdf"
         pdf.write_bytes(b"%PDF-1.4")
 
-        with patch.object(_server, "PDF2IMAGE_AVAILABLE", False):
+        with patch.object(_server, "PDF2IMAGE_AVAILABLE", False), \
+             patch.object(_server.log, "error") as log_error:
             result = run_async(convert_scanned_pdf(pdf))
 
         assert result["success"] is False
         assert "pdf2image" in result["error"].lower()
+        log_error.assert_called_once_with(
+            "pdf2image_not_available",
+            file=str(pdf),
+            request_id=None,
+            attempt_number=None,
+        )
+
+    def test_ocr3_read_failed_logs_request_context(self, tmp_path):
+        """Lesefehler im OCR3-Pfad tragen request_id und attempt_number im Error-Log."""
+        pdf = tmp_path / "scan.pdf"
+        pdf.write_bytes(b"%PDF-1.4")
+
+        with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
+             patch("pathlib.Path.read_bytes", side_effect=OSError("nope")), \
+             patch.object(_server.log, "error") as log_error:
+            result = run_async(
+                _server.convert_scanned_pdf_ocr3(
+                    pdf,
+                    request_id="req-123",
+                    attempt_number=2,
+                )
+            )
+
+        assert result["success"] is False
+        log_error.assert_any_call(
+            "ocr3_read_failed",
+            file=str(pdf),
+            error="nope",
+            request_id="req-123",
+            attempt_number=2,
+        )
 
     def test_no_api_key_returns_error(self, tmp_path):
         """Wenn MISTRAL_API_KEY fehlt → Fehler-Dict."""

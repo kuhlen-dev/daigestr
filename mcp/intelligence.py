@@ -1227,7 +1227,14 @@ async def _apply_auto_extract(
                 meta["template_version"] = tmpl.get("version", 1)
                 response.meta = MetaData(**{k: v for k, v in meta.items()})
             else:
-                log.warning("auto_extract_failed", template=tmpl["id"], error=extraction.get("error"))
+                log.warning(
+                    "auto_extract_failed",
+                    template=tmpl["id"],
+                    doc_type=doc_type,
+                    error=extraction.get("error"),
+                    request_id=request_id,
+                    attempt_number=attempt_number,
+                )
                 meta["template_used"] = None
                 response.meta = MetaData(**{k: v for k, v in meta.items()})
         else:

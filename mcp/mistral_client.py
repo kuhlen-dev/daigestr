@@ -47,6 +47,8 @@ def _retry_context(retry_state: RetryCallState) -> dict[str, Any]:
 
 
 def _log_mistral_attempt(retry_state: RetryCallState) -> None:
+    if retry_state.kwargs is not None:
+        retry_state.kwargs["upstream_attempt"] = retry_state.attempt_number
     log.info("mistral_api_attempt", **_retry_context(retry_state))
 
 
@@ -75,7 +77,16 @@ def _audit(request_id: str, event_type: str, **kwargs) -> None:
         pass  # fire-and-forget
 
 
-async def _handle_rate_limit(response: "httpx.Response") -> None:
+async def _handle_rate_limit(
+    response: "httpx.Response",
+    *,
+    request_id: Optional[str] = None,
+    attempt_number: Optional[int] = None,
+    pipeline_step: Optional[str] = None,
+    page: Optional[int] = None,
+    filename: Optional[str] = None,
+    upstream_attempt: Optional[int] = None,
+) -> None:
     """
     Wertet den Retry-After Header bei HTTP 429 aus und wartet entsprechend.
     Wenn kein Retry-After vorhanden, wird tenacity's exponentielles Backoff genutzt.
@@ -88,25 +99,59 @@ async def _handle_rate_limit(response: "httpx.Response") -> None:
         except ValueError:
             wait_seconds = 5
         wait_seconds = min(wait_seconds, RATE_LIMIT_MAX_WAIT_SECONDS)
-        log.warning("rate_limited", retry_after=wait_seconds)
+        log.warning(
+            "rate_limited",
+            retry_after=wait_seconds,
+            request_id=request_id,
+            attempt_number=attempt_number,
+            pipeline_step=pipeline_step,
+            page=page,
+            filename=filename,
+            upstream_attempt=upstream_attempt,
+        )
         _audit(
-            request_id="",
+            request_id=request_id or "",
             event_type="warning",
             step="rate_limit",
             detail=f"retry_after={wait_seconds}",
             level="warning",
-            metadata={"status_code": 429, "retry_after": wait_seconds},
+            metadata={
+                "status_code": 429,
+                "retry_after": wait_seconds,
+                "attempt_number": attempt_number,
+                "pipeline_step": pipeline_step,
+                "page": page,
+                "filename": filename,
+                "upstream_attempt": upstream_attempt,
+            },
         )
         await asyncio.sleep(wait_seconds)
     else:
-        log.warning("rate_limited", retry_after=None)
+        log.warning(
+            "rate_limited",
+            retry_after=None,
+            request_id=request_id,
+            attempt_number=attempt_number,
+            pipeline_step=pipeline_step,
+            page=page,
+            filename=filename,
+            upstream_attempt=upstream_attempt,
+        )
         _audit(
-            request_id="",
+            request_id=request_id or "",
             event_type="warning",
             step="rate_limit",
             detail="retry_after=None",
             level="warning",
-            metadata={"status_code": 429, "retry_after": None},
+            metadata={
+                "status_code": 429,
+                "retry_after": None,
+                "attempt_number": attempt_number,
+                "pipeline_step": pipeline_step,
+                "page": page,
+                "filename": filename,
+                "upstream_attempt": upstream_attempt,
+            },
         )
     response.raise_for_status()
 
@@ -127,6 +172,7 @@ async def call_mistral_vision_api(
     pipeline_step: Optional[str] = None,
     page: Optional[int] = None,
     filename: Optional[str] = None,
+    upstream_attempt: Optional[int] = None,
 ) -> dict:
     """Ruft die Mistral Vision API mit Retry-Logik auf."""
     t0 = time.monotonic()
@@ -140,11 +186,30 @@ async def call_mistral_vision_api(
             json=payload
         )
         if response.status_code == 429:
-            await _handle_rate_limit(response)
+            await _handle_rate_limit(
+                response,
+                request_id=request_id,
+                attempt_number=attempt_number,
+                pipeline_step=pipeline_step,
+                page=page,
+                filename=filename,
+                upstream_attempt=upstream_attempt,
+            )
         response.raise_for_status()
         data = response.json()
         duration_ms = int((time.monotonic() - t0) * 1000)
         usage = data.get("usage", {})
+        upstream_attempts_used = upstream_attempt or 1
+        log.info(
+            "mistral_api_completed",
+            request_id=request_id,
+            attempt_number=attempt_number,
+            pipeline_step=pipeline_step,
+            page=page,
+            filename=filename,
+            upstream_attempts_used=upstream_attempts_used,
+            call="call_mistral_vision_api",
+        )
         _audit(
             request_id=request_id or "",
             event_type="mistral_call",
@@ -159,6 +224,7 @@ async def call_mistral_vision_api(
                 "pipeline_step": pipeline_step,
                 "page": page,
                 "filename": filename,
+                "upstream_attempts_used": upstream_attempts_used,
             },
         )
         return data
@@ -179,6 +245,7 @@ async def call_mistral_ocr_api(
     request_id: Optional[str] = None,
     attempt_number: Optional[int] = None,
     pipeline_step: Optional[str] = None,
+    upstream_attempt: Optional[int] = None,
 ) -> dict:
     """Ruft die Mistral OCR API (/v1/ocr) auf."""
     b64 = base64.b64encode(file_data).decode("utf-8")
@@ -200,11 +267,28 @@ async def call_mistral_ocr_api(
             json=payload,
         )
         if response.status_code == 429:
-            await _handle_rate_limit(response)
+            await _handle_rate_limit(
+                response,
+                request_id=request_id,
+                attempt_number=attempt_number,
+                pipeline_step=pipeline_step,
+                filename=filename,
+                upstream_attempt=upstream_attempt,
+            )
         response.raise_for_status()
         data = response.json()
         duration_ms = int((time.monotonic() - t0) * 1000)
         usage = data.get("usage", {})
+        upstream_attempts_used = upstream_attempt or 1
+        log.info(
+            "mistral_api_completed",
+            request_id=request_id,
+            attempt_number=attempt_number,
+            pipeline_step=pipeline_step,
+            filename=filename,
+            upstream_attempts_used=upstream_attempts_used,
+            call="call_mistral_ocr_api",
+        )
         _audit(
             request_id=request_id or "",
             event_type="mistral_call",
@@ -218,6 +302,7 @@ async def call_mistral_ocr_api(
                 "attempt_number": attempt_number,
                 "pipeline_step": pipeline_step,
                 "filename": filename,
+                "upstream_attempts_used": upstream_attempts_used,
             },
         )
         return data
@@ -346,14 +431,30 @@ async def analyze_with_mistral_vision(
         except Exception:
             pass
         if status_code == 429:
-            log.error("vision_api_rate_limit_exhausted", retries=MAX_RETRIES)
+            log.error(
+                "vision_api_rate_limit_exhausted",
+                retries=MAX_RETRIES,
+                request_id=request_id,
+                attempt_number=attempt_number,
+                pipeline_step=pipeline_step,
+                page=page,
+                filename=filename,
+            )
             _audit(
-                request_id="",
+                request_id=request_id or "",
                 event_type="warning",
                 step="vision_rate_limit_exhausted",
                 level="warning",
                 error=error_detail,
-                metadata={"model": vision_model, "retries": MAX_RETRIES, "status_code": 429},
+                metadata={
+                    "model": vision_model,
+                    "retries": MAX_RETRIES,
+                    "status_code": 429,
+                    "attempt_number": attempt_number,
+                    "pipeline_step": pipeline_step,
+                    "page": page,
+                    "filename": filename,
+                },
             )
             return {
                 "success": False,

@@ -563,3 +563,41 @@ class TestMetaDataFields:
         data = json.loads(meta.model_dump_json())
         assert data["template_used"] == "invoice"
         assert data["template_version"] == 2
+
+
+def test_auto_extract_failed_logs_request_context():
+    meta = {
+        "document_type": "invoice",
+        "document_type_confidence": 0.95,
+    }
+    response = _server.create_success_response("ok", meta=meta)
+    template_row = {
+        "id": "invoice",
+        "version": 3,
+        "schema": {"type": "object"},
+    }
+
+    with patch.object(_server, "find_matching_template", return_value=template_row), \
+         patch.object(_server, "extract_structured_data", new=AsyncMock(return_value={"success": False, "error": "boom"})), \
+         patch.object(_server.log, "warning") as log_warning:
+        run_async(
+            _server._apply_auto_extract(
+                response,
+                meta,
+                "Invoice markdown",
+                "de",
+                0.7,
+                [],
+                request_id="req-123",
+                attempt_number=2,
+            )
+        )
+
+    log_warning.assert_called_once_with(
+        "auto_extract_failed",
+        template="invoice",
+        doc_type="invoice",
+        error="boom",
+        request_id="req-123",
+        attempt_number=2,
+    )

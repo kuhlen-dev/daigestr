@@ -420,7 +420,7 @@ async def convert_scanned_pdf_ocr3(
     try:
         file_data = file_path.read_bytes()
     except Exception as e:
-        log.error("ocr3_read_failed", file=str(file_path), error=str(e))
+        log.error("ocr3_read_failed", file=str(file_path), error=str(e), request_id=request_id, attempt_number=attempt_number)
         return {
             "success": False,
             "error_code": ErrorCode.CONVERSION_FAILED,
@@ -588,7 +588,7 @@ async def convert_scanned_pdf(
 
     # Fallback / direkter Pfad: Mistral Vision (pdf2image)
     if not _get("PDF2IMAGE_AVAILABLE", PDF2IMAGE_AVAILABLE):
-        log.error("pdf2image_not_available", file=str(file_path))
+        log.error("pdf2image_not_available", file=str(file_path), request_id=request_id, attempt_number=attempt_number)
         return {
             "success": False,
             "error_code": ErrorCode.CONVERSION_FAILED,
@@ -607,7 +607,7 @@ async def convert_scanned_pdf(
     try:
         pages = _get("convert_from_path", convert_from_path)(str(file_path), dpi=PDF_RENDER_DPI)
     except Exception as e:
-        log.error("pdf2image_convert_failed", file=str(file_path), error=str(e))
+        log.error("pdf2image_convert_failed", file=str(file_path), error=str(e), request_id=request_id, attempt_number=attempt_number)
         return {
             "success": False,
             "error_code": ErrorCode.CONVERSION_FAILED,

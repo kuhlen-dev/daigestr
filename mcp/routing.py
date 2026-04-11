@@ -345,7 +345,12 @@ async def finalize_url_markdown_response(
 
     effective_ocr_correct = ocr_correct or (accuracy == "high")
     if effective_ocr_correct:
-        ocr_result = await _correct_ocr(markdown_text, language)
+        ocr_result = await _correct_ocr(
+            markdown_text,
+            language,
+            request_id=effective_meta.get("request_id"),
+            attempt_number=effective_meta.get("attempt_number"),
+        )
         if ocr_result.get("success"):
             markdown_text = ocr_result["corrected_text"]
             effective_meta["ocr_corrected"] = True
@@ -353,7 +358,13 @@ async def finalize_url_markdown_response(
             pipeline_steps.append("ocr_correction")
 
     if classify:
-        classify_result = await _classify_doc(markdown_text, classify_categories, language)
+        classify_result = await _classify_doc(
+            markdown_text,
+            classify_categories,
+            language,
+            request_id=effective_meta.get("request_id"),
+            attempt_number=effective_meta.get("attempt_number"),
+        )
         effective_meta.update(classify_result)
         pipeline_steps.append("classify")
 
@@ -384,7 +395,13 @@ async def finalize_url_markdown_response(
             attempt_number=effective_meta.get("attempt_number"),
         )
     elif extract_schema:
-        extraction = await _extract_struct(markdown_text, extract_schema, language)
+        extraction = await _extract_struct(
+            markdown_text,
+            extract_schema,
+            language,
+            request_id=effective_meta.get("request_id"),
+            attempt_number=effective_meta.get("attempt_number"),
+        )
         if extraction["success"]:
             response.extracted = extraction["extracted"]
             updated_steps = list(effective_meta.get("pipeline_steps", pipeline_steps))
@@ -409,6 +426,13 @@ async def finalize_url_markdown_response(
     )
     if should_retry:
         retry_reason = "missing_quality_score" if score is None else "low_quality"
+        _attempt_log.info(
+            "convert_retry_triggered",
+            retry_reason=retry_reason,
+            initial_quality_score=score,
+            retry_threshold_used=float(quality_retry_threshold),
+            next_mode=quality_retry_mode,
+        )
         retried_response = await finalize_url_markdown_response(
             markdown,
             meta=meta,
@@ -434,7 +458,14 @@ async def finalize_url_markdown_response(
             attempt_number=attempt_number + 1,
             job_id=job_id,
         )
-        _attempt_log.info("convert_retry_completed", retry_reason=retry_reason, next_mode=quality_retry_mode)
+        _attempt_log.info(
+            "convert_retry_completed",
+            retry_reason=retry_reason,
+            initial_quality_score=score,
+            final_quality_score=retried_response.meta.quality_score,
+            retry_threshold_used=float(quality_retry_threshold),
+            next_mode=quality_retry_mode,
+        )
         final_score = retried_response.meta.quality_score
         return _apply_retry_meta(
             retried_response,
