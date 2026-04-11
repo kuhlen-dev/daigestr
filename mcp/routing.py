@@ -319,6 +319,64 @@ async def convert_auto(
     Intelligente Konvertierung basierend auf Dateityp.
     Kein interner Timeout — externe Limits (REST-Client, Brix-Pipeline) steuern.
     """
+    effective_retry_enabled = _get("QUALITY_RETRY_ENABLED", QUALITY_RETRY_ENABLED)
+    if retry_on_low_quality is not None:
+        effective_retry_enabled = retry_on_low_quality
+
+    effective_retry_threshold = quality_retry_threshold
+    if effective_retry_threshold is None:
+        effective_retry_threshold = _get("QUALITY_RETRY_THRESHOLD", QUALITY_RETRY_THRESHOLD)
+
+    effective_retry_mode = quality_retry_mode
+    if effective_retry_mode is None:
+        effective_retry_mode = _get("QUALITY_RETRY_MODE", QUALITY_RETRY_MODE)
+
+    response = await _convert_auto_impl(
+        file_data=file_data,
+        filename=filename,
+        source=source,
+        source_type=source_type,
+        input_meta=input_meta,
+        prompt=prompt,
+        language=language,
+        describe_images=describe_images,
+        describe_pages=describe_pages,
+        classify=classify,
+        classify_categories=classify_categories,
+        extract_schema=extract_schema,
+        ocr_correct=ocr_correct,
+        show_formulas=show_formulas,
+        chunk=chunk,
+        chunk_size=chunk_size,
+        accuracy=accuracy,
+        ocr_embed=ocr_embed,
+        auto_extract=auto_extract,
+        min_confidence=min_confidence,
+        retry_on_low_quality=retry_on_low_quality,
+        quality_retry_threshold=quality_retry_threshold,
+        quality_retry_mode=quality_retry_mode,
+        mode=mode,
+        output_format=output_format,
+        pages=pages,
+        no_cache=no_cache,
+        compact=compact,
+        template=template,
+    )
+
+    extraction_requested = bool(auto_extract or extract_schema or template)
+    initial_score = getattr(response.meta, "quality_score", None)
+    should_retry = (
+        bool(effective_retry_enabled)
+        and mode == "default"
+        and extraction_requested
+        and response.success
+        and effective_retry_mode == "full"
+        and (initial_score is None or initial_score < float(effective_retry_threshold))
+    )
+
+    if not should_retry:
+        return response
+
     return await _convert_auto_impl(
         file_data=file_data,
         filename=filename,
@@ -340,7 +398,10 @@ async def convert_auto(
         ocr_embed=ocr_embed,
         auto_extract=auto_extract,
         min_confidence=min_confidence,
-        mode=mode,
+        retry_on_low_quality=False,
+        quality_retry_threshold=effective_retry_threshold,
+        quality_retry_mode=effective_retry_mode,
+        mode=effective_retry_mode,
         output_format=output_format,
         pages=pages,
         no_cache=no_cache,
@@ -458,6 +519,10 @@ async def _convert_auto_impl(
             "source_type": source_type,
         },
     )
+
+    retry_on_low_quality = QUALITY_RETRY_ENABLED if retry_on_low_quality is None else retry_on_low_quality
+    quality_retry_threshold = QUALITY_RETRY_THRESHOLD if quality_retry_threshold is None else quality_retry_threshold
+    quality_retry_mode = QUALITY_RETRY_MODE if quality_retry_mode is None else quality_retry_mode
 
     # T-DAI-030: Mode-Resolution — 'full' = page-rendering, 'deep' = full + Einzelbilder
     if mode == "full":
