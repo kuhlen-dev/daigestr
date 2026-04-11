@@ -323,6 +323,7 @@ async def _api_convert_impl(request: ConvertRequest) -> ConvertResponse:
                     template=request.template,
                     auto_extract=request.auto_extract,
                     min_confidence=request.min_confidence,
+                    mode=request.mode,
                     retry_on_low_quality=request.retry_on_low_quality,
                     quality_retry_threshold=request.quality_retry_threshold,
                     quality_retry_mode=request.quality_retry_mode,

@@ -212,6 +212,45 @@ class TestUrlGoesthroughConvertAuto:
         assert result.meta.document_type == "invoice"
         assert result.meta.document_type_confidence == 0.93
 
+    def test_url_html_retry_escalates_from_default_to_full(self):
+        """HTML-URL-Finalisierung eskaliert bei niedriger Qualität deterministisch auf full."""
+        from models import ConvertRequest
+
+        head_resp = MagicMock()
+        head_resp.headers = {"content-type": "text/html; charset=utf-8"}
+
+        client = AsyncMock()
+        client.head = AsyncMock(return_value=head_resp)
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+
+        httpx_mock = MagicMock()
+        httpx_mock.AsyncClient = MagicMock(return_value=client)
+
+        convert_url_result = {"success": True, "markdown": "# HTML Page", "title": "Test"}
+        classify_result = {"document_type": "invoice", "document_type_confidence": 0.93}
+
+        with patch.object(_server_api, "httpx", httpx_mock), \
+             patch.object(_server_api, "convert_url", new=AsyncMock(return_value=convert_url_result)), \
+             patch.object(_server_api, "calculate_quality_score", side_effect=[
+                 {"quality_score": 0.41, "quality_grade": "poor"},
+                 {"quality_score": 0.92, "quality_grade": "excellent"},
+             ]), \
+             patch.object(_server_api, "_apply_auto_extract", new=AsyncMock(side_effect=lambda response, *args, **kwargs: response)), \
+             patch.object(_server_api, "classify_document", new=AsyncMock(return_value=classify_result)) as classify_mock:
+            request = ConvertRequest(
+                url="https://example.com/page.html",
+                retry_on_low_quality=True,
+                quality_retry_threshold=0.75,
+                quality_retry_mode="full",
+            )
+            result = run_async(_server_api.api_convert(request))
+
+        assert result.success is True
+        assert result.meta.quality_score == 0.92
+        assert result.meta.accuracy_mode == "high"
+        assert classify_mock.await_count == 1
+
     def test_url_download_failure_returns_error(self):
         """
         Wenn der URL-Download fehlschlägt, gibt api_convert() einen Fehler zurück.

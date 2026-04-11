@@ -228,6 +228,7 @@ from templates_db import (  # noqa: F401
 # Re-export routing functions for backwards-compatibility
 from routing import (  # noqa: F401
     convert_auto,
+    _convert_auto_impl,
     convert_folder_contents,
     convert_url,
     _build_tips_dict,

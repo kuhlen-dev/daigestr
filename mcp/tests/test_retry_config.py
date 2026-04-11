@@ -49,17 +49,15 @@ def test_invalid_quality_retry_mode_is_rejected():
 
 
 def test_convert_auto_preserves_unset_retry_fields_until_impl(monkeypatch):
-    import routing as routing_mod
-
     captured = {}
 
     async def fake_impl(**kwargs):
         captured.update(kwargs)
         return _server.create_success_response("# ok")
 
-    monkeypatch.setattr(routing_mod, "_convert_auto_impl", fake_impl)
+    monkeypatch.setattr(_server, "_convert_auto_impl", fake_impl)
 
-    result = run_async(routing_mod.convert_auto(
+    result = run_async(_server.convert_auto(
         file_data=b"test",
         filename="test.txt",
         source="base64",

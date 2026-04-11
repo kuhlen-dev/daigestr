@@ -4,7 +4,7 @@
 
 Daigestr is for the point where generic document conversion stops being useful: scanned invoices, ugly PDFs, DOCX reports with embedded charts, mixed-language attachments, or document folders that break downstream automation. It converts, classifies, extracts, and normalizes documents through one self-hosted service with a REST API for workflows and an MCP interface for agents.
 
-Current version: **v10.3.1**
+Current version: **v10.3.2**
 
 ## Why Teams Use It
 

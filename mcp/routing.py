@@ -113,6 +113,34 @@ _EXAMPLE_URL = "https://example.com"  # Example URL for documentation purposes o
 _brix_available_cache: dict = {"available": None, "checked_at": 0}
 
 
+def _apply_retry_meta(
+    response: ConvertResponse,
+    *,
+    retry_applied: bool,
+    retry_reason: Optional[str],
+    initial_mode: str,
+    final_mode: str,
+    initial_quality_score: Optional[float],
+    final_quality_score: Optional[float],
+    retry_threshold_used: Optional[float],
+) -> ConvertResponse:
+    """Annotate the canonical meta block with retry decision metadata."""
+    meta = response.meta.model_dump()
+    meta.update(
+        {
+            "retry_applied": retry_applied,
+            "retry_reason": retry_reason,
+            "initial_mode": initial_mode,
+            "final_mode": final_mode,
+            "initial_quality_score": initial_quality_score,
+            "final_quality_score": final_quality_score,
+            "retry_threshold_used": retry_threshold_used,
+        }
+    )
+    response.meta = MetaData(**meta)
+    return response
+
+
 def _is_brix_available() -> bool:
     """Lazy Brix health-check mit 5-Minuten-Cache."""
     _brix_url = _get("BRIX_URL", BRIX_URL)
@@ -212,6 +240,7 @@ async def finalize_url_markdown_response(
     template: Optional[str],
     auto_extract: bool,
     min_confidence: float,
+    mode: str,
     retry_on_low_quality: Optional[bool],
     quality_retry_threshold: Optional[float],
     quality_retry_mode: Optional[str],
@@ -231,6 +260,18 @@ async def finalize_url_markdown_response(
     effective_meta = dict(meta)
     effective_meta.setdefault("source", source)
     effective_meta.setdefault("source_type", "url")
+
+    retry_on_low_quality = QUALITY_RETRY_ENABLED if retry_on_low_quality is None else retry_on_low_quality
+    quality_retry_threshold = QUALITY_RETRY_THRESHOLD if quality_retry_threshold is None else quality_retry_threshold
+    quality_retry_mode = QUALITY_RETRY_MODE if quality_retry_mode is None else quality_retry_mode
+
+    if mode == "full":
+        accuracy = "high"
+        classify = True
+        ocr_correct = True
+        auto_extract = True
+        chunk = True
+
     effective_meta["accuracy_mode"] = accuracy
 
     markdown_text = markdown
@@ -281,7 +322,41 @@ async def finalize_url_markdown_response(
     response = await _apply_normalizer(response, effective_meta, norm_template, compact)
     if chunk:
         response.chunks = _chunk_md(markdown_text, chunk_size=chunk_size, source=source)
-    return _apply_output_format(response, output_format)
+    response = _apply_output_format(response, output_format)
+
+    score = response.meta.quality_score
+    should_retry = (
+        response.success
+        and retry_on_low_quality
+        and mode == "default"
+        and quality_retry_mode == "full"
+        and (score is None or score < quality_retry_threshold)
+    )
+    if should_retry:
+        return await finalize_url_markdown_response(
+            markdown,
+            meta=meta,
+            source=source,
+            language=language,
+            accuracy=accuracy,
+            classify=classify,
+            classify_categories=classify_categories,
+            ocr_correct=ocr_correct,
+            extract_schema=extract_schema,
+            template=template,
+            auto_extract=auto_extract,
+            min_confidence=min_confidence,
+            mode=quality_retry_mode,
+            retry_on_low_quality=False,
+            quality_retry_threshold=quality_retry_threshold,
+            quality_retry_mode=quality_retry_mode,
+            chunk=chunk,
+            chunk_size=chunk_size,
+            output_format=output_format,
+            compact=compact,
+        )
+
+    return response
 
 
 async def convert_auto(
@@ -331,7 +406,8 @@ async def convert_auto(
     if effective_retry_mode is None:
         effective_retry_mode = _get("QUALITY_RETRY_MODE", QUALITY_RETRY_MODE)
 
-    response = await _convert_auto_impl(
+    _convert_auto_impl_fn = _get("_convert_auto_impl", _convert_auto_impl)
+    response = await _convert_auto_impl_fn(
         file_data=file_data,
         filename=filename,
         source=source,
@@ -375,9 +451,19 @@ async def convert_auto(
     )
 
     if not should_retry:
-        return response
+        return _apply_retry_meta(
+            response,
+            retry_applied=False,
+            retry_reason=None,
+            initial_mode=mode,
+            final_mode=mode,
+            initial_quality_score=initial_score,
+            final_quality_score=initial_score,
+            retry_threshold_used=float(effective_retry_threshold) if effective_retry_enabled else None,
+        )
 
-    return await _convert_auto_impl(
+    retry_reason = "missing_quality_score" if initial_score is None else "low_quality"
+    retried_response = await _convert_auto_impl_fn(
         file_data=file_data,
         filename=filename,
         source=source,
@@ -407,6 +493,17 @@ async def convert_auto(
         no_cache=no_cache,
         compact=compact,
         template=template,
+    )
+    final_score = getattr(retried_response.meta, "quality_score", None)
+    return _apply_retry_meta(
+        retried_response,
+        retry_applied=True,
+        retry_reason=retry_reason,
+        initial_mode=mode,
+        final_mode=effective_retry_mode,
+        initial_quality_score=initial_score,
+        final_quality_score=final_score,
+        retry_threshold_used=float(effective_retry_threshold),
     )
 
 
@@ -811,7 +908,8 @@ async def _convert_auto_impl(
             # FR-MKIT-011: Smart Chunking für RAG
             if chunk:
                 response.chunks = _chunk_md(markdown, chunk_size=chunk_size, source=source)
-            return _cache_and_return(_apply_output_format(response, output_format))
+            response = _apply_output_format(response, output_format)
+            return _cache_and_return(response)
         else:
             _err = create_error_response(result.get("error_code", ErrorCode.VISION_FAILED), result["error"], meta=meta)
             _audit("response", detail=filename, duration_ms=int((time.time() - start_time) * 1000),
@@ -916,7 +1014,8 @@ async def _convert_auto_impl(
             # FR-MKIT-011: Smart Chunking für RAG
             if chunk:
                 response.chunks = _chunk_md(markdown, chunk_size=chunk_size, source=source)
-            return _cache_and_return(_apply_output_format(response, output_format))
+            response = _apply_output_format(response, output_format)
+            return _cache_and_return(response)
 
         finally:
             temp_media_path.unlink(missing_ok=True)
@@ -1072,7 +1171,8 @@ async def _convert_auto_impl(
                         response.chunks = _chunk_md(scanned_markdown, chunk_size=chunk_size, source=source)
                     _update_progress("render", output_format, 95)
                     _update_progress("done", filename, 100)
-                    return _cache_and_return(_apply_output_format(response, output_format))
+                    response = _apply_output_format(response, output_format)
+                    return _cache_and_return(response)
                 else:
                     _err = create_error_response(result.get("error_code", ErrorCode.CONVERSION_FAILED), result["error"], meta=meta)
                     _audit("response", detail=filename, duration_ms=int((time.time() - start_time) * 1000),
@@ -1311,7 +1411,8 @@ async def _convert_auto_impl(
                     response.chunks = _chunk_md(markdown, chunk_size=chunk_size, source=source)
                 _update_progress("render", output_format, 95)
                 _update_progress("done", filename, 100)
-                return _cache_and_return(_apply_output_format(response, output_format))
+                response = _apply_output_format(response, output_format)
+                return _cache_and_return(response)
             else:
                 _err = create_error_response(result.get("error_code", ErrorCode.CONVERSION_FAILED), result["error"], meta=meta)
                 _audit("response", detail=filename, duration_ms=int((time.time() - start_time) * 1000),
