@@ -135,3 +135,8 @@ class TestSettingsDefaults:
     def test_backward_compat_alias(self, settings):
         """_CLASSIFY_CACHE_TTL Alias muss gleichen Wert wie CLASSIFY_CACHE_TTL haben."""
         assert settings._CLASSIFY_CACHE_TTL == settings.CLASSIFY_CACHE_TTL
+
+    def test_quality_retry_defaults(self, settings):
+        assert settings.QUALITY_RETRY_ENABLED is False
+        assert settings.QUALITY_RETRY_THRESHOLD == 0.75
+        assert settings.QUALITY_RETRY_MODE == "full"

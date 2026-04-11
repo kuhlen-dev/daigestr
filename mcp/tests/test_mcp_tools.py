@@ -119,6 +119,15 @@ class TestMcpConvertSignature:
         assert "chunk_size" in params, "mcp_convert fehlt 'chunk_size' Parameter"
         assert params["chunk_size"] == 512
 
+    def test_mcp_convert_has_low_quality_retry_params(self):
+        params = _get_params(mcp_convert)
+        assert "retry_on_low_quality" in params
+        assert params["retry_on_low_quality"] is None
+        assert "quality_retry_threshold" in params
+        assert params["quality_retry_threshold"] is None
+        assert "quality_retry_mode" in params
+        assert params["quality_retry_mode"] is None
+
     def test_mcp_convert_has_extract_schema_param(self):
         params = _get_params(mcp_convert)
         assert "extract_schema" in params, "mcp_convert fehlt 'extract_schema' Parameter"
@@ -409,6 +418,9 @@ class TestMcpExtractSignature:
         assert "pages" in params
         assert "no_cache" in params
         assert "compact" in params
+        assert "retry_on_low_quality" in params
+        assert "quality_retry_threshold" in params
+        assert "quality_retry_mode" in params
 
     def test_mcp_extract_schema_is_optional(self):
         """extract_schema muss Optional sein (None als Default)."""

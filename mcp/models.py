@@ -259,6 +259,18 @@ class ConvertRequest(BaseModel):
     auto_extract: bool = Field(False, description="When true, automatically classifies the document, looks up a matching template from the registry, and extracts structured data — all in one call. No need to specify template or extract_schema.")
     min_confidence: float = Field(0.7, ge=0.0, le=1.0, description="Minimum classification confidence for auto_extract to use a template. Below this threshold, only markdown is returned without extraction.")
 
+    # Low-Quality Escalation (E10/W10.3)
+    retry_on_low_quality: Optional[bool] = Field(None, description="Override the server-side low-quality retry setting. true enables a deterministic second pass when the first quality score is too low or unavailable. null = use env default.")
+    quality_retry_threshold: Optional[float] = Field(None, ge=0.0, le=1.0, description="Optional quality-score threshold for low-quality retry escalation. Null = use env default.")
+    quality_retry_mode: Optional[str] = Field(None, description="Override the retry mode used for low-quality retry escalation. Null = use env default. Currently only 'full' is supported.")
+
+    @field_validator("quality_retry_mode")
+    @classmethod
+    def validate_quality_retry_mode(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v != "full":
+            raise ValueError(f"quality_retry_mode must be 'full', got '{v}'")
+        return v
+
     # Processing Mode (T-DAI-015)
     mode: str = Field("default", description="Processing mode. 'default': use individual parameter settings. 'full': enable all features with page-rendering for PDFs (describe_pages, accuracy=high, classify, ocr_correct, auto_extract, chunk). 'deep': like full, plus per-image extraction with classification (diagram→Mermaid, chart→table, photo→description).")
 
@@ -312,6 +324,18 @@ class ExtractRequest(BaseModel):
     # Auto-Extract (T-MKIT-036)
     auto_extract: bool = Field(False, description="When true, automatically classifies the document, looks up a matching template from the registry, and extracts structured data — all in one call. No need to specify template or extract_schema.")
     min_confidence: float = Field(0.7, ge=0.0, le=1.0, description="Minimum classification confidence for auto_extract to use a template. Below this threshold, only markdown is returned without extraction.")
+
+    # Low-Quality Escalation (E10/W10.3)
+    retry_on_low_quality: Optional[bool] = Field(None, description="Override the server-side low-quality retry setting. true enables a deterministic second pass when the first quality score is too low or unavailable. null = use env default.")
+    quality_retry_threshold: Optional[float] = Field(None, ge=0.0, le=1.0, description="Optional quality-score threshold for low-quality retry escalation. Null = use env default.")
+    quality_retry_mode: Optional[str] = Field(None, description="Override the retry mode used for low-quality retry escalation. Null = use env default. Currently only 'full' is supported.")
+
+    @field_validator("quality_retry_mode")
+    @classmethod
+    def validate_extract_quality_retry_mode(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v != "full":
+            raise ValueError(f"quality_retry_mode must be 'full', got '{v}'")
+        return v
 
     # Optionen
     output_format: str = Field("markdown", description="Ausgabeformat: 'markdown', 'text', 'html'")

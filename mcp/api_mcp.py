@@ -63,6 +63,9 @@ async def mcp_convert(
     prompt: Optional[str] = None,
     auto_extract: bool = False,
     min_confidence: float = 0.7,
+    retry_on_low_quality: Optional[bool] = None,
+    quality_retry_threshold: Optional[float] = None,
+    quality_retry_mode: Optional[str] = None,
     mode: str = "default",
     output_format: str = "markdown",
     pages: Optional[str] = None,
@@ -113,6 +116,9 @@ async def mcp_convert(
         prompt: Optionaler Custom-Prompt für Vision.
         auto_extract: Wenn True, wird der Dokumenttyp klassifiziert, ein passendes Template gesucht und strukturierte Daten extrahiert — alles in einem Schritt.
         min_confidence: Minimale Klassifizierungs-Konfidenz für auto_extract (Default: 0.7).
+        retry_on_low_quality: Wenn True, darf Daigestr bei zu niedriger Qualität automatisch mit stärkerem Modus erneut laufen.
+        quality_retry_threshold: Optionaler Schwellwert für die Eskalation. Null = Env-Default.
+        quality_retry_mode: Modus für die Eskalation. Aktuell nur 'full'.
         mode: Processing mode. 'default': use individual parameter settings. 'full': enable all features with page-level rendering for PDFs (faster, sees full page context). Enables: describe_pages, accuracy=high, classify, ocr_correct, auto_extract, chunk. 'deep': like full, plus per-image extraction with classification (diagram->Mermaid, chart->data table, photo->description, text_scan->OCR). Use for technical documents where individual image analysis matters.
         pages: Seitenauswahl für PDFs. Syntax: '1-3', '7,14,22', '10-20,!15'. Null = alle Seiten.
     """
@@ -157,6 +163,9 @@ async def mcp_convert(
             ocr_embed=ocr_embed,
             auto_extract=auto_extract,
             min_confidence=min_confidence,
+            retry_on_low_quality=retry_on_low_quality,
+            quality_retry_threshold=quality_retry_threshold,
+            quality_retry_mode=quality_retry_mode,
             mode=mode,
             output_format=output_format,
             pages=pages,
@@ -186,6 +195,9 @@ async def mcp_convert(
             ocr_embed=ocr_embed,
             auto_extract=auto_extract,
             min_confidence=min_confidence,
+            retry_on_low_quality=retry_on_low_quality,
+            quality_retry_threshold=quality_retry_threshold,
+            quality_retry_mode=quality_retry_mode,
             mode=mode,
             output_format=output_format,
             pages=pages,
@@ -214,6 +226,9 @@ async def mcp_convert(
                 template=template,
                 auto_extract=auto_extract,
                 min_confidence=min_confidence,
+                retry_on_low_quality=retry_on_low_quality,
+                quality_retry_threshold=quality_retry_threshold,
+                quality_retry_mode=quality_retry_mode,
                 chunk=chunk,
                 chunk_size=chunk_size,
                 output_format=output_format,
@@ -249,6 +264,9 @@ async def mcp_extract(
     show_formulas: bool = False,
     auto_extract: bool = False,
     min_confidence: float = 0.7,
+    retry_on_low_quality: Optional[bool] = None,
+    quality_retry_threshold: Optional[float] = None,
+    quality_retry_mode: Optional[str] = None,
     mode: str = "default",
     output_format: str = "markdown",
     pages: Optional[str] = None,
@@ -292,6 +310,9 @@ async def mcp_extract(
         show_formulas: Excel-Formeln im Output annotieren.
         auto_extract: Wenn True, wird Dokumenttyp klassifiziert, ein passendes Template gesucht und Daten extrahiert.
         min_confidence: Minimale Klassifizierungs-Konfidenz für auto_extract (Default: 0.7).
+        retry_on_low_quality: Wenn True, darf Daigestr bei zu niedriger Qualität automatisch mit stärkerem Modus erneut laufen.
+        quality_retry_threshold: Optionaler Schwellwert für die Eskalation. Null = Env-Default.
+        quality_retry_mode: Modus für die Eskalation. Aktuell nur 'full'.
         mode: Processing mode. 'default', 'full', 'deep'.
         output_format: Ausgabeformat: 'markdown', 'html', 'text'.
         pages: Seitenauswahl für PDFs.
@@ -346,6 +367,9 @@ async def mcp_extract(
             ocr_embed=ocr_embed,
             auto_extract=auto_extract,
             min_confidence=min_confidence,
+            retry_on_low_quality=retry_on_low_quality,
+            quality_retry_threshold=quality_retry_threshold,
+            quality_retry_mode=quality_retry_mode,
             mode=mode,
             output_format=output_format,
             pages=pages,
@@ -377,6 +401,9 @@ async def mcp_extract(
             ocr_embed=ocr_embed,
             auto_extract=auto_extract,
             min_confidence=min_confidence,
+            retry_on_low_quality=retry_on_low_quality,
+            quality_retry_threshold=quality_retry_threshold,
+            quality_retry_mode=quality_retry_mode,
             mode=mode,
             output_format=output_format,
             pages=pages,
@@ -401,6 +428,9 @@ async def mcp_extract(
                 template=template,
                 auto_extract=auto_extract,
                 min_confidence=min_confidence,
+                retry_on_low_quality=retry_on_low_quality,
+                quality_retry_threshold=quality_retry_threshold,
+                quality_retry_mode=quality_retry_mode,
                 chunk=chunk,
                 chunk_size=chunk_size,
                 output_format=output_format,

@@ -461,6 +461,9 @@ class TestExtractHasAccuracy:
         assert req.pages is None
         assert req.no_cache is False
         assert req.compact is False
+        assert req.retry_on_low_quality is None
+        assert req.quality_retry_threshold is None
+        assert req.quality_retry_mode is None
 
     def test_extract_request_accuracy_passed_to_convert(self):
         """

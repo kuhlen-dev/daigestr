@@ -65,6 +65,9 @@ JOB_TIMEOUT_SECONDS = int(os.getenv("JOB_TIMEOUT_SECONDS", "900"))  # 15 Minuten
 # Retry
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 RATE_LIMIT_MAX_WAIT_SECONDS = int(os.getenv("RATE_LIMIT_MAX_WAIT_SECONDS", "60"))
+QUALITY_RETRY_ENABLED = os.getenv("QUALITY_RETRY_ENABLED", "false").lower() == "true"
+QUALITY_RETRY_THRESHOLD = float(os.getenv("QUALITY_RETRY_THRESHOLD", "0.75"))
+QUALITY_RETRY_MODE = os.getenv("QUALITY_RETRY_MODE", "full")
 
 # Scanned PDF Detection
 SCAN_THRESHOLD_CHARS = int(os.getenv("SCAN_THRESHOLD_CHARS", "50"))
@@ -173,7 +176,7 @@ MERMAID_CDN_URL = os.getenv("MERMAID_CDN_URL", "https://cdn.jsdelivr.net/npm/mer
 HIGHLIGHTJS_CDN_URL = os.getenv("HIGHLIGHTJS_CDN_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js")
 HIGHLIGHTJS_CSS_URL = os.getenv("HIGHLIGHTJS_CSS_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css")
 
-VERSION = os.getenv("DAIGESTR_VERSION", "10.2.2")
+VERSION = os.getenv("DAIGESTR_VERSION", "10.3.1")
 START_TIME = time.time()
 
 # =============================================================================
