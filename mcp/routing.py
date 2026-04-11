@@ -333,7 +333,8 @@ async def finalize_url_markdown_response(
         and (score is None or score < quality_retry_threshold)
     )
     if should_retry:
-        return await finalize_url_markdown_response(
+        retry_reason = "missing_quality_score" if score is None else "low_quality"
+        retried_response = await finalize_url_markdown_response(
             markdown,
             meta=meta,
             source=source,
@@ -355,8 +356,28 @@ async def finalize_url_markdown_response(
             output_format=output_format,
             compact=compact,
         )
+        final_score = retried_response.meta.quality_score
+        return _apply_retry_meta(
+            retried_response,
+            retry_applied=True,
+            retry_reason=retry_reason,
+            initial_mode=mode,
+            final_mode=quality_retry_mode,
+            initial_quality_score=score,
+            final_quality_score=final_score,
+            retry_threshold_used=float(quality_retry_threshold),
+        )
 
-    return response
+    return _apply_retry_meta(
+        response,
+        retry_applied=False,
+        retry_reason=None,
+        initial_mode=mode,
+        final_mode=mode,
+        initial_quality_score=score,
+        final_quality_score=score,
+        retry_threshold_used=float(quality_retry_threshold) if retry_on_low_quality else None,
+    )
 
 
 async def convert_auto(

@@ -16,6 +16,13 @@ MINIMUM_META_FIELDS: dict[str, Any] = {
     "quality_grade": None,
     "accuracy_mode": None,
     "pipeline_steps": None,
+    "retry_applied": None,
+    "retry_reason": None,
+    "initial_mode": None,
+    "final_mode": None,
+    "initial_quality_score": None,
+    "final_quality_score": None,
+    "retry_threshold_used": None,
 }
 
 
@@ -101,6 +108,13 @@ class MetaData(BaseModel):
     # High-Accuracy-Pipeline-spezifisch (T-MKIT-020)
     accuracy_mode: Optional[str] = Field(None, description="Verwendeter Accuracy-Modus: 'standard' oder 'high'")
     pipeline_steps: Optional[list[str]] = Field(None, description="Liste der durchgeführten Pipeline-Schritte (z.B. ['ocr', 'ocr_correction', 'dual_pass_validation', 'schema_extraction'])")
+    retry_applied: Optional[bool] = Field(None, description="True when a low-quality retry escalation was executed.")
+    retry_reason: Optional[str] = Field(None, description="Reason for the retry decision, e.g. 'low_quality' or 'missing_quality_score'.")
+    initial_mode: Optional[str] = Field(None, description="Initial processing mode before retry evaluation.")
+    final_mode: Optional[str] = Field(None, description="Final processing mode that produced the returned result.")
+    initial_quality_score: Optional[float] = Field(None, description="Quality score from the initial pass before retry evaluation.")
+    final_quality_score: Optional[float] = Field(None, description="Quality score from the final returned pass.")
+    retry_threshold_used: Optional[float] = Field(None, description="Effective low-quality retry threshold used for the decision.")
 
     # Audio/Video-spezifisch (FR-MKIT-006)
     language: Optional[str] = Field(None, description="Erkannte Sprache (z.B. 'de', 'en') bei Audio/Video-Transkription")

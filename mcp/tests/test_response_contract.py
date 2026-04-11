@@ -78,6 +78,13 @@ def test_success_response_json_contains_nulls_instead_of_missing_fields():
     assert payload["meta"]["template_used"] is None
     assert payload["meta"]["quality_score"] is None
     assert payload["meta"]["pipeline_steps"] is None
+    assert payload["meta"]["retry_applied"] is None
+    assert payload["meta"]["retry_reason"] is None
+    assert payload["meta"]["initial_mode"] is None
+    assert payload["meta"]["final_mode"] is None
+    assert payload["meta"]["initial_quality_score"] is None
+    assert payload["meta"]["final_quality_score"] is None
+    assert payload["meta"]["retry_threshold_used"] is None
 
 
 def test_convert_response_direct_model_still_serializes_stable_null_shape():

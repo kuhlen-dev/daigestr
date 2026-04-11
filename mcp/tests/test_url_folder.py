@@ -250,6 +250,13 @@ class TestUrlGoesthroughConvertAuto:
         assert result.meta.quality_score == 0.92
         assert result.meta.accuracy_mode == "high"
         assert classify_mock.await_count == 1
+        assert result.meta.retry_applied is True
+        assert result.meta.retry_reason == "low_quality"
+        assert result.meta.initial_mode == "default"
+        assert result.meta.final_mode == "full"
+        assert result.meta.initial_quality_score == 0.41
+        assert result.meta.final_quality_score == 0.92
+        assert result.meta.retry_threshold_used == 0.75
 
     def test_url_download_failure_returns_error(self):
         """
