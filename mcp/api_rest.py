@@ -78,6 +78,7 @@ from routing import (
     convert_url,
     convert_folder_contents,
     _build_tips_dict,
+    finalize_url_markdown_response,
 )
 from api_rest_audit import audit_router
 from api_rest_normalize import normalize_router, corrections_router, batch_router
@@ -303,37 +304,24 @@ async def _api_convert_impl(request: ConvertRequest) -> ConvertResponse:
             if result["success"]:
                 if result.get("title"):
                     meta["title"] = result["title"]
-                markdown_text = result["markdown"]
-                # OCR-Korrektur für HTML (analog zum path/base64-Pfad)
-                effective_ocr_correct = request.ocr_correct or (request.accuracy == "high")
-                if effective_ocr_correct:
-                    ocr_result = await _correct_ocr(markdown_text, request.language)
-                    if ocr_result.get("success"):
-                        markdown_text = ocr_result["corrected_text"]
-                        meta["ocr_corrected"] = True
-                        meta["ocr_corrections_count"] = ocr_result.get("corrections_count", 0)
-                if request.classify:
-                    classify_result = await _classify_doc(
-                        markdown_text, request.classify_categories, request.language
-                    )
-                    meta.update(classify_result)
-                response = create_success_response(markdown_text, meta=meta)
-                # T-MKIT-036: Auto-Extract
-                if request.auto_extract and not effective_schema:
-                    response = await _apply_auto(response, meta, markdown_text, request.language, request.min_confidence, [])
-                elif effective_schema:
-                    extraction = await _extract_struct(markdown_text, effective_schema, request.language)
-                    if extraction["success"]:
-                        response.extracted = extraction["extracted"]
-                    else:
-                        log.warning("extract_structured_data_failed_url_html", error=extraction.get("error"))
-                # T-DAI-055: Normalisierung nach URL-HTML-Extraktion
-                from routing import _apply_normalizer as _url_normalizer
-                _url_norm_template = meta.get("template_used") or request.template or meta.get("document_type")
-                response = await _url_normalizer(response, meta, _url_norm_template, getattr(request, "compact", False))
-                if request.chunk:
-                    response.chunks = _chunk_md(markdown_text, chunk_size=request.chunk_size, source=request.url)
-                return response
+                return await finalize_url_markdown_response(
+                    result["markdown"],
+                    meta=meta,
+                    source=request.url,
+                    language=request.language,
+                    accuracy=request.accuracy,
+                    classify=request.classify,
+                    classify_categories=request.classify_categories,
+                    ocr_correct=request.ocr_correct,
+                    extract_schema=effective_schema,
+                    template=request.template,
+                    auto_extract=request.auto_extract,
+                    min_confidence=request.min_confidence,
+                    chunk=request.chunk,
+                    chunk_size=request.chunk_size,
+                    output_format=request.output_format,
+                    compact=getattr(request, "compact", False),
+                )
             else:
                 return create_error_response(
                     result.get("error_code", ErrorCode.CONVERSION_FAILED),

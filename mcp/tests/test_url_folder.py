@@ -154,6 +154,63 @@ class TestUrlGoesthroughConvertAuto:
         assert result.success is True
         assert result.markdown == "# HTML Page"
         assert result.meta.title == "Test"
+        assert result.meta.quality_score is not None
+        assert result.meta.quality_grade is not None
+        assert result.meta.pipeline_steps == ["url_fetch", "markitdown"]
+
+    def test_url_html_applies_output_format_and_chunking(self):
+        """HTML-URL-Fallback nutzt trotzdem die Standard-Finalisierung inklusive HTML-Render und Chunks."""
+        from models import ConvertRequest
+
+        head_resp = MagicMock()
+        head_resp.headers = {"content-type": "text/html; charset=utf-8"}
+
+        client = AsyncMock()
+        client.head = AsyncMock(return_value=head_resp)
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+
+        httpx_mock = MagicMock()
+        httpx_mock.AsyncClient = MagicMock(return_value=client)
+
+        convert_url_result = {"success": True, "markdown": "# HTML Page", "title": "Test"}
+
+        with patch.object(_server_api, "httpx", httpx_mock), \
+             patch.object(_server_api, "convert_url", new=AsyncMock(return_value=convert_url_result)):
+            request = ConvertRequest(url="https://example.com/page.html", output_format="html", chunk=True)
+            result = run_async(_server_api.api_convert(request))
+
+        assert result.success is True
+        assert result.html is not None
+        assert result.chunks is not None
+
+    def test_url_html_can_classify_and_set_meta_fields(self):
+        """HTML-URL-Fallback liefert dieselben kanonischen Klassifizierungsfelder wie andere Pfade."""
+        from models import ConvertRequest
+
+        head_resp = MagicMock()
+        head_resp.headers = {"content-type": "text/html; charset=utf-8"}
+
+        client = AsyncMock()
+        client.head = AsyncMock(return_value=head_resp)
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+
+        httpx_mock = MagicMock()
+        httpx_mock.AsyncClient = MagicMock(return_value=client)
+
+        convert_url_result = {"success": True, "markdown": "# HTML Page", "title": "Test"}
+        classify_result = {"document_type": "invoice", "document_type_confidence": 0.93}
+
+        with patch.object(_server_api, "httpx", httpx_mock), \
+             patch.object(_server_api, "convert_url", new=AsyncMock(return_value=convert_url_result)), \
+             patch.object(_server_api, "classify_document", new=AsyncMock(return_value=classify_result)):
+            request = ConvertRequest(url="https://example.com/page.html", classify=True)
+            result = run_async(_server_api.api_convert(request))
+
+        assert result.success is True
+        assert result.meta.document_type == "invoice"
+        assert result.meta.document_type_confidence == 0.93
 
     def test_url_download_failure_returns_error(self):
         """

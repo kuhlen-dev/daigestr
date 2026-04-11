@@ -551,3 +551,36 @@ class TestMcpExtractSignature:
         assert call_kwargs.get("pages") == "2-4"
         assert call_kwargs.get("no_cache") is True
         assert call_kwargs.get("compact") is True
+
+    def test_mcp_convert_url_applies_standard_finalization(self):
+        """mcp_convert(url=...) nutzt die gemeinsame URL-Finalisierung inklusive HTML und Meta-Score."""
+        convert_url_result = {"success": True, "markdown": "# HTML Page", "title": "Test"}
+
+        with patch.object(_server, "convert_url", new=AsyncMock(return_value=convert_url_result)):
+            data = json.loads(run_async(mcp_convert(url="https://example.com/page.html", output_format="html", chunk=True)))
+
+        assert data["success"] is True
+        assert data["html"] is not None
+        assert data["chunks"] is not None
+        assert data["meta"]["quality_score"] is not None
+        assert data["meta"]["pipeline_steps"] == ["url_fetch", "markitdown"]
+
+    def test_mcp_extract_url_applies_standard_finalization(self):
+        """mcp_extract(url=...) nutzt die gemeinsame URL-Finalisierung inklusive Schema-Extraktion."""
+        schema = {"type": "object", "properties": {"title": {"type": "string"}}}
+        convert_url_result = {"success": True, "markdown": "# HTML Page", "title": "Test"}
+
+        with patch.object(_server, "convert_url", new=AsyncMock(return_value=convert_url_result)), \
+             patch.object(_server, "extract_structured_data", new=AsyncMock(return_value={"success": True, "extracted": {"title": "Example"}})):
+            data = json.loads(run_async(mcp_extract(
+                url="https://example.com/page.html",
+                extract_schema=schema,
+                output_format="html",
+                chunk=True,
+            )))
+
+        assert data["success"] is True
+        assert data["html"] is not None
+        assert data["chunks"] is not None
+        assert data["extracted"] == {"title": "Example"}
+        assert data["meta"]["quality_score"] is not None

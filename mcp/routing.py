@@ -195,6 +195,89 @@ def _apply_output_format(response: "ConvertResponse", output_format: str) -> "Co
     return response
 
 
+async def finalize_url_markdown_response(
+    markdown: str,
+    *,
+    meta: dict[str, Any],
+    source: str,
+    language: str,
+    accuracy: str,
+    classify: bool,
+    classify_categories: Optional[list[str]],
+    ocr_correct: bool,
+    extract_schema: Optional[dict[str, Any]],
+    template: Optional[str],
+    auto_extract: bool,
+    min_confidence: float,
+    chunk: bool,
+    chunk_size: int,
+    output_format: str,
+    compact: bool,
+) -> ConvertResponse:
+    """Finalize a URL-derived markdown response with the standard post-processing pipeline."""
+    _classify_doc = _get("classify_document", classify_document)
+    _correct_ocr = _get("correct_ocr_text", correct_ocr_text)
+    _calc_quality = _get("calculate_quality_score", calculate_quality_score)
+    _extract_struct = _get("extract_structured_data", extract_structured_data)
+    _apply_auto = _get("_apply_auto_extract", _apply_auto_extract)
+    _chunk_md = _get("chunk_markdown", chunk_markdown)
+
+    effective_meta = dict(meta)
+    effective_meta.setdefault("source", source)
+    effective_meta.setdefault("source_type", "url")
+    effective_meta["accuracy_mode"] = accuracy
+
+    markdown_text = markdown
+    pipeline_steps: list[str] = ["url_fetch", "markitdown"]
+
+    effective_ocr_correct = ocr_correct or (accuracy == "high")
+    if effective_ocr_correct:
+        ocr_result = await _correct_ocr(markdown_text, language)
+        if ocr_result.get("success"):
+            markdown_text = ocr_result["corrected_text"]
+            effective_meta["ocr_corrected"] = True
+            effective_meta["ocr_corrections_count"] = ocr_result.get("corrections_count", 0)
+            pipeline_steps.append("ocr_correction")
+
+    if classify:
+        classify_result = await _classify_doc(markdown_text, classify_categories, language)
+        effective_meta.update(classify_result)
+        pipeline_steps.append("classify")
+
+    effective_meta["pipeline_steps"] = pipeline_steps
+    effective_meta.update(_calc_quality(markdown_text, effective_meta))
+
+    hints: list[str] = []
+    if not extract_schema and not auto_extract and effective_meta.get("document_type") == "invoice":
+        hints.append("This document was classified as an invoice. Add template='invoice' to extract structured fields (invoice_number, total, line_items, etc.).")
+    if not extract_schema and not auto_extract and effective_meta.get("document_type") and effective_meta.get("document_type") != "other":
+        hints.append("Add auto_extract=true to automatically extract structured data based on document type.")
+    if effective_meta.get("quality_grade") == "poor" and accuracy != "high":
+        hints.append("Low quality score detected. Try accuracy='high' for better results on scanned or complex documents.")
+    if hints:
+        effective_meta["hints"] = hints
+
+    response = create_success_response(markdown_text, meta=effective_meta)
+
+    if auto_extract and not extract_schema:
+        response = await _apply_auto(response, effective_meta, markdown_text, language, min_confidence, hints)
+    elif extract_schema:
+        extraction = await _extract_struct(markdown_text, extract_schema, language)
+        if extraction["success"]:
+            response.extracted = extraction["extracted"]
+            updated_steps = list(effective_meta.get("pipeline_steps", pipeline_steps))
+            if "schema_extraction" not in updated_steps:
+                updated_steps.append("schema_extraction")
+            effective_meta["pipeline_steps"] = updated_steps
+            response.meta = MetaData(**{k: v for k, v in effective_meta.items()})
+
+    norm_template = effective_meta.get("template_used") or template or effective_meta.get("document_type")
+    response = await _apply_normalizer(response, effective_meta, norm_template, compact)
+    if chunk:
+        response.chunks = _chunk_md(markdown_text, chunk_size=chunk_size, source=source)
+    return _apply_output_format(response, output_format)
+
+
 async def convert_auto(
     file_data: bytes,
     filename: str,

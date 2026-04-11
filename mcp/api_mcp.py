@@ -32,6 +32,7 @@ from routing import (
     convert_url,
     convert_folder_contents,
     _build_tips_dict,
+    finalize_url_markdown_response,
 )
 
 log = structlog.get_logger()
@@ -191,11 +192,6 @@ async def mcp_convert(
         )
     elif url:
         _convert_url = _get("convert_url", convert_url)
-        _classify_doc = _get("classify_document", classify_document)
-        _apply_auto = _get("_apply_auto_extract", _apply_auto_extract)
-        _extract_struct = _get("extract_structured_data", extract_structured_data)
-        _chunk_md = _get("chunk_markdown", chunk_markdown)
-        _correct_ocr = _get("correct_ocr_text", correct_ocr_text)
         result = await _convert_url(url)
         if result["success"]:
             url_meta: dict[str, Any] = {
@@ -205,31 +201,24 @@ async def mcp_convert(
             }
             if result.get("title"):
                 url_meta["title"] = result["title"]
-            markdown_text = result["markdown"]
-            # OCR-Korrektur für HTML (analog zum path/base64-Pfad)
-            effective_ocr_correct = ocr_correct or (accuracy == "high")
-            if effective_ocr_correct:
-                ocr_result = await _correct_ocr(markdown_text, language)
-                if ocr_result.get("success"):
-                    markdown_text = ocr_result["corrected_text"]
-                    url_meta["ocr_corrected"] = True
-                    url_meta["ocr_corrections_count"] = ocr_result.get("corrections_count", 0)
-            if classify:
-                classify_result = await _classify_doc(markdown_text, classify_categories, language)
-                url_meta.update(classify_result)
-            mcp_url_meta = {**(meta or {}), **url_meta}
-            response = create_success_response(markdown_text, meta=mcp_url_meta)
-            # T-MKIT-036: Auto-Extract für URL
-            if auto_extract and not effective_schema:
-                response = await _apply_auto(response, mcp_url_meta, markdown_text, language, min_confidence, [])
-            elif effective_schema:
-                extraction = await _extract_struct(markdown_text, effective_schema, language)
-                if extraction["success"]:
-                    response.extracted = extraction["extracted"]
-                else:
-                    log.warning("mcp_convert_extract_failed_url", error=extraction.get("error"))
-            if chunk:
-                response.chunks = _chunk_md(markdown_text, chunk_size=chunk_size, source=url)
+            response = await finalize_url_markdown_response(
+                result["markdown"],
+                meta={**(meta or {}), **url_meta},
+                source=url,
+                language=language,
+                accuracy=accuracy,
+                classify=classify,
+                classify_categories=classify_categories,
+                ocr_correct=ocr_correct,
+                extract_schema=effective_schema,
+                template=template,
+                auto_extract=auto_extract,
+                min_confidence=min_confidence,
+                chunk=chunk,
+                chunk_size=chunk_size,
+                output_format=output_format,
+                compact=False,
+            )
         else:
             response = create_error_response(result.get("error_code", "ERROR"), result["error"])
     else:
@@ -396,24 +385,27 @@ async def mcp_extract(
         )
     elif url:
         _convert_url = _get("convert_url", convert_url)
-        _classify_doc = _get("classify_document", classify_document)
-        _apply_auto = _get("_apply_auto_extract", _apply_auto_extract)
-        _extract_struct = _get("extract_structured_data", extract_structured_data)
         result = await _convert_url(url)
         if result["success"]:
             mcp_extract_url_meta: dict[str, Any] = {"source": url, "source_type": "url"}
-            if classify:
-                classify_result = await _classify_doc(result["markdown"], None, language)
-                mcp_extract_url_meta.update(classify_result)
-            combined_meta = {**(meta or {}), **mcp_extract_url_meta}
-            response = create_success_response(result["markdown"], meta=combined_meta)
-            # T-MKIT-036: Auto-Extract für URL
-            if auto_extract and not effective_schema:
-                response = await _apply_auto(response, combined_meta, result["markdown"], language, min_confidence, [])
-            elif effective_schema:
-                extraction = await _extract_struct(result["markdown"], effective_schema, language)
-                if extraction["success"]:
-                    response.extracted = extraction["extracted"]
+            response = await finalize_url_markdown_response(
+                result["markdown"],
+                meta={**(meta or {}), **mcp_extract_url_meta},
+                source=url,
+                language=language,
+                accuracy=accuracy,
+                classify=classify,
+                classify_categories=classify_categories,
+                ocr_correct=ocr_correct,
+                extract_schema=effective_schema,
+                template=template,
+                auto_extract=auto_extract,
+                min_confidence=min_confidence,
+                chunk=chunk,
+                chunk_size=chunk_size,
+                output_format=output_format,
+                compact=compact,
+            )
         else:
             response = create_error_response(result.get("error_code", "ERROR"), result["error"])
     else:
