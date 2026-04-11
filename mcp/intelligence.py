@@ -94,6 +94,32 @@ def get_meta_schema() -> dict:
     return _META_SCHEMA
 
 
+def _harmonize_extracted_summary_fields(extracted: dict[str, Any]) -> dict[str, Any]:
+    """Normalize summary fields onto a single canonical value."""
+    meta_summary = None
+    if isinstance(extracted.get("_meta"), dict):
+        meta_summary = extracted["_meta"].get("zusammenfassung")
+
+    canonical_summary = None
+    for value in (extracted.get("summary"), extracted.get("zusammenfassung"), meta_summary):
+        if isinstance(value, str) and value.strip():
+            canonical_summary = value.strip()
+            break
+
+    if canonical_summary is None:
+        return extracted
+
+    extracted["summary"] = canonical_summary
+    meta_block = extracted.get("_meta")
+    if not isinstance(meta_block, dict):
+        meta_block = {}
+        extracted["_meta"] = meta_block
+    meta_block["zusammenfassung"] = canonical_summary
+    if "zusammenfassung" in extracted:
+        extracted["zusammenfassung"] = canonical_summary
+    return extracted
+
+
 def _load_steuer_signalwoerter() -> list[str]:
     """Load tax signal words from DB (prompt id='meta.steuer_signalwoerter')."""
     raw = _require_db_prompt("meta", "steuer_signalwoerter", language="de")
@@ -559,6 +585,10 @@ async def extract_structured_data(
         + "\n\nSteuerrelevanz-Signalwörter (aktiv suchen): "
         + ", ".join(get_steuer_signalwoerter()[:10]) + ", ..."
         + "\nAuch implizit steuerrelevant: Rechnungen mit MwSt, Gehaltsabrechnungen, Versicherungsbeiträge, Handwerkerleistungen."
+        + "\n\nZusammenfassungs-Regeln:"
+        + "\n- Wenn das Schema `summary` oder `zusammenfassung` enthält, dann fasse den gesamten Dokumentinhalt zusammen, nicht nur eine einzelne Seite oder einen Datumsbereich."
+        + "\n- `_meta.zusammenfassung` ist die kanonische Kurz-Zusammenfassung des gesamten Dokuments."
+        + "\n- Wenn sowohl `summary`/`zusammenfassung` als auch `_meta.zusammenfassung` vorkommen, müssen sie inhaltlich übereinstimmen."
         + "\n" + get_datentyp_konventionen()
     )
 
@@ -615,7 +645,7 @@ async def extract_structured_data(
                 "tokens": tokens,
             }
 
-        extracted = json.loads(json_match.group(0))
+        extracted = _harmonize_extracted_summary_fields(json.loads(json_match.group(0)))
 
         # Schema-Validierung (AC-014-7) — null-tolerant
         if _jsonschema_available:
