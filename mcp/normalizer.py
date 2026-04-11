@@ -282,7 +282,16 @@ async def normalize(
     if not mapping_data or not mapping_data.get("normalize_mapping"):
         log.warning("normalizer_skip_no_mapping", template=template_name)
         warnings_list.append(f"No normalize_mapping found for template '{template_name}'")
-        return None
+        return {
+            "normalized": None,
+            "normalized_version": None,
+            "normalized_warnings": warnings_list,
+            "normalized_trace": None,
+            "normalized_context": None,
+            "normalized_confidence": None,
+            "quality_score": None,
+            "validation_errors": [],
+        }
 
     # -------------------------------------------------------------------------
     # Schritt 1: Template + Mapping laden
