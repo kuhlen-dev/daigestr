@@ -74,6 +74,14 @@ async def mcp_convert(
     Converts a file, URL, or base64 payload to Markdown.
 
     Default output is always Markdown in the 'markdown' field.
+    Canonical metadata is returned in the `meta` object:
+    - `meta.document_type`
+    - `meta.document_type_confidence`
+    - `meta.template_used`
+    - `meta.quality_score`
+    - `meta.retry_applied`
+
+    Normalizer-specific score fields live under `normalized`, not in `meta`.
 
     To get STRUCTURED JSON, add extract_schema or template parameter.
     To get AUTO-EXTRACTED JSON (no template needed), add auto_extract=true.
@@ -282,6 +290,9 @@ async def mcp_extract(
     See /v1/templates for template schemas.
 
     The response contains both 'markdown' (full text) and 'extracted' (structured JSON).
+    Canonical metadata is returned in `meta.document_type`, `meta.template_used`,
+    `meta.quality_score`, and the retry fields such as `meta.retry_applied`.
+    Normalizer-specific scores remain under `normalized._quality_score` / `normalized.quality_score`.
 
     Examples:
       extract(path="<data_dir>/invoice.pdf", template="invoice")

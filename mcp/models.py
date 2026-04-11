@@ -243,7 +243,7 @@ class ConvertRequest(BaseModel):
     classify_categories: Optional[list[str]] = Field(None, description="Custom Klassifizierungs-Kategorien")
 
     # Extraktion
-    extract_schema: Optional[dict[str, Any]] = Field(None, description="JSON Schema for structured data extraction. REQUIRED for the 'extracted' field in the response to be populated. Without this, extracted is always null. Alternative: use the 'template' parameter.")
+    extract_schema: Optional[dict[str, Any]] = Field(None, description="JSON Schema for structured data extraction. Populates the 'extracted' field when provided. Alternatives: use the 'template' parameter or auto_extract=true.")
     template: Optional[str] = Field(None, description="Predefined extraction template name. Available: 'invoice', 'cv', 'contract'. See GET /v1/templates for schemas. Alternative to extract_schema.")
 
     # OCR-Korrektur
@@ -332,7 +332,7 @@ class ExtractRequest(BaseModel):
     url: Optional[str] = Field(None, description="URL zu Datei oder Webseite")
 
     # Extraktion (eines von beiden erforderlich, oder auto_extract=true)
-    extract_schema: Optional[dict[str, Any]] = Field(None, description="JSON Schema for structured data extraction. REQUIRED for the 'extracted' field in the response to be populated. Without this, extracted is always null. Alternative: use the 'template' parameter or auto_extract=true.")
+    extract_schema: Optional[dict[str, Any]] = Field(None, description="JSON Schema for structured data extraction. Populates the 'extracted' field when provided. Alternatives: use the 'template' parameter or auto_extract=true.")
     template: Optional[str] = Field(None, description="Predefined extraction template name. Available: 'invoice', 'cv', 'contract'. See GET /v1/templates for schemas. Alternative to extract_schema.")
 
     # Auto-Extract (T-MKIT-036)
