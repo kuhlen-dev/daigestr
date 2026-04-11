@@ -258,6 +258,35 @@ class TestUrlGoesthroughConvertAuto:
         assert result.meta.final_quality_score == 0.92
         assert result.meta.retry_threshold_used == 0.75
 
+    def test_url_explicit_template_sets_canonical_template_meta(self):
+        """Explizites template materialisiert template_used und template_version auch im URL-Pfad."""
+        from models import ConvertRequest
+
+        head_resp = MagicMock()
+        head_resp.headers = {"content-type": "text/html; charset=utf-8"}
+
+        client = AsyncMock()
+        client.head = AsyncMock(return_value=head_resp)
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+
+        httpx_mock = MagicMock()
+        httpx_mock.AsyncClient = MagicMock(return_value=client)
+
+        convert_url_result = {"success": True, "markdown": "# HTML Page", "title": "Test"}
+        template_row = {"id": "invoice", "version": 4, "schema": {"type": "object"}}
+
+        with patch.object(_server_api, "httpx", httpx_mock), \
+             patch.object(_server_api, "convert_url", new=AsyncMock(return_value=convert_url_result)), \
+             patch.object(_server_api, "get_template_by_id", return_value=template_row), \
+             patch.object(_server_api, "extract_structured_data", new=AsyncMock(return_value={"success": True, "extracted": {"invoice_number": "INV-1"}})):
+            request = ConvertRequest(url="https://example.com/page.html", template="invoice")
+            result = run_async(_server_api.api_convert(request))
+
+        assert result.success is True
+        assert result.meta.template_used == "invoice"
+        assert result.meta.template_version == 4
+
     def test_url_download_failure_returns_error(self):
         """
         Wenn der URL-Download fehlschlägt, gibt api_convert() einen Fehler zurück.

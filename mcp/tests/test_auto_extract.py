@@ -211,7 +211,8 @@ class TestAutoExtractInConvertAuto:
         extracted_data = {"invoice_number": "INV-001", "total": 100.0}
         markdown = "# Rechnung\nInvoice Nr. INV-001\nBetrag: 100 EUR"
 
-        with patch.object(_server, "convert_with_markitdown", return_value={"success": True, "markdown": markdown}), \
+        with patch.object(_server, "CACHE_ENABLED", False), \
+             patch.object(_server, "convert_with_markitdown", return_value={"success": True, "markdown": markdown}), \
              patch.object(_server, "is_scanned_pdf", return_value=False), \
              patch.object(_server, "get_file_extension", return_value=".pdf"), \
              patch.object(_server, "detect_mimetype_from_bytes", return_value="application/pdf"), \
@@ -239,7 +240,8 @@ class TestAutoExtractInConvertAuto:
         """auto_extract=True aber kein Template → extracted=None + hint."""
         markdown = "# Unknown Document\nSome content"
 
-        with patch.object(_server, "convert_with_markitdown", return_value={"success": True, "markdown": markdown}), \
+        with patch.object(_server, "CACHE_ENABLED", False), \
+             patch.object(_server, "convert_with_markitdown", return_value={"success": True, "markdown": markdown}), \
              patch.object(_server, "is_scanned_pdf", return_value=False), \
              patch.object(_server, "get_file_extension", return_value=".pdf"), \
              patch.object(_server, "detect_mimetype_from_bytes", return_value="application/pdf"), \
@@ -269,7 +271,8 @@ class TestAutoExtractInConvertAuto:
         """Konfidenz unter min_confidence → kein Template, kein Extraction."""
         markdown = "# Some doc"
 
-        with patch.object(_server, "convert_with_markitdown", return_value={"success": True, "markdown": markdown}), \
+        with patch.object(_server, "CACHE_ENABLED", False), \
+             patch.object(_server, "convert_with_markitdown", return_value={"success": True, "markdown": markdown}), \
              patch.object(_server, "is_scanned_pdf", return_value=False), \
              patch.object(_server, "get_file_extension", return_value=".pdf"), \
              patch.object(_server, "detect_mimetype_from_bytes", return_value="application/pdf"), \
@@ -321,6 +324,38 @@ class TestAutoExtractInConvertAuto:
         assert response.meta.template_used == "invoice"
         assert response.meta.template_version == 3
         assert response.meta.auto_extract is True
+
+    def test_explicit_template_materializes_canonical_meta_fields(self):
+        """Explizites template setzt template_used und template_version auch ohne auto_extract."""
+        explicit_schema = {"type": "object", "properties": {"invoice_number": {"type": "string"}}}
+        extracted_data = {"invoice_number": "INV-001"}
+        markdown = "# Rechnung\nInvoice"
+        tmpl = _mock_template("invoice", version=7)
+
+        with patch.object(_server, "CACHE_ENABLED", False), \
+             patch.object(_server, "convert_with_markitdown", return_value={"success": True, "markdown": markdown}), \
+             patch.object(_server, "is_scanned_pdf", return_value=False), \
+             patch.object(_server, "get_file_extension", return_value=".pdf"), \
+             patch.object(_server, "detect_mimetype_from_bytes", return_value="application/pdf"), \
+             patch.object(_server, "get_mimetype", return_value="application/pdf"), \
+             patch.object(_server, "get_template_by_id", return_value=tmpl), \
+             patch.object(_server, "calculate_quality_score", return_value={"quality_score": 0.9, "quality_grade": "good"}), \
+             patch.object(_server, "extract_structured_data", new=AsyncMock(return_value=_make_extraction_success(extracted_data))):
+
+            response = run_async(_server.convert_auto(
+                file_data=b"%PDF-fake",
+                filename="invoice.pdf",
+                source="/data/invoice.pdf",
+                source_type="file",
+                input_meta={},
+                extract_schema=explicit_schema,
+                template="invoice",
+            ))
+
+        assert response.success is True
+        assert response.extracted == extracted_data
+        assert response.meta.template_used == "invoice"
+        assert response.meta.template_version == 7
 
     def test_auto_extract_default_false(self):
         """auto_extract defaults to False — keine Klassifizierung ausgelöst."""

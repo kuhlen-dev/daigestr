@@ -96,7 +96,7 @@ from intelligence import (
     dual_pass_validate,
     _apply_auto_extract,
 )
-from templates_db import get_all_template_ids, cache_get, cache_set
+from templates_db import get_all_template_ids, get_template_by_id, cache_get, cache_set
 from audit_db import audit_log_event as _audit_log_event
 
 log = structlog.get_logger()
@@ -139,6 +139,23 @@ def _apply_retry_meta(
     )
     response.meta = MetaData(**meta)
     return response
+
+
+def _apply_explicit_template_meta(meta: dict[str, Any], template: Optional[str]) -> None:
+    """Materialize explicit template selection into the canonical meta block."""
+    if not template:
+        return
+    meta["template_used"] = template
+    if meta.get("template_version") is not None:
+        return
+    _get_template = _get("get_template_by_id", get_template_by_id)
+    try:
+        tmpl = _get_template(template)
+    except Exception as exc:
+        log.warning("template_meta_lookup_failed", template=template, error=str(exc))
+        return
+    if tmpl:
+        meta["template_version"] = tmpl.get("version", 1)
 
 
 def _is_brix_available() -> bool:
@@ -260,6 +277,7 @@ async def finalize_url_markdown_response(
     effective_meta = dict(meta)
     effective_meta.setdefault("source", source)
     effective_meta.setdefault("source_type", "url")
+    _apply_explicit_template_meta(effective_meta, template)
 
     retry_on_low_quality = QUALITY_RETRY_ENABLED if retry_on_low_quality is None else retry_on_low_quality
     quality_retry_threshold = QUALITY_RETRY_THRESHOLD if quality_retry_threshold is None else quality_retry_threshold
@@ -797,6 +815,7 @@ async def _convert_auto_impl(
         "size_bytes": len(file_data),
         "request_id": request_id,
     }
+    _apply_explicit_template_meta(meta, template)
 
     # Größenprüfung
     if len(file_data) > _max_file_size_bytes:
