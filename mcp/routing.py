@@ -417,8 +417,8 @@ async def _convert_auto_impl(
         if _cached_json is not None:
             try:
                 _cr = ConvertResponse.model_validate_json(_cached_json)
-                # Set meta.cached=True
-                _cm = _cr.meta.model_dump(exclude_none=True)
+                # Preserve the canonical meta shape on cache hits as well.
+                _cm = _cr.meta.model_dump()
                 _cm["cached"] = True
                 _cm["request_id"] = request_id
                 _cr.meta = MetaData(**_cm)
