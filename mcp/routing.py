@@ -1342,19 +1342,28 @@ async def _convert_auto_impl(
 
                     # T-MKIT-020: High-Accuracy → Dual-Pass Validation für gescannte PDFs
                     if accuracy == "high":
-                        log.info("high_accuracy_scanned_pdf_dual_pass_start", file=filename)
-                        rendered = _render_page(temp_path)
-                        if rendered is not None:
-                            page_image_bytes, page_mimetype = rendered
-                            scanned_markdown = await _dual_pass(
-                                markdown=scanned_markdown,
-                                file_data=page_image_bytes,
-                                mimetype=page_mimetype,
-                                language=language,
-                            )
-                            scanned_pipeline_steps.append("dual_pass_validation")
+                        pages_processed = result.get("pages_processed") or result.get("pages")
+                        single_page_scan = pages_processed == 1
+                        if single_page_scan:
+                            log.info("high_accuracy_scanned_pdf_dual_pass_start", file=filename)
+                            rendered = _render_page(temp_path)
+                            if rendered is not None:
+                                page_image_bytes, page_mimetype = rendered
+                                scanned_markdown = await _dual_pass(
+                                    markdown=scanned_markdown,
+                                    file_data=page_image_bytes,
+                                    mimetype=page_mimetype,
+                                    language=language,
+                                )
+                                scanned_pipeline_steps.append("dual_pass_validation")
+                            else:
+                                log.warning("high_accuracy_scanned_pdf_dual_pass_skipped_no_pdf2image")
                         else:
-                            log.warning("high_accuracy_scanned_pdf_dual_pass_skipped_no_pdf2image")
+                            log.info(
+                                "high_accuracy_scanned_pdf_dual_pass_skipped_multipage",
+                                file=filename,
+                                pages_processed=pages_processed,
+                            )
 
                     meta["pipeline_steps"] = scanned_pipeline_steps
 

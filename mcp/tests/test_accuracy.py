@@ -219,13 +219,47 @@ class TestAccuracyHighScannedPdf:
                  )),
                  save=MagicMock(),
              )]):
-            result = run_async(convert_auto(**self._make_pdf_kwargs()))
+            result = run_async(convert_auto(**self._make_pdf_kwargs(no_cache=True)))
 
         assert result.success is True
         assert result.meta.accuracy_mode == "high"
         assert "ocr" in result.meta.pipeline_steps
         assert "ocr_correction" in result.meta.pipeline_steps
         assert "dual_pass_validation" in result.meta.pipeline_steps
+
+    def test_accuracy_high_scanned_pdf_multipage_skips_single_page_dual_pass(self):
+        """
+        Multi-page scanned PDFs must not run single-page dual-pass validation against the whole OCR markdown.
+        """
+        ocr_result = {
+            "success": True,
+            "markdown": "# Seite 1\n\n...\n\n# Seite 2\n\n...",
+            "scanned": True,
+            "pages": 52,
+            "ocr_model": "mistral-ocr-2512",
+        }
+        correction_result = {
+            "success": True,
+            "corrected_text": "# Vollständiger OCR-Text",
+            "corrections_count": 3,
+        }
+
+        dual_pass_mock = AsyncMock(return_value="# Falsch reduziert")
+
+        with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
+             patch.object(_server, "detect_mimetype_from_bytes", return_value="application/pdf"), \
+             patch.object(_server, "is_scanned_pdf", return_value=True), \
+             patch.object(_server, "convert_scanned_pdf", new=AsyncMock(return_value=ocr_result)), \
+             patch.object(_server, "correct_ocr_text", new=AsyncMock(return_value=correction_result)), \
+             patch.object(_server, "dual_pass_validate", new=dual_pass_mock), \
+             patch.object(_server, "PDF2IMAGE_AVAILABLE", True):
+            result = run_async(convert_auto(**self._make_pdf_kwargs()))
+
+        assert result.success is True
+        assert "ocr" in result.meta.pipeline_steps
+        assert "ocr_correction" in result.meta.pipeline_steps
+        assert "dual_pass_validation" not in result.meta.pipeline_steps
+        dual_pass_mock.assert_not_awaited()
 
     def test_accuracy_high_with_schema(self):
         """
