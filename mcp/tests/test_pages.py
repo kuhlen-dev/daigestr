@@ -181,8 +181,16 @@ class TestPageSelectionIntegration:
 
         call_kwargs = {}
 
-        async def fake_convert_scanned(path, language="de", page_indices=None):
+        async def fake_convert_scanned(
+            path,
+            language="de",
+            page_indices=None,
+            request_id=None,
+            attempt_number=None,
+        ):
             call_kwargs["page_indices"] = page_indices
+            call_kwargs["request_id"] = request_id
+            call_kwargs["attempt_number"] = attempt_number
             return mock_scanned_result
 
         # _get() looks up names in the 'server' module that imported routing.
@@ -214,6 +222,7 @@ class TestPageSelectionIntegration:
         server_mod.detect_mimetype_from_bytes = lambda data: "application/pdf"
         server_mod.get_mimetype = lambda path: "application/pdf"
         server_mod.get_file_extension = lambda filename: ".pdf"
+        server_mod._convert_auto_impl = routing._convert_auto_impl
 
         # Register the fake server module and re-patch _LOADED_BY_SERVER in utils
         sys.modules["server"] = server_mod

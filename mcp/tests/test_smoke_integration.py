@@ -20,6 +20,20 @@ BASE_URL = os.getenv("DAIGESTR_URL", "http://127.0.0.1:18006")
 TIMEOUT = 120  # manche Konvertierungen dauern lang (Vision, OCR)
 
 
+def _service_reachable() -> bool:
+    try:
+        response = httpx.get(f"{BASE_URL}/v1/health", timeout=5)
+    except Exception:
+        return False
+    return response.status_code == 200
+
+
+pytestmark = pytest.mark.skipif(
+    not _service_reachable(),
+    reason="Requires running Daigestr service",
+)
+
+
 def api(method: str, path: str, **kwargs) -> httpx.Response:
     """Helper für API-Calls."""
     url = f"{BASE_URL}{path}"

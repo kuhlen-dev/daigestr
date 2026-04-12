@@ -60,27 +60,27 @@ class TestCacheSettings:
     """Prüft CACHE_TTL_SECONDS und CACHE_ENABLED ENV-Variablen."""
 
     def test_cache_ttl_default(self):
-        server = load_server_module()
+        server = load_server_module(isolate_runtime_state=False)
         assert server.CACHE_TTL_SECONDS == 3600
         assert isinstance(server.CACHE_TTL_SECONDS, int)
 
     def test_cache_enabled_default(self):
-        server = load_server_module()
+        server = load_server_module(isolate_runtime_state=False)
         assert server.CACHE_ENABLED is True
 
     def test_cache_ttl_override(self):
         with patch.dict(os.environ, {"CACHE_TTL_SECONDS": "600"}):
-            server = load_server_module()
+            server = load_server_module(isolate_runtime_state=False)
             assert server.CACHE_TTL_SECONDS == 600
 
     def test_cache_enabled_false(self):
         with patch.dict(os.environ, {"CACHE_ENABLED": "false"}):
-            server = load_server_module()
+            server = load_server_module(isolate_runtime_state=False)
             assert server.CACHE_ENABLED is False
 
     def test_cache_enabled_case_insensitive(self):
         with patch.dict(os.environ, {"CACHE_ENABLED": "FALSE"}):
-            server = load_server_module()
+            server = load_server_module(isolate_runtime_state=False)
             assert server.CACHE_ENABLED is False
 
 

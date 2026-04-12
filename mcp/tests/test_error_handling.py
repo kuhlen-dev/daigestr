@@ -304,6 +304,7 @@ class TestConvertTimeout:
         timeout_val = 0.1
         with patch.object(fresh_server, "CONVERT_TIMEOUT_SECONDS", timeout_val), \
              patch.object(fresh_routing, "CONVERT_TIMEOUT_SECONDS", timeout_val), \
+             patch.object(fresh_server, "_convert_auto_impl", new=_slow, create=True), \
              patch.object(fresh_routing, "_convert_auto_impl", new=_slow):
             result = _run_with_new_loop(fresh_convert_auto(**_base_convert_kwargs()))
 
@@ -328,6 +329,7 @@ class TestConvertTimeout:
         timeout_val = 0.1
         with patch.object(fresh_server, "CONVERT_TIMEOUT_SECONDS", timeout_val), \
              patch.object(fresh_routing, "CONVERT_TIMEOUT_SECONDS", timeout_val), \
+             patch.object(fresh_server, "_convert_auto_impl", new=_slow, create=True), \
              patch.object(fresh_routing, "_convert_auto_impl", new=_slow):
             result = _run_with_new_loop(fresh_convert_auto(**_base_convert_kwargs()))
 
@@ -350,6 +352,7 @@ class TestConvertTimeout:
 
         with patch.object(fresh_server, "CONVERT_TIMEOUT_SECONDS", 30), \
              patch.object(fresh_routing, "CONVERT_TIMEOUT_SECONDS", 30), \
+             patch.object(fresh_server, "_convert_auto_impl", new=_fast, create=True), \
              patch.object(fresh_routing, "_convert_auto_impl", new=_fast):
             result = _run_with_new_loop(fresh_convert_auto(**_base_convert_kwargs()))
 

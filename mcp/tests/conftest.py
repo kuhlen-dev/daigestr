@@ -64,7 +64,11 @@ def read_text_fixture(name: str) -> str:
 # Shared Helper: Server-Modul isoliert laden
 # ---------------------------------------------------------------------------
 
-def load_server_module(use_real_pil: bool = False, extra_patches: dict | None = None):
+def load_server_module(
+    use_real_pil: bool = False,
+    extra_patches: dict | None = None,
+    isolate_runtime_state: bool = True,
+):
     """
     Importiert server.py mit gemockten schweren Abhängigkeiten.
 
@@ -140,6 +144,14 @@ def load_server_module(use_real_pil: bool = False, extra_patches: dict | None = 
         for name, mock in extra_patches.items():
             sys.modules[name] = mock
 
+    stale_templates_db = sys.modules.get("templates_db")
+    stale_pool_reset = getattr(stale_templates_db, "pool_reset", None) if stale_templates_db is not None else None
+    if callable(stale_pool_reset):
+        try:
+            stale_pool_reset()
+        except Exception:
+            pass
+
     # Server-Modul und extrahierte Submodule neu laden (nicht aus Cache)
     for _mod in (
         "server", "settings", "logging_setup",
@@ -156,12 +168,39 @@ def load_server_module(use_real_pil: bool = False, extra_patches: dict | None = 
         sys.path.insert(0, server_path)
 
     import server  # noqa: PLC0415
+    server._test_module_bindings = {  # type: ignore[attr-defined]
+        name: sys.modules.get(name) for name in _SERVER_MODULE_NAMES if name in sys.modules
+    }
+    # Unit-/Modultests sollen standardmäßig deterministisch bleiben und keine
+    # DB-Cache-Treffer oder Snapshot-Nebenwirkungen aus früheren Tests sehen.
+    if isolate_runtime_state:
+        server.CACHE_ENABLED = False
+        server.DEBUG_SNAPSHOTS_ENABLED = False
+        if "routing" in sys.modules:
+            sys.modules["routing"].CACHE_ENABLED = False
+            sys.modules["routing"].DEBUG_SNAPSHOTS_ENABLED = False
     return server
 
 
 def run_async(coro):
     """Führt eine Coroutine synchron aus (für Pytest ohne asyncio-Plugin)."""
     return asyncio.get_event_loop().run_until_complete(coro)
+
+
+def _safe_reset_runtime_state() -> None:
+    """Bereinigt persistente Runtime-Stateful-Komponenten zwischen Tests."""
+    for module_name, reset_name in (
+        ("templates_db", "cache_clear"),
+        ("server", "cache_clear"),
+        ("normalizer_cache", "cache_reset"),
+    ):
+        module = sys.modules.get(module_name)
+        reset = getattr(module, reset_name, None) if module is not None else None
+        if callable(reset):
+            try:
+                reset()
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -207,3 +246,23 @@ def _restore_sys_modules():
         else:
             # War gesetzt → Originalwert wiederherstellen
             sys.modules[name] = original_val
+
+
+@pytest.fixture(autouse=True)
+def _reset_runtime_state_between_tests(request):
+    """Pinnt pro Test das richtige server-Modul und leert Runtime-Caches."""
+    test_server = None
+    active_names = set(getattr(getattr(request, "function", None), "__code__", None).co_names or ())
+    for candidate_name in ("_server_api", "_server"):
+        candidate = getattr(request.module, candidate_name, None)
+        if candidate is None:
+            continue
+        if candidate_name in active_names or test_server is None:
+            test_server = candidate
+    bindings = getattr(test_server, "_test_module_bindings", None)
+    if isinstance(bindings, dict):
+        for name, module in bindings.items():
+            sys.modules[name] = module
+    _safe_reset_runtime_state()
+    yield
+    _safe_reset_runtime_state()

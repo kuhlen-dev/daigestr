@@ -101,6 +101,32 @@ def _make_quality_meta() -> dict:
 class TestFindMatchingTemplate:
     """Tests für die find_matching_template() Funktion."""
 
+    @staticmethod
+    def _conn_with_rows(rows):
+        class _Cursor:
+            def __init__(self, data):
+                self._data = data
+
+            def execute(self, *_args, **_kwargs):
+                return None
+
+            def fetchall(self):
+                return self._data
+
+        class _Conn:
+            status = 1
+
+            def __init__(self, data):
+                self._cursor = _Cursor(data)
+
+            def cursor(self):
+                return self._cursor
+
+            def rollback(self):
+                return None
+
+        return _Conn(rows)
+
     def test_exact_match_via_get_template_by_id(self):
         """Schritt 1: Exakter Match über get_template_by_id."""
         tmpl = _mock_template("invoice")
@@ -112,8 +138,7 @@ class TestFindMatchingTemplate:
     def test_no_exact_match_falls_through_to_keyword(self):
         """Kein exakter Match → Keyword-Suche wird ausgelöst."""
         tmpl = _mock_template("invoice", classify_keywords="rechnung,invoice")
-        conn_mock = MagicMock()
-        conn_mock.execute.return_value.fetchall.return_value = [
+        conn_mock = self._conn_with_rows([
             {
                 "id": "invoice",
                 "classify_keywords": "rechnung,invoice",
@@ -122,7 +147,7 @@ class TestFindMatchingTemplate:
                 "field_descriptions": None,
                 "enabled": 1,
             }
-        ]
+        ])
         with patch.object(_server, "get_template_by_id", return_value=None), \
              patch.object(_server, "get_db_connection", return_value=conn_mock):
             result = _server.find_matching_template("unknown_type", "Rechnung Nr. 1234")
@@ -131,8 +156,7 @@ class TestFindMatchingTemplate:
 
     def test_no_template_found(self):
         """Kein Template → None."""
-        conn_mock = MagicMock()
-        conn_mock.execute.return_value.fetchall.return_value = []
+        conn_mock = self._conn_with_rows([])
         with patch.object(_server, "get_template_by_id", return_value=None), \
              patch.object(_server, "get_db_connection", return_value=conn_mock):
             result = _server.find_matching_template("other", "Some random text")
@@ -157,8 +181,7 @@ class TestFindMatchingTemplate:
             "field_descriptions": None,
             "enabled": 1,
         }
-        conn_mock = MagicMock()
-        conn_mock.execute.return_value.fetchall.return_value = [low_prio, high_prio]
+        conn_mock = self._conn_with_rows([low_prio, high_prio])
         with patch.object(_server, "get_template_by_id", return_value=None), \
              patch.object(_server, "get_db_connection", return_value=conn_mock):
             result = _server.find_matching_template("unknown", "Rechnung invoice dokument")
@@ -183,8 +206,7 @@ class TestFindMatchingTemplate:
             "field_descriptions": None,
             "enabled": 1,
         }
-        conn_mock = MagicMock()
-        conn_mock.execute.return_value.fetchall.return_value = [few_match, more_match]
+        conn_mock = self._conn_with_rows([few_match, more_match])
         with patch.object(_server, "get_template_by_id", return_value=None), \
              patch.object(_server, "get_db_connection", return_value=conn_mock):
             # Text enthält alle 3 Keywords von "invoice" aber nur 1 von "generic"

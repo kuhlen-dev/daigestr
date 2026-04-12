@@ -377,15 +377,17 @@ def test_batch_normalize_logic(test_template):
         assert "normalized_version" in r
 
 
-def test_batch_normalize_no_mapping_returns_none():
-    """Batch normalize with no mapping should return None for each record (not crash)."""
+def test_batch_normalize_no_mapping_returns_empty_envelope():
+    """Batch normalize ohne Mapping liefert stabile Null-Envelope statt Crash."""
     from normalizer import normalize
 
     r = asyncio.get_event_loop().run_until_complete(
         normalize(extracted={"foo": "bar"}, template_name="__no_mapping_here__", meta={}, compact=False)
     )
-    # Returns None when no mapping exists
-    assert r is None
+    assert r is not None
+    assert r["normalized"] is None
+    assert r["normalized_version"] is None
+    assert r["normalized_warnings"] == ["No normalize_mapping found for template '__no_mapping_here__'"]
 
 
 # ---------------------------------------------------------------------------

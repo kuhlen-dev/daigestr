@@ -16,6 +16,7 @@ import asyncio
 import base64
 import hashlib
 import re
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -545,7 +546,12 @@ async def convert_auto(
     if effective_retry_mode is None:
         effective_retry_mode = _get("QUALITY_RETRY_MODE", QUALITY_RETRY_MODE)
 
-    _convert_auto_impl_fn = _get("_convert_auto_impl", _convert_auto_impl)
+    _server_module = sys.modules.get("server")
+    _server_impl = None
+    if _server_module is not None:
+        _server_impl = getattr(_server_module, "__dict__", {}).get("_convert_auto_impl")
+    _convert_auto_impl_fn = _server_impl or _convert_auto_impl
+    _convert_timeout_seconds = _get("CONVERT_TIMEOUT_SECONDS", CONVERT_TIMEOUT_SECONDS)
     job_id = effective_input_meta.get("_job_id")
 
     def _ensure_correlation_meta(resp: ConvertResponse, *, current_mode: str, current_attempt: int, current_attempt_count: int) -> ConvertResponse:
@@ -558,41 +564,97 @@ async def convert_auto(
         resp.meta = MetaData(**meta)
         return resp
 
-    response = await _convert_auto_impl_fn(
-        file_data=file_data,
-        filename=filename,
-        source=source,
-        source_type=source_type,
-        input_meta=effective_input_meta,
-        prompt=prompt,
-        language=language,
-        describe_images=describe_images,
-        describe_pages=describe_pages,
-        classify=classify,
-        classify_categories=classify_categories,
-        extract_schema=extract_schema,
-        ocr_correct=ocr_correct,
-        show_formulas=show_formulas,
-        chunk=chunk,
-        chunk_size=chunk_size,
-        accuracy=accuracy,
-        ocr_embed=ocr_embed,
-        auto_extract=auto_extract,
-        min_confidence=min_confidence,
-        retry_on_low_quality=retry_on_low_quality,
-        quality_retry_threshold=quality_retry_threshold,
-        quality_retry_mode=quality_retry_mode,
-        mode=mode,
-        output_format=output_format,
-        pages=pages,
-        no_cache=no_cache,
-        compact=compact,
-        template=template,
-        request_id=request_id,
-        attempt_number=1,
-        attempt_count=1,
+    def _timeout_meta(*, current_mode: str, current_attempt: int, current_attempt_count: int) -> dict[str, Any]:
+        return {
+            "source": source,
+            "source_type": source_type,
+            "format": get_file_extension(filename).lstrip(".") or None,
+            "size_bytes": len(file_data) if file_data is not None else None,
+            "duration_ms": 0,
+            "accuracy_mode": accuracy,
+            "request_id": request_id,
+            "job_id": job_id,
+            "attempt_number": current_attempt,
+            "attempt_count": current_attempt_count,
+            "attempt_mode": current_mode,
+        }
+
+    async def _run_impl_with_timeout(*, current_mode: str, current_attempt: int, current_attempt_count: int, retry_flag: Optional[bool]) -> ConvertResponse:
+        kwargs = dict(
+            file_data=file_data,
+            filename=filename,
+            source=source,
+            source_type=source_type,
+            input_meta=effective_input_meta,
+            prompt=prompt,
+            language=language,
+            describe_images=describe_images,
+            describe_pages=describe_pages,
+            classify=classify,
+            classify_categories=classify_categories,
+            extract_schema=extract_schema,
+            ocr_correct=ocr_correct,
+            show_formulas=show_formulas,
+            chunk=chunk,
+            chunk_size=chunk_size,
+            accuracy=accuracy,
+            ocr_embed=ocr_embed,
+            auto_extract=auto_extract,
+            min_confidence=min_confidence,
+            retry_on_low_quality=retry_flag,
+            quality_retry_threshold=quality_retry_threshold,
+            quality_retry_mode=quality_retry_mode,
+            mode=current_mode,
+            output_format=output_format,
+            pages=pages,
+            no_cache=no_cache,
+            compact=compact,
+            template=template,
+            request_id=request_id,
+            attempt_number=current_attempt,
+            attempt_count=current_attempt_count,
+        )
+        try:
+            if _convert_timeout_seconds and float(_convert_timeout_seconds) > 0:
+                resp = await asyncio.wait_for(
+                    _convert_auto_impl_fn(**kwargs),
+                    timeout=float(_convert_timeout_seconds),
+                )
+            else:
+                resp = await _convert_auto_impl_fn(**kwargs)
+        except asyncio.TimeoutError:
+            return create_error_response(
+                ErrorCode.TIMEOUT,
+                f"Timeout nach {_convert_timeout_seconds} Sekunden bei convert_auto",
+                meta=_timeout_meta(
+                    current_mode=current_mode,
+                    current_attempt=current_attempt,
+                    current_attempt_count=current_attempt_count,
+                ),
+            )
+        if resp is None:
+            return create_error_response(
+                ErrorCode.INTERNAL_ERROR,
+                "_convert_auto_impl returned no response",
+                meta=_timeout_meta(
+                    current_mode=current_mode,
+                    current_attempt=current_attempt,
+                    current_attempt_count=current_attempt_count,
+                ),
+            )
+        return _ensure_correlation_meta(
+            resp,
+            current_mode=current_mode,
+            current_attempt=current_attempt,
+            current_attempt_count=current_attempt_count,
+        )
+
+    response = await _run_impl_with_timeout(
+        current_mode=mode,
+        current_attempt=1,
+        current_attempt_count=1,
+        retry_flag=retry_on_low_quality,
     )
-    response = _ensure_correlation_meta(response, current_mode=mode, current_attempt=1, current_attempt_count=1)
 
     extraction_requested = bool(auto_extract or extract_schema or template)
     initial_score = getattr(response.meta, "quality_score", None)
@@ -618,45 +680,11 @@ async def convert_auto(
         )
 
     retry_reason = "missing_quality_score" if initial_score is None else "low_quality"
-    retried_response = await _convert_auto_impl_fn(
-        file_data=file_data,
-        filename=filename,
-        source=source,
-        source_type=source_type,
-        input_meta=effective_input_meta,
-        prompt=prompt,
-        language=language,
-        describe_images=describe_images,
-        describe_pages=describe_pages,
-        classify=classify,
-        classify_categories=classify_categories,
-        extract_schema=extract_schema,
-        ocr_correct=ocr_correct,
-        show_formulas=show_formulas,
-        chunk=chunk,
-        chunk_size=chunk_size,
-        accuracy=accuracy,
-        ocr_embed=ocr_embed,
-        auto_extract=auto_extract,
-        min_confidence=min_confidence,
-        retry_on_low_quality=False,
-        quality_retry_threshold=effective_retry_threshold,
-        quality_retry_mode=effective_retry_mode,
-        mode=effective_retry_mode,
-        output_format=output_format,
-        pages=pages,
-        no_cache=no_cache,
-        compact=compact,
-        template=template,
-        request_id=request_id,
-        attempt_number=2,
-        attempt_count=2,
-    )
-    retried_response = _ensure_correlation_meta(
-        retried_response,
+    retried_response = await _run_impl_with_timeout(
         current_mode=effective_retry_mode,
         current_attempt=2,
         current_attempt_count=2,
+        retry_flag=False,
     )
     final_score = getattr(retried_response.meta, "quality_score", None)
     return _apply_retry_meta(

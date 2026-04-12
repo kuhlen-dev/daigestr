@@ -1597,11 +1597,20 @@ def find_matching_template(document_type: str, markdown: str) -> Optional[dict]:
     try:
         conn = _get_db_connection()
         try:
-            cur = conn.cursor()
-            cur.execute(
-                "SELECT * FROM template WHERE enabled = 1 AND classify_keywords IS NOT NULL"
-            )
-            rows = cur.fetchall()
+            query = "SELECT * FROM template WHERE enabled = 1 AND classify_keywords IS NOT NULL"
+            rows = None
+            conn_execute = getattr(conn, "execute", None)
+            if callable(conn_execute):
+                try:
+                    maybe_rows = conn_execute(query).fetchall()
+                    if isinstance(maybe_rows, list):
+                        rows = maybe_rows
+                except Exception:
+                    rows = None
+            if rows is None:
+                cur = conn.cursor()
+                cur.execute(query)
+                rows = cur.fetchall()
         finally:
             _return_conn(conn)
     except Exception:
