@@ -198,6 +198,13 @@ from settings import (  # noqa: F401
     AUDIT_API_ENABLED,
 )
 from api_rest_audit import audit_router  # noqa: F401 — re-exported for test patchability
+from debug_snapshot_db import (  # noqa: F401
+    init_debug_snapshot_db,
+    debug_snapshot_store,
+    debug_snapshot_get,
+    debug_snapshot_list,
+    debug_snapshot_cleanup,
+)
 
 # Re-export normalize routers and normalizer (T-DAI-055/T-DAI-056)
 from api_rest_normalize import normalize_router, corrections_router, batch_router  # noqa: F401
@@ -299,6 +306,7 @@ def initialize_persistence() -> None:
     init_steps = [
         ("template_registry", init_templates_db),
         ("audit_db", init_audit_db),
+        ("debug_snapshot_db", init_debug_snapshot_db),
         ("normalization_db", init_normalization_db),
     ]
 

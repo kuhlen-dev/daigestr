@@ -77,6 +77,7 @@ class TestCheckPersistenceHealth:
             {"tablename": "normalized_values"},
             {"tablename": "normalized_test_fixtures"},
             {"tablename": "extraction_corrections"},
+            {"tablename": "debug_snapshot"},
         ]
         conn = _Conn(rows=rows)
 

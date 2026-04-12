@@ -96,6 +96,7 @@ def check_persistence_health() -> dict:
         "normalized_values",
         "normalized_test_fixtures",
         "extraction_corrections",
+        "debug_snapshot",
     ]
 
     _get_db_conn = _get("get_db_connection", get_db_connection)
