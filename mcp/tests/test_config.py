@@ -10,6 +10,7 @@ Prüft dass alle neuen Config-Variablen:
 import os
 import sys
 import importlib
+import re
 from pathlib import Path
 from unittest.mock import patch
 
@@ -184,7 +185,7 @@ class TestConfigUsedInFunctions:
         """classify_document soll MISTRAL_TEXT_MODEL verwenden, nicht MISTRAL_VISION_MODEL."""
         captured_payloads = []
 
-        async def mock_call_mistral(payload):
+        async def mock_call_mistral(payload, **_kwargs):
             captured_payloads.append(payload)
             return {
                 "choices": [{"message": {"content": '{"type": "invoice", "confidence": 0.9}'}}],
@@ -204,7 +205,7 @@ class TestConfigUsedInFunctions:
         """classify_document soll CLASSIFY_MAX_TOKENS verwenden."""
         captured_payloads = []
 
-        async def mock_call_mistral(payload):
+        async def mock_call_mistral(payload, **_kwargs):
             captured_payloads.append(payload)
             return {
                 "choices": [{"message": {"content": '{"type": "invoice", "confidence": 0.9}'}}],
@@ -223,7 +224,7 @@ class TestConfigUsedInFunctions:
         """classify_document soll Text auf CLASSIFY_MAX_CHARS kürzen."""
         captured_payloads = []
 
-        async def mock_call_mistral(payload):
+        async def mock_call_mistral(payload, **_kwargs):
             captured_payloads.append(payload)
             return {
                 "choices": [{"message": {"content": '{"type": "invoice", "confidence": 0.9}'}}],
@@ -239,16 +240,16 @@ class TestConfigUsedInFunctions:
 
         # Der User-Prompt soll den gekürzten Text enthalten
         user_content = captured_payloads[0]["messages"][1]["content"]
-        # Gekürzter Text darf maximal CLASSIFY_MAX_CHARS (100) x enthalten — das Original hat 500
-        x_count = user_content.count("x")
-        assert x_count <= 100, f"Erwarte max 100 x-Zeichen im Prompt, gefunden: {x_count}"
-        assert x_count > 0, "Erwarte mindestens 1 x-Zeichen (gekürzter Text muss im Prompt sein)"
+        # Prüfe die längste zusammenhängende Sequenz aus dem Dokumentinhalt statt Prompt-Overhead mitzuzählen.
+        longest_run = max((len(m.group(0)) for m in re.finditer(r"x+", user_content)), default=0)
+        assert longest_run <= 100, f"Erwarte max 100 zusammenhängende x-Zeichen im Prompt, gefunden: {longest_run}"
+        assert longest_run > 0, "Erwarte mindestens 1 x-Zeichen (gekürzter Text muss im Prompt sein)"
 
     def test_ocr_correct_uses_text_model(self, monkeypatch):
         """correct_ocr_text soll MISTRAL_TEXT_MODEL verwenden."""
         captured_payloads = []
 
-        async def mock_call_mistral(payload):
+        async def mock_call_mistral(payload, **_kwargs):
             captured_payloads.append(payload)
             return {
                 "choices": [{"message": {"content": "corrected text\n---CORRECTIONS: 2"}}],
@@ -267,7 +268,7 @@ class TestConfigUsedInFunctions:
         """correct_ocr_text soll OCR_CORRECT_MAX_TOKENS verwenden."""
         captured_payloads = []
 
-        async def mock_call_mistral(payload):
+        async def mock_call_mistral(payload, **_kwargs):
             captured_payloads.append(payload)
             return {
                 "choices": [{"message": {"content": "corrected\n---CORRECTIONS: 0"}}],
@@ -286,7 +287,7 @@ class TestConfigUsedInFunctions:
         """extract_structured_data soll MISTRAL_TEXT_MODEL verwenden."""
         captured_payloads = []
 
-        async def mock_call_mistral(payload):
+        async def mock_call_mistral(payload, **_kwargs):
             captured_payloads.append(payload)
             return {
                 "choices": [{"message": {"content": '{"name": "Test"}'}}],
@@ -306,7 +307,7 @@ class TestConfigUsedInFunctions:
         """extract_structured_data soll EXTRACT_MAX_TOKENS verwenden."""
         captured_payloads = []
 
-        async def mock_call_mistral(payload):
+        async def mock_call_mistral(payload, **_kwargs):
             captured_payloads.append(payload)
             return {
                 "choices": [{"message": {"content": '{"name": "Test"}'}}],
@@ -322,11 +323,73 @@ class TestConfigUsedInFunctions:
 
         assert captured_payloads[0]["max_tokens"] == 4096
 
+    def test_extract_uses_json_schema_response_format_by_default(self, monkeypatch):
+        captured_payloads = []
+
+        async def mock_call_mistral(payload, **_kwargs):
+            captured_payloads.append(payload)
+            return {
+                "choices": [{"message": {"content": '{"name": "Test"}'}}],
+                "usage": {"total_tokens": 15},
+            }
+
+        monkeypatch.setattr(self.server, "call_mistral_vision_api", mock_call_mistral)
+        monkeypatch.setattr(self.server, "MISTRAL_API_KEY", "test-key")
+        monkeypatch.setattr(self.server, "MISTRAL_EXTRACT_RESPONSE_FORMAT", "json_schema")
+
+        schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+        run_async(self.server.extract_structured_data("sample text", schema))
+
+        response_format = captured_payloads[0]["response_format"]
+        assert response_format["type"] == "json_schema"
+        meta_schema = response_format["json_schema"]["schema"]["properties"]["_meta"]
+        assert meta_schema["type"] == "object"
+        assert "properties" in meta_schema
+        assert "zusammenfassung" in meta_schema["properties"]
+
+    def test_extract_can_use_json_object_response_format(self, monkeypatch):
+        captured_payloads = []
+
+        async def mock_call_mistral(payload, **_kwargs):
+            captured_payloads.append(payload)
+            return {
+                "choices": [{"message": {"content": '{"name": "Test"}'}}],
+                "usage": {"total_tokens": 15},
+            }
+
+        monkeypatch.setattr(self.server, "call_mistral_vision_api", mock_call_mistral)
+        monkeypatch.setattr(self.server, "MISTRAL_API_KEY", "test-key")
+        monkeypatch.setattr(self.server, "MISTRAL_EXTRACT_RESPONSE_FORMAT", "json_object")
+
+        schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+        run_async(self.server.extract_structured_data("sample text", schema))
+
+        assert captured_payloads[0]["response_format"] == {"type": "json_object"}
+
+    def test_extract_can_disable_structured_response_format(self, monkeypatch):
+        captured_payloads = []
+
+        async def mock_call_mistral(payload, **_kwargs):
+            captured_payloads.append(payload)
+            return {
+                "choices": [{"message": {"content": '{"name": "Test"}'}}],
+                "usage": {"total_tokens": 15},
+            }
+
+        monkeypatch.setattr(self.server, "call_mistral_vision_api", mock_call_mistral)
+        monkeypatch.setattr(self.server, "MISTRAL_API_KEY", "test-key")
+        monkeypatch.setattr(self.server, "MISTRAL_EXTRACT_RESPONSE_FORMAT", "legacy")
+
+        schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+        run_async(self.server.extract_structured_data("sample text", schema))
+
+        assert "response_format" not in captured_payloads[0]
+
     def test_vision_uses_max_tokens(self, monkeypatch):
         """analyze_with_mistral_vision soll VISION_MAX_TOKENS verwenden."""
         captured_payloads = []
 
-        async def mock_call_mistral(payload):
+        async def mock_call_mistral(payload, **_kwargs):
             captured_payloads.append(payload)
             return {
                 "choices": [{"message": {"content": "image description"}}],

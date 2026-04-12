@@ -38,6 +38,7 @@ from settings import (
     OCR_CORRECT_MAX_TOKENS,
     CLASSIFY_MAX_CHARS,
     EXTRACT_MAX_CHARS,
+    MISTRAL_EXTRACT_RESPONSE_FORMAT,
     _classify_categories_cache,
     _CLASSIFY_CACHE_TTL,
 )
@@ -92,6 +93,21 @@ def get_meta_schema() -> dict:
     if _META_SCHEMA is None:
         _META_SCHEMA = _load_meta_schema()
     return _META_SCHEMA
+
+
+def _meta_description_to_json_schema(node: Any) -> dict[str, Any]:
+    """Convert the descriptive DB-backed _meta schema into a valid JSON Schema."""
+    if isinstance(node, dict):
+        return {
+            "type": "object",
+            "properties": {key: _meta_description_to_json_schema(value) for key, value in node.items()},
+            "additionalProperties": False,
+        }
+    if isinstance(node, list):
+        if node:
+            return {"type": "array", "items": _meta_description_to_json_schema(node[0])}
+        return {"type": "array", "items": {"type": ["string", "null"]}}
+    return {"type": ["string", "null"], "description": str(node)}
 
 
 def _as_non_empty_string(value: Any) -> Optional[str]:
@@ -956,6 +972,7 @@ async def extract_structured_data(
     _text_model = _get("MISTRAL_TEXT_MODEL", MISTRAL_TEXT_MODEL)
     _extract_max_tokens = _get("EXTRACT_MAX_TOKENS", EXTRACT_MAX_TOKENS)
     _extract_max_chars = _get("EXTRACT_MAX_CHARS", EXTRACT_MAX_CHARS)
+    _extract_response_format = _get("MISTRAL_EXTRACT_RESPONSE_FORMAT", MISTRAL_EXTRACT_RESPONSE_FORMAT)
     _call_api = _get("call_mistral_vision_api", call_mistral_vision_api)
     _jsonschema_available = _get("JSONSCHEMA_AVAILABLE", JSONSCHEMA_AVAILABLE)
     if not _api_key:
@@ -1039,12 +1056,27 @@ async def extract_structured_data(
         "max_tokens": _extract_max_tokens,
         "temperature": 0.0,
     }
+    if _extract_response_format == "json_object":
+        payload["response_format"] = {"type": "json_object"}
+    elif _extract_response_format == "json_schema":
+        structured_schema = copy.deepcopy(schema)
+        structured_schema.setdefault("type", "object")
+        structured_schema.setdefault("properties", {})
+        structured_schema["properties"]["_meta"] = _meta_description_to_json_schema(get_meta_schema())
+        payload["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "daigestr_extraction",
+                "schema": structured_schema,
+            },
+        }
 
     try:
         log.info(
             "extract_structured_data_start",
             schema_keys=list(schema.get("properties", {}).keys()),
             text_length=len(markdown),
+            response_format=_extract_response_format,
             request_id=request_id,
             attempt_number=attempt_number,
         )
@@ -1054,22 +1086,25 @@ async def extract_structured_data(
             attempt_number=attempt_number,
             pipeline_step="extract_structured_data",
         )
-        content = result["choices"][0]["message"]["content"].strip()
+        content = result["choices"][0]["message"]["content"]
         usage = result.get("usage", {})
         tokens = usage.get("total_tokens", 0)
 
-        # JSON aus der Antwort extrahieren (Modell könnte Markdown-Code-Blöcke liefern)
-        json_match = re.search(r"\{[\s\S]*\}", content)
-        if not json_match:
-            log.warning("extract_structured_data_no_json", raw_content=content[:200], request_id=request_id, attempt_number=attempt_number)
-            return {
-                "success": False,
-                "error": f"Kein JSON in der API-Antwort gefunden: {content[:100]}",
-                "extracted": None,
-                "tokens": tokens,
-            }
+        if isinstance(content, dict):
+            extracted = _harmonize_extracted_summary_fields(content)
+        else:
+            content_str = content.strip() if isinstance(content, str) else str(content)
+            json_match = re.search(r"\{[\s\S]*\}", content_str)
+            if not json_match:
+                log.warning("extract_structured_data_no_json", raw_content=content_str[:200], request_id=request_id, attempt_number=attempt_number)
+                return {
+                    "success": False,
+                    "error": f"Kein JSON in der API-Antwort gefunden: {content_str[:100]}",
+                    "extracted": None,
+                    "tokens": tokens,
+                }
 
-        extracted = _harmonize_extracted_summary_fields(json.loads(json_match.group(0)))
+            extracted = _harmonize_extracted_summary_fields(json.loads(json_match.group(0)))
 
         if enable_bank_bundle_recovery and _needs_bank_statement_bundle_recovery(markdown, extracted):
             recovery_result = await _recover_bank_statement_bundle(

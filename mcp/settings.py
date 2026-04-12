@@ -127,6 +127,9 @@ VISION_MAX_TOKENS = int(os.getenv("VISION_MAX_TOKENS", "16384"))
 CLASSIFY_MAX_TOKENS = int(os.getenv("CLASSIFY_MAX_TOKENS", "1024"))
 EXTRACT_MAX_TOKENS = int(os.getenv("EXTRACT_MAX_TOKENS", "16384"))
 OCR_CORRECT_MAX_TOKENS = int(os.getenv("OCR_CORRECT_MAX_TOKENS", "16384"))
+MISTRAL_EXTRACT_RESPONSE_FORMAT = os.getenv("MISTRAL_EXTRACT_RESPONSE_FORMAT", "json_schema")
+if MISTRAL_EXTRACT_RESPONSE_FORMAT not in {"legacy", "json_object", "json_schema"}:
+    raise ValueError("MISTRAL_EXTRACT_RESPONSE_FORMAT must be one of: legacy, json_object, json_schema")
 
 # Text-Limits für LLM-Input
 CLASSIFY_MAX_CHARS = int(os.getenv("CLASSIFY_MAX_CHARS", "32000"))
@@ -182,7 +185,7 @@ MERMAID_CDN_URL = os.getenv("MERMAID_CDN_URL", "https://cdn.jsdelivr.net/npm/mer
 HIGHLIGHTJS_CDN_URL = os.getenv("HIGHLIGHTJS_CDN_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js")
 HIGHLIGHTJS_CSS_URL = os.getenv("HIGHLIGHTJS_CSS_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css")
 
-VERSION = os.getenv("DAIGESTR_VERSION", "13.4.3")
+VERSION = os.getenv("DAIGESTR_VERSION", "13.5.1")
 START_TIME = time.time()
 
 # =============================================================================
