@@ -761,7 +761,26 @@ async def _convert_auto_impl(
 
     _job_completed = False  # Guard: no more status updates after job_set_result
 
-    def _update_progress(step: str, detail: str, progress: int) -> None:
+    def _parse_page_progress(detail: str) -> tuple[Optional[int], Optional[int]]:
+        if not isinstance(detail, str):
+            return None, None
+        match = re.match(r"^page\s+(\d+)/(\d+)", detail.strip(), flags=re.IGNORECASE)
+        if not match:
+            return None, None
+        return int(match.group(1)), int(match.group(2))
+
+    def _update_progress(
+        step: str,
+        detail: str,
+        progress: int,
+        *,
+        page_current: Optional[int] = None,
+        page_total: Optional[int] = None,
+        upstream_attempt: Optional[int] = None,
+        extra_metadata: Optional[dict[str, Any]] = None,
+    ) -> None:
+        if page_current is None and page_total is None:
+            page_current, page_total = _parse_page_progress(detail)
         progress_payload = ProgressState(
             **build_progress_payload(
                 status="processing",
@@ -773,9 +792,13 @@ async def _convert_auto_impl(
                 attempt_number=attempt_number,
                 attempt_count=attempt_count,
                 attempt_mode=mode,
+                page_current=page_current,
+                page_total=page_total,
+                upstream_attempt=upstream_attempt,
                 metadata={
                     "source": source,
                     "filename": filename,
+                    **(extra_metadata or {}),
                 },
             )
         )
@@ -1596,7 +1619,13 @@ async def _convert_auto_impl(
                             log.warning("pages_truncated", file=filename, total=len(_page_images), limit=_max_describe_pages)
                             _page_images = _page_images[:_max_describe_pages]
                             meta["pages_truncated"] = True
-                        _update_progress("describe_pages", f"{len(_page_images)} pages to describe", 25)
+                        _update_progress(
+                            "describe_pages",
+                            f"{len(_page_images)} pages to describe",
+                            25,
+                            page_current=0,
+                            page_total=len(_page_images),
+                        )
                         import inspect as _insp_pages
                         _dp_kwargs: dict = {"language": language}
                         _dp_sig = _insp_pages.signature(_describe_page_imgs)
