@@ -59,3 +59,14 @@ def test_tips_document_job_progress_fields(monkeypatch):
     assert "progress.current_stage" in progress_fields
     assert "progress.page_current" in progress_fields
     assert "progress.request_id" in progress_fields
+
+
+def test_tips_document_brix_integration_contract(monkeypatch):
+    monkeypatch.setattr(_routing, "get_all_template_ids", lambda: ["invoice"])
+
+    result = _server._build_tips_dict()
+
+    contract = result["brix_integration_contract"]
+    assert "meta.template_used" in contract["read_from_raw_meta"]
+    assert "meta.quality_score" in contract["read_from_raw_meta"]
+    assert "normalized._quality_score as document quality" in contract["do_not_use_as_canonical"]
