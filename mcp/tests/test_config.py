@@ -336,6 +336,7 @@ class TestConfigUsedInFunctions:
         monkeypatch.setattr(self.server, "call_mistral_vision_api", mock_call_mistral)
         monkeypatch.setattr(self.server, "MISTRAL_API_KEY", "test-key")
         monkeypatch.setattr(self.server, "MISTRAL_EXTRACT_RESPONSE_FORMAT", "json_schema")
+        monkeypatch.setattr(self.server, "get_steuer_signalwoerter", lambda: ["mwst"])
 
         schema = {"type": "object", "properties": {"name": {"type": "string"}}}
         run_async(self.server.extract_structured_data("sample text", schema))
@@ -384,6 +385,60 @@ class TestConfigUsedInFunctions:
         run_async(self.server.extract_structured_data("sample text", schema))
 
         assert "response_format" not in captured_payloads[0]
+
+    def test_extract_formats_preserve_same_business_payload(self, monkeypatch):
+        schema = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "_meta": {
+                    "type": "object",
+                    "properties": {
+                        "zusammenfassung": {"type": "string"},
+                    },
+                },
+            },
+        }
+        expected = {"name": "Test", "summary": "Kurz", "_meta": {"zusammenfassung": "Kurz"}}
+
+        async def call_legacy(payload, **_kwargs):
+            return {
+                "choices": [{"message": {"content": '{"name": "Test", "_meta": {"zusammenfassung": "Kurz"}}'}}],
+                "usage": {"total_tokens": 15},
+            }
+
+        async def call_json_object(payload, **_kwargs):
+            return {
+                "choices": [{"message": {"content": '{"name": "Test", "_meta": {"zusammenfassung": "Kurz"}}'}}],
+                "usage": {"total_tokens": 15},
+            }
+
+        async def call_json_schema(payload, **_kwargs):
+            return {
+                "choices": [{"message": {"content": expected}}],
+                "usage": {"total_tokens": 15},
+            }
+
+        monkeypatch.setattr(self.server, "MISTRAL_API_KEY", "test-key")
+
+        monkeypatch.setattr(self.server, "call_mistral_vision_api", call_legacy)
+        monkeypatch.setattr(self.server, "MISTRAL_EXTRACT_RESPONSE_FORMAT", "legacy")
+        legacy_result = run_async(self.server.extract_structured_data("sample text", schema))
+
+        monkeypatch.setattr(self.server, "call_mistral_vision_api", call_json_object)
+        monkeypatch.setattr(self.server, "MISTRAL_EXTRACT_RESPONSE_FORMAT", "json_object")
+        json_object_result = run_async(self.server.extract_structured_data("sample text", schema))
+
+        monkeypatch.setattr(self.server, "call_mistral_vision_api", call_json_schema)
+        monkeypatch.setattr(self.server, "MISTRAL_EXTRACT_RESPONSE_FORMAT", "json_schema")
+        json_schema_result = run_async(self.server.extract_structured_data("sample text", schema))
+
+        assert legacy_result["success"] is True
+        assert json_object_result["success"] is True
+        assert json_schema_result["success"] is True
+        assert legacy_result["extracted"] == expected
+        assert json_object_result["extracted"] == expected
+        assert json_schema_result["extracted"] == expected
 
     def test_vision_uses_max_tokens(self, monkeypatch):
         """analyze_with_mistral_vision soll VISION_MAX_TOKENS verwenden."""

@@ -567,3 +567,63 @@ class TestOcrQualityScoring:
 
         assert result["quality_score"] >= 0.6
         assert result["quality_grade"] in {"good", "excellent"}
+
+
+class TestOcrMetadataRegression:
+    """Vergleicht alte und neue OCR-Response-Formen auf denselben Meta-Contract."""
+
+    def test_extract_mistral_ocr_metadata_supports_legacy_and_current_shapes(self):
+        extract_metadata = call_mistral_ocr_api.__globals__["extract_mistral_ocr_metadata"]
+        current_shape = {
+            "pages": [
+                {
+                    "headers": ["Kontoauszug 11"],
+                    "footers": ["Seite 1"],
+                    "tables": [{"id": "t1"}],
+                    "confidence_scores": {"page": 0.93},
+                },
+                {
+                    "headers": ["Kontoauszug 12"],
+                    "footers": ["Seite 2"],
+                    "tables": [{"id": "t2"}, {"id": "t3"}],
+                    "confidence_scores": {"page": 0.89},
+                },
+            ]
+        }
+        legacy_shape = {
+            "pages": [
+                {
+                    "header": "Kontoauszug 11",
+                    "footer": "Seite 1",
+                    "tables": [{"id": "t1"}],
+                    "confidence_scores": {
+                        "average_page_confidence_score": 0.93,
+                        "minimum_page_confidence_score": 0.91,
+                    },
+                },
+                {
+                    "header": "Kontoauszug 12",
+                    "footer": "Seite 2",
+                    "tables": [{"id": "t2"}, {"id": "t3"}],
+                    "confidence_scores": {
+                        "average_page_confidence_score": 0.89,
+                        "minimum_page_confidence_score": 0.87,
+                    },
+                },
+            ]
+        }
+
+        with patch.object(_server, "MISTRAL_OCR_TABLE_FORMAT", "markdown"):
+            current_meta = extract_metadata(current_shape)
+            legacy_meta = extract_metadata(legacy_shape)
+
+        assert current_meta["ocr_table_format"] == "markdown"
+        assert current_meta["ocr_table_count"] == 3
+        assert current_meta["ocr_headers"] == ["Kontoauszug 11", "Kontoauszug 12"]
+        assert current_meta["ocr_footers"] == ["Seite 1", "Seite 2"]
+        assert current_meta["ocr_confidence_granularity"] == "page"
+        assert current_meta["ocr_pages_with_confidence"] == 2
+        assert current_meta["ocr_average_page_confidence"] == 0.91
+        assert current_meta["ocr_minimum_page_confidence"] == 0.89
+
+        assert legacy_meta == current_meta

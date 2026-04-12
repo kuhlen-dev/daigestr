@@ -72,6 +72,7 @@ from mistral_client import (
     call_mistral_vision_api,
     call_mistral_ocr_api,
     analyze_with_mistral_vision,
+    extract_mistral_ocr_metadata,
 )
 from converters.images import (
     resize_image_if_needed,

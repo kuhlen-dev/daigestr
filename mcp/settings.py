@@ -45,6 +45,11 @@ _ocr_bbox_annotation_format = os.getenv("MISTRAL_OCR_BBOX_ANNOTATION_FORMAT", ""
 MISTRAL_OCR_BBOX_ANNOTATION_FORMAT = _ocr_bbox_annotation_format or None
 if MISTRAL_OCR_BBOX_ANNOTATION_FORMAT not in {None, "text"}:
     raise ValueError("MISTRAL_OCR_BBOX_ANNOTATION_FORMAT must be empty or 'text'")
+MISTRAL_OCR_EXTRACT_HEADER = os.getenv("MISTRAL_OCR_EXTRACT_HEADER", "false").lower() == "true"
+MISTRAL_OCR_EXTRACT_FOOTER = os.getenv("MISTRAL_OCR_EXTRACT_FOOTER", "false").lower() == "true"
+MISTRAL_OCR_CONFIDENCE_GRANULARITY = os.getenv("MISTRAL_OCR_CONFIDENCE_GRANULARITY", "page").strip().lower()
+if MISTRAL_OCR_CONFIDENCE_GRANULARITY not in {"none", "page", "word"}:
+    raise ValueError("MISTRAL_OCR_CONFIDENCE_GRANULARITY must be one of: none, page, word")
 # =============================================================================
 # Server Ports
 # =============================================================================
@@ -197,7 +202,7 @@ MERMAID_CDN_URL = os.getenv("MERMAID_CDN_URL", "https://cdn.jsdelivr.net/npm/mer
 HIGHLIGHTJS_CDN_URL = os.getenv("HIGHLIGHTJS_CDN_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js")
 HIGHLIGHTJS_CSS_URL = os.getenv("HIGHLIGHTJS_CSS_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css")
 
-VERSION = os.getenv("DAIGESTR_VERSION", "13.5.2")
+VERSION = os.getenv("DAIGESTR_VERSION", "13.5.3")
 START_TIME = time.time()
 
 # =============================================================================

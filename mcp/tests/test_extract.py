@@ -765,3 +765,53 @@ class TestExtractInConvertAuto:
         assert result.success is True
         assert result.markdown is not None
         assert result.extracted is None
+
+
+class TestStructuredOutputRegression:
+    """Vergleicht alte und neue Mistral-Ausgabeformen gegen denselben Contract."""
+
+    def test_extract_structured_data_preserves_output_across_response_formats(self):
+        expected = {
+            "invoice_number": "INV-2026-04",
+            "total_amount": "100.00",
+            "_meta": {
+                "steuerrelevant": True,
+                "zusammenfassung": "Rechnung über 100 EUR.",
+            },
+        }
+        schema = {
+            "type": "object",
+            "properties": {
+                "invoice_number": {"type": "string"},
+                "total_amount": {"type": "string"},
+            },
+            "required": ["invoice_number"],
+        }
+
+        variants = {
+            "legacy": {
+                "choices": [{"message": {"content": json.dumps(expected)}}],
+                "usage": {"total_tokens": 17},
+            },
+            "json_object": {
+                "choices": [{"message": {"content": expected}}],
+                "usage": {"total_tokens": 17},
+            },
+            "json_schema": {
+                "choices": [{"message": {"content": expected}}],
+                "usage": {"total_tokens": 17},
+            },
+        }
+
+        for response_format, api_response in variants.items():
+            with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
+                 patch.object(_server, "MISTRAL_EXTRACT_RESPONSE_FORMAT", response_format), \
+                 patch.object(_server, "call_mistral_vision_api", new=AsyncMock(return_value=api_response)):
+                result = run_async(_server.extract_structured_data(INVOICE_MARKDOWN, schema))
+
+            assert result["success"] is True
+            assert result["tokens"] == 17
+            assert result["extracted"]["invoice_number"] == expected["invoice_number"]
+            assert result["extracted"]["total_amount"] == expected["total_amount"]
+            assert result["extracted"]["_meta"] == expected["_meta"]
+            assert result["extracted"]["summary"] == expected["_meta"]["zusammenfassung"]
