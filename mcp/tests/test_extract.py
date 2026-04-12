@@ -423,6 +423,78 @@ Kontostand am 30.09.2024, 20:03 Uhr 12.263,23+
         assert extracted["_meta"]["dokumenten_id"] == "11,12"
         assert extracted["summary"].startswith("Sammel-Kontoauszug")
 
+    def test_extract_recovers_bank_statement_bundle_after_initial_api_failure(self):
+        """Long bank-statement runs must fall back to segment extraction when the first full extract call fails."""
+        markdown = """
+## Seite 1
+Kontoauszug 11
+Blatt 1
+19.08 Lastschrift
+Wert: 19.08.2024
+
+## Seite 2
+Kontoauszug 11
+Blatt 2
+Kontostand am 30.08.2024, 20:04 Uhr 15.504,16+
+
+## Seite 3
+Kontoauszug 12
+Blatt 1
+02.09 Lastschrift
+Wert: 02.09.2024
+
+## Seite 4
+Kontoauszug 12
+Blatt 2
+Kontostand am 30.09.2024, 20:03 Uhr 12.263,23+
+"""
+        statement_11 = {
+            "bank": "Stadtsparkasse Mönchengladbach",
+            "iban": "DE62310500000000019752",
+            "bic": "MGLSDE33",
+            "kontoinhaber": {"name": "Hans und Marlene Kuhlen"},
+            "auszugsnummer": "11",
+            "datum": "2024-08-30",
+            "anfangssaldo": "14902.01",
+            "endsaldo": "15504.16",
+            "buchungen": [
+                {"datum": "2024-08-19", "text": "A", "betrag": "-41.90", "saldo": "14860.11", "währung": "EUR"},
+                {"datum": "2024-08-30", "text": "B", "betrag": "+766.09", "saldo": "15504.16", "währung": "EUR"},
+            ],
+        }
+        statement_12 = {
+            "bank": "Stadtsparkasse Mönchengladbach",
+            "iban": "DE62310500000000019752",
+            "bic": "MGLSDE33",
+            "kontoinhaber": {"name": "Hans und Marlene Kuhlen"},
+            "auszugsnummer": "12",
+            "datum": "2024-09-30",
+            "anfangssaldo": "15504.16",
+            "endsaldo": "12263.23",
+            "buchungen": [
+                {"datum": "2024-09-02", "text": "C", "betrag": "-27.85", "saldo": "15476.31", "währung": "EUR"},
+                {"datum": "2024-09-30", "text": "D", "betrag": "+766.09", "saldo": "12263.23", "währung": "EUR"},
+            ],
+        }
+
+        api_calls = AsyncMock(side_effect=[
+            Exception("upstream timeout"),
+            _make_mistral_json_response(statement_11, tokens=30),
+            _make_mistral_json_response(statement_12, tokens=32),
+        ])
+
+        with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
+             patch.object(_server, "call_mistral_vision_api", new=api_calls):
+            result = run_async(extract_structured_data(markdown, get_template_by_id("bank_statement")["schema"]))
+
+        assert result["success"] is True
+        extracted = result["extracted"]
+        assert api_calls.await_count == 3
+        assert extracted["auszugsnummer"] == "11,12"
+        assert extracted["zeitraum"] == {"von": "2024-08-19", "bis": "2024-09-30"}
+        assert len(extracted["kontoauszuege"]) == 2
+        assert len(extracted["buchungen"]) == 4
+
 
 # ---------------------------------------------------------------------------
 # Tests: EXTRACTION_TEMPLATES

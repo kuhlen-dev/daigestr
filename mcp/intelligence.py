@@ -210,6 +210,88 @@ def _needs_bank_statement_bundle_recovery(markdown: str, extracted: dict[str, An
     return True
 
 
+def _schema_supports_bank_statement_bundle(schema: dict[str, Any]) -> bool:
+    properties = schema.get("properties") if isinstance(schema, dict) else None
+    if not isinstance(properties, dict):
+        return False
+    return all(key in properties for key in ("auszugsnummer", "buchungen", "kontoauszuege"))
+
+
+async def _recover_bank_statement_bundle(
+    markdown: str,
+    schema: dict[str, Any],
+    *,
+    language: str,
+    field_descriptions: Optional[dict | str],
+    notes: Optional[str],
+    request_id: Optional[str],
+    attempt_number: Optional[int],
+) -> Optional[dict[str, Any]]:
+    if not _schema_supports_bank_statement_bundle(schema):
+        return None
+
+    page_groups = _extract_bank_statement_page_groups(markdown)
+    unique_numbers = [number for number, _ in page_groups]
+    if len(unique_numbers) <= 1:
+        return None
+
+    log.info(
+        "extract_structured_data_bank_bundle_recovery_start",
+        request_id=request_id,
+        attempt_number=attempt_number,
+        detected_statement_numbers=unique_numbers,
+        detected_statement_count=len(unique_numbers),
+    )
+
+    recovered_statements: list[dict[str, Any]] = []
+    recovery_tokens = 0
+    for statement_number, statement_markdown in page_groups:
+        statement_result = await extract_structured_data(
+            statement_markdown,
+            schema,
+            language=language,
+            field_descriptions=field_descriptions,
+            notes=notes,
+            request_id=request_id,
+            attempt_number=attempt_number,
+            enable_bank_bundle_recovery=False,
+        )
+        recovery_tokens += int(statement_result.get("tokens") or 0)
+        if not statement_result.get("success"):
+            log.warning(
+                "extract_structured_data_bank_bundle_recovery_failed",
+                request_id=request_id,
+                attempt_number=attempt_number,
+                statement_number=statement_number,
+                error=statement_result.get("error"),
+            )
+            return None
+        statement_extracted = statement_result.get("extracted")
+        if not isinstance(statement_extracted, dict):
+            return None
+        recovered_statements.append(statement_extracted)
+
+    if not recovered_statements:
+        return None
+
+    extracted: dict[str, Any] = {
+        "kontoauszuege": recovered_statements,
+    }
+    extracted = _harmonize_extracted_summary_fields(extracted)
+    log.info(
+        "extract_structured_data_bank_bundle_recovery_success",
+        request_id=request_id,
+        attempt_number=attempt_number,
+        recovered_statement_count=len(recovered_statements),
+        tokens=recovery_tokens,
+    )
+    return {
+        "success": True,
+        "extracted": extracted,
+        "tokens": recovery_tokens,
+    }
+
+
 def _build_bank_statement_entry(
     statement: dict[str, Any],
     fallback: dict[str, Any],
@@ -990,56 +1072,18 @@ async def extract_structured_data(
         extracted = _harmonize_extracted_summary_fields(json.loads(json_match.group(0)))
 
         if enable_bank_bundle_recovery and _needs_bank_statement_bundle_recovery(markdown, extracted):
-            page_groups = _extract_bank_statement_page_groups(markdown)
-            unique_numbers = [number for number, _ in page_groups]
-            log.info(
-                "extract_structured_data_bank_bundle_recovery_start",
+            recovery_result = await _recover_bank_statement_bundle(
+                markdown,
+                schema,
+                language=language,
+                field_descriptions=field_descriptions,
+                notes=notes,
                 request_id=request_id,
                 attempt_number=attempt_number,
-                detected_statement_numbers=unique_numbers,
-                detected_statement_count=len(unique_numbers),
             )
-            recovered_statements: list[dict[str, Any]] = []
-            recovery_tokens = 0
-            for statement_number, statement_markdown in page_groups:
-                statement_result = await extract_structured_data(
-                    statement_markdown,
-                    schema,
-                    language=language,
-                    field_descriptions=field_descriptions,
-                    notes=notes,
-                    request_id=request_id,
-                    attempt_number=attempt_number,
-                    enable_bank_bundle_recovery=False,
-                )
-                recovery_tokens += int(statement_result.get("tokens") or 0)
-                if not statement_result.get("success"):
-                    log.warning(
-                        "extract_structured_data_bank_bundle_recovery_failed",
-                        request_id=request_id,
-                        attempt_number=attempt_number,
-                        statement_number=statement_number,
-                        error=statement_result.get("error"),
-                    )
-                    recovered_statements = []
-                    break
-                statement_extracted = statement_result.get("extracted")
-                if not isinstance(statement_extracted, dict):
-                    recovered_statements = []
-                    break
-                recovered_statements.append(statement_extracted)
-
-            if recovered_statements:
-                extracted["kontoauszuege"] = recovered_statements
-                extracted = _harmonize_extracted_summary_fields(extracted)
-                tokens += recovery_tokens
-                log.info(
-                    "extract_structured_data_bank_bundle_recovery_success",
-                    request_id=request_id,
-                    attempt_number=attempt_number,
-                    recovered_statement_count=len(recovered_statements),
-                    tokens=tokens,
-                )
+            if recovery_result is not None:
+                extracted = recovery_result["extracted"]
+                tokens += int(recovery_result.get("tokens") or 0)
 
         # Schema-Validierung (AC-014-7) — null-tolerant
         if _jsonschema_available:
@@ -1068,6 +1112,18 @@ async def extract_structured_data(
         }
 
     except json.JSONDecodeError as exc:
+        if enable_bank_bundle_recovery:
+            recovery_result = await _recover_bank_statement_bundle(
+                markdown,
+                schema,
+                language=language,
+                field_descriptions=field_descriptions,
+                notes=notes,
+                request_id=request_id,
+                attempt_number=attempt_number,
+            )
+            if recovery_result is not None:
+                return recovery_result
         log.warning("extract_structured_data_json_decode_error", error=str(exc), request_id=request_id, attempt_number=attempt_number)
         return {
             "success": False,
@@ -1076,6 +1132,18 @@ async def extract_structured_data(
             "tokens": 0,
         }
     except Exception as exc:
+        if enable_bank_bundle_recovery:
+            recovery_result = await _recover_bank_statement_bundle(
+                markdown,
+                schema,
+                language=language,
+                field_descriptions=field_descriptions,
+                notes=notes,
+                request_id=request_id,
+                attempt_number=attempt_number,
+            )
+            if recovery_result is not None:
+                return recovery_result
         log.error("extract_structured_data_api_error", error=str(exc), request_id=request_id, attempt_number=attempt_number)
         return {
             "success": False,
