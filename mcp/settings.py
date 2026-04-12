@@ -41,6 +41,10 @@ MCP_PORT = int(os.getenv("MCP_PORT", "8080"))
 MCP_TRANSPORT = os.getenv("MCP_TRANSPORT", "sse")
 REST_PORT = int(os.getenv("REST_PORT", "8081"))
 BIND_HOST = os.getenv("BIND_HOST", "0.0.0.0")
+MCP_HOST_BIND = os.getenv("MCP_HOST_BIND", BIND_HOST)
+MCP_HOST_PORT = int(os.getenv("MCP_HOST_PORT", "18005"))
+REST_HOST_BIND = os.getenv("REST_HOST_BIND", BIND_HOST)
+REST_HOST_PORT = int(os.getenv("REST_HOST_PORT", "18006"))
 
 # =============================================================================
 # Limits
@@ -178,7 +182,7 @@ MERMAID_CDN_URL = os.getenv("MERMAID_CDN_URL", "https://cdn.jsdelivr.net/npm/mer
 HIGHLIGHTJS_CDN_URL = os.getenv("HIGHLIGHTJS_CDN_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js")
 HIGHLIGHTJS_CSS_URL = os.getenv("HIGHLIGHTJS_CSS_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css")
 
-VERSION = os.getenv("DAIGESTR_VERSION", "13.1.3")
+VERSION = os.getenv("DAIGESTR_VERSION", "13.2.1")
 START_TIME = time.time()
 
 # =============================================================================
@@ -200,6 +204,10 @@ BRIX_URL = os.getenv("BRIX_URL", "http://brix:8080")
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://daigestr:daigestr@daigestr-postgres:5432/daigestr")
 DB_POOL_MIN = int(os.getenv("DB_POOL_MIN", "1"))
 DB_POOL_MAX = int(os.getenv("DB_POOL_MAX", "5"))
+POSTGRES_USER = os.getenv("POSTGRES_USER", "daigestr")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "daigestr")
+POSTGRES_DB = os.getenv("POSTGRES_DB", "daigestr")
+POSTGRES_HOST_PORT = int(os.getenv("POSTGRES_HOST_PORT", "15432"))
 
 # =============================================================================
 # Audit Log — T-DAI-070
@@ -217,3 +225,51 @@ NORMALIZE_CACHE_TTL_SECONDS = int(os.getenv("NORMALIZE_CACHE_TTL_SECONDS", "60")
 NORMALIZE_CACHE_ENABLED = os.getenv("NORMALIZE_CACHE_ENABLED", "true").lower() == "true"
 NORMALIZE_FALLBACK_COUNTRY = os.getenv("NORMALIZE_FALLBACK_COUNTRY", "DE")
 NORMALIZE_PLAUSIBILITY_TOLERANCE = float(os.getenv("NORMALIZE_PLAUSIBILITY_TOLERANCE", "0.01"))
+
+# =============================================================================
+# Debug Snapshots / Zwischenstände — T-DAI-083
+# =============================================================================
+
+DEBUG_SNAPSHOTS_ENABLED = os.getenv("DEBUG_SNAPSHOTS_ENABLED", "false").lower() == "true"
+DEBUG_SNAPSHOTS_RETENTION_DAYS = int(os.getenv("DEBUG_SNAPSHOTS_RETENTION_DAYS", "14"))
+DEBUG_SNAPSHOTS_POLICIES = tuple(
+    part.strip()
+    for part in os.getenv(
+        "DEBUG_SNAPSHOTS_POLICIES",
+        "failures,retries,long_documents,low_quality",
+    ).split(",")
+    if part.strip()
+)
+_ALLOWED_DEBUG_SNAPSHOT_POLICIES = {
+    "all",
+    "failures",
+    "retries",
+    "low_quality",
+    "long_documents",
+}
+_invalid_debug_snapshot_policies = sorted(
+    set(DEBUG_SNAPSHOTS_POLICIES) - _ALLOWED_DEBUG_SNAPSHOT_POLICIES
+)
+if _invalid_debug_snapshot_policies:
+    raise ValueError(
+        "DEBUG_SNAPSHOTS_POLICIES contains unsupported values: "
+        + ", ".join(_invalid_debug_snapshot_policies)
+    )
+DEBUG_SNAPSHOTS_LONG_DOCUMENT_PAGE_THRESHOLD = int(
+    os.getenv("DEBUG_SNAPSHOTS_LONG_DOCUMENT_PAGE_THRESHOLD", "25")
+)
+DEBUG_SNAPSHOTS_LOW_QUALITY_THRESHOLD = float(
+    os.getenv("DEBUG_SNAPSHOTS_LOW_QUALITY_THRESHOLD", str(QUALITY_RETRY_THRESHOLD))
+)
+DEBUG_SNAPSHOTS_INCLUDE_MARKDOWN = (
+    os.getenv("DEBUG_SNAPSHOTS_INCLUDE_MARKDOWN", "true").lower() == "true"
+)
+DEBUG_SNAPSHOTS_INCLUDE_EXTRACTED = (
+    os.getenv("DEBUG_SNAPSHOTS_INCLUDE_EXTRACTED", "true").lower() == "true"
+)
+DEBUG_SNAPSHOTS_INCLUDE_NORMALIZED = (
+    os.getenv("DEBUG_SNAPSHOTS_INCLUDE_NORMALIZED", "true").lower() == "true"
+)
+DEBUG_SNAPSHOTS_INCLUDE_ERRORS = (
+    os.getenv("DEBUG_SNAPSHOTS_INCLUDE_ERRORS", "true").lower() == "true"
+)

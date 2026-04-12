@@ -151,6 +151,10 @@ from intelligence import (
     get_steuer_signalwoerter,
     get_datentyp_konventionen,
 )
+from debug_snapshots import (  # noqa: F401
+    should_capture_debug_snapshot,
+    build_debug_snapshot_payload,
+)
 
 # Re-export availability flags and key names from sub-modules so tests can patch
 # via server namespace. Sub-modules read these back via _get() for test-patchability.
