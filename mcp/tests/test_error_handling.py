@@ -358,3 +358,26 @@ class TestConvertTimeout:
 
         assert result.success is True
         assert result.markdown == "# OK"
+
+    def test_timeout_disabled_when_env_unset(self):
+        """
+        Ohne explizit gesetzten CONVERT_TIMEOUT_SECONDS greift kein Global-Timeout.
+        """
+        fresh_server, fresh_convert_auto = self._fresh_convert_auto()
+        import sys
+        fresh_routing = sys.modules.get("routing")
+        assert fresh_routing is not None
+        from models import create_success_response
+
+        async def _slow_but_valid(*args, **kwargs):
+            await asyncio.sleep(0.2)
+            return create_success_response("# SLOW OK", meta={})
+
+        with patch.object(fresh_server, "CONVERT_TIMEOUT_SECONDS", None), \
+             patch.object(fresh_routing, "CONVERT_TIMEOUT_SECONDS", None), \
+             patch.object(fresh_server, "_convert_auto_impl", new=_slow_but_valid, create=True), \
+             patch.object(fresh_routing, "_convert_auto_impl", new=_slow_but_valid):
+            result = _run_with_new_loop(fresh_convert_auto(**_base_convert_kwargs()))
+
+        assert result.success is True
+        assert result.markdown == "# SLOW OK"

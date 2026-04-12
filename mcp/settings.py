@@ -9,6 +9,16 @@ import time
 from pathlib import Path
 from typing import Any
 
+
+def _optional_positive_float_env(name: str) -> float | None:
+    raw = os.getenv(name, "").strip()
+    if raw == "":
+        return None
+    value = float(raw)
+    if value <= 0:
+        return None
+    return value
+
 # =============================================================================
 # Verzeichnisse
 # =============================================================================
@@ -77,8 +87,9 @@ MAX_DESCRIBE_IMAGES = int(os.getenv("MAX_DESCRIBE_IMAGES", "50"))
 # Max. Seiten die bei describe_pages gerendert werden (T-DAI-030)
 PAGE_DESCRIBE_MAX_PAGES = int(os.getenv("PAGE_DESCRIBE_MAX_PAGES", "50"))
 
-# Timeout für einzelne convert_auto Aufrufe in Sekunden (FIX 4 — T-DAI-024)
-CONVERT_TIMEOUT_SECONDS = int(os.getenv("CONVERT_TIMEOUT_SECONDS", "300"))
+# Timeout für einzelne convert_auto Aufrufe in Sekunden.
+# Standard: deaktiviert; nur per expliziter ENV-Angabe aktiv.
+CONVERT_TIMEOUT_SECONDS = _optional_positive_float_env("CONVERT_TIMEOUT_SECONDS")
 
 # Timeout für Background-Jobs in Sekunden (BUG 3 — Job-Timeout)
 JOB_TIMEOUT_SECONDS = int(os.getenv("JOB_TIMEOUT_SECONDS", "900"))  # 15 Minuten
@@ -202,7 +213,7 @@ MERMAID_CDN_URL = os.getenv("MERMAID_CDN_URL", "https://cdn.jsdelivr.net/npm/mer
 HIGHLIGHTJS_CDN_URL = os.getenv("HIGHLIGHTJS_CDN_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js")
 HIGHLIGHTJS_CSS_URL = os.getenv("HIGHLIGHTJS_CSS_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css")
 
-VERSION = os.getenv("DAIGESTR_VERSION", "13.6.2")
+VERSION = os.getenv("DAIGESTR_VERSION", "14.1.1")
 START_TIME = time.time()
 
 # =============================================================================
