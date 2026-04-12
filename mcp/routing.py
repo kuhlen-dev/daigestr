@@ -2001,7 +2001,7 @@ def _build_tips_dict() -> dict:
             "accuracy": {"values": ["standard", "high"], "default": "standard", "description": "high activates OCR correction + dual-pass vision validation for scanned documents"},
             "classify": {"type": "bool", "default": False, "description": "Detect document type (invoice, contract, cv, etc.) with confidence score in meta"},
             "extract_schema": {"type": "dict", "default": None, "description": "JSON Schema for structured extraction — result in 'extracted' field. Without this, extracted is always null."},
-            "template": {"type": "str", "default": None, "description": "Shortcut for extract_schema. Available: invoice, cv, contract"},
+            "template": {"type": "str", "default": None, "description": "Shortcut for extract_schema. Use GET /v1/templates or /v1/tips for the live template registry."},
             "auto_extract": {"type": "bool", "default": False, "description": "Automatically classify document, find matching template, and extract structured data — all in one call. No template or extract_schema needed."},
             "min_confidence": {"type": "float", "default": 0.7, "description": "Minimum classification confidence for auto_extract to use a template (0.0-1.0)"},
             "retry_on_low_quality": {"type": "bool|null", "default": None, "description": "Allow Daigestr to retry once with a stronger mode when the initial quality score is too low. Null = env default."},
@@ -2137,11 +2137,10 @@ def _build_tips_dict() -> dict:
             "description": "Automatische Normalisierung extrahierter Daten in einheitliche Feldnamen",
             "how_it_works": "Bei convert/extract: Wenn ein Mapping für den Template-Typ existiert, werden extrahierte Felder automatisch normalisiert",
             "parameters": {
-                "compact": "true/false — Kompakt-Format mit Kategorie-Gruppierung",
+                "compact": "true/false — remove null fields from the normalized output to reduce payload size",
             },
             "response_fields": {
                 "normalized": "Normalisierte Daten mit einheitlichen Feldnamen, Typen und normalizer-spezifischen Scores",
-                "compact": "Verdichtete Version gruppiert nach Kategorien (nur wenn compact=true)",
             },
             "admin_endpoints": [
                 "GET/POST /v1/normalized/fields — Felder verwalten",

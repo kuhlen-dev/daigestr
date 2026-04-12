@@ -291,7 +291,7 @@ class ConvertRequest(BaseModel):
 
     # Extraktion
     extract_schema: Optional[dict[str, Any]] = Field(None, description="JSON Schema for structured data extraction. Populates the 'extracted' field when provided. Alternatives: use the 'template' parameter or auto_extract=true.")
-    template: Optional[str] = Field(None, description="Predefined extraction template name. Available: 'invoice', 'cv', 'contract'. See GET /v1/templates for schemas. Alternative to extract_schema.")
+    template: Optional[str] = Field(None, description="Predefined extraction template name from the live template registry. See GET /v1/templates for available templates and schemas. Alternative to extract_schema.")
 
     # OCR-Korrektur
     ocr_correct: bool = Field(False, description="When true, runs an LLM post-correction pass on OCR output to fix common recognition errors. Automatically enabled when accuracy='high'.")
@@ -380,7 +380,7 @@ class ExtractRequest(BaseModel):
 
     # Extraktion (eines von beiden erforderlich, oder auto_extract=true)
     extract_schema: Optional[dict[str, Any]] = Field(None, description="JSON Schema for structured data extraction. Populates the 'extracted' field when provided. Alternatives: use the 'template' parameter or auto_extract=true.")
-    template: Optional[str] = Field(None, description="Predefined extraction template name. Available: 'invoice', 'cv', 'contract'. See GET /v1/templates for schemas. Alternative to extract_schema.")
+    template: Optional[str] = Field(None, description="Predefined extraction template name from the live template registry. See GET /v1/templates for available templates and schemas. Alternative to extract_schema.")
 
     # Auto-Extract (T-MKIT-036)
     auto_extract: bool = Field(False, description="When true, automatically classifies the document, looks up a matching template from the registry, and extracts structured data — all in one call. No need to specify template or extract_schema.")

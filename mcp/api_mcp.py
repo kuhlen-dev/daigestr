@@ -73,7 +73,9 @@ async def mcp_convert(
     """
     Converts a file, URL, or base64 payload to Markdown.
 
-    Default output is always Markdown in the 'markdown' field.
+    The response always includes the canonical `markdown` field. When `output_format`
+    is set to `html` or `text`, the corresponding rendered variant is additionally
+    materialized in the response contract.
     Canonical metadata is returned in the `meta` object:
     - `meta.document_type`
     - `meta.document_type_confidence`
@@ -285,9 +287,8 @@ async def mcp_extract(
     """
     Converts a file and extracts structured data in one step.
 
-    REQUIRES either extract_schema (JSON Schema dict), template name, or auto_extract=true.
-    Available templates: 'invoice', 'cv', 'contract'.
-    See /v1/templates for template schemas.
+    REQUIRES either extract_schema (JSON Schema dict), a template name from the
+    live registry, or auto_extract=true. See /v1/templates for current template schemas.
 
     The response contains both 'markdown' (full text) and 'extracted' (structured JSON).
     Canonical metadata is returned in `meta.document_type`, `meta.template_used`,
@@ -306,7 +307,7 @@ async def mcp_extract(
         base64_data: Base64-kodierte Datei (erfordert filename).
         filename: Dateiname (erforderlich bei base64_data).
         url: URL zu Datei oder Webseite (alternativ zu path/base64_data).
-        template: Vordefinierter Template-Name ('invoice', 'cv', 'contract') als
+        template: Vordefinierter Template-Name aus der Live-Registry als
                   Alternative zu extract_schema.
         prompt: Optionaler Custom-Prompt für Vision.
         language: Antwortsprache ('de' oder 'en').

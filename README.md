@@ -4,7 +4,7 @@
 
 Daigestr is for the point where generic document conversion stops being useful: scanned invoices, ugly PDFs, DOCX reports with embedded charts, mixed-language attachments, or document folders that break downstream automation. It converts, classifies, extracts, and normalizes documents through one self-hosted service with a REST API for workflows and an MCP interface for agents.
 
-Current version: **v13.4.2**
+Current version: **v13.4.3**
 
 ## Why Teams Use It
 
@@ -192,7 +192,7 @@ curl -X POST http://localhost:18006/v1/convert \
 ```bash
 curl -X POST http://localhost:18006/v1/convert/folder \
   -H "Content-Type: application/json" \
-  -d '{"path": "/data/documents", "recursive": true}'
+  -d '{"path": "/data/documents"}'
 ```
 
 ### Async job with webhook
@@ -222,7 +222,7 @@ curl -X POST http://localhost:18006/v1/convert/async \
 | `ocr_embed: true` | embed searchable OCR text into scanned PDFs |
 | `chunk: true` | produce RAG-friendly chunks in addition to Markdown |
 | `no_cache: true` | bypass cached results |
-| `compact: true` | shorter normalized output when normalization is present |
+| `compact: true` | remove null fields from the normalized output |
 
 ## Output Model
 

@@ -47,6 +47,7 @@ def test_mcp_convert_docstring_mentions_canonical_meta_fields():
     assert "meta.document_type" in doc
     assert "meta.template_used" in doc
     assert "meta.quality_score" in doc
+    assert "output_format" in doc
 
 
 def test_mcp_extract_docstring_mentions_normalized_score_layer():
@@ -54,3 +55,15 @@ def test_mcp_extract_docstring_mentions_normalized_score_layer():
 
     assert "normalized._quality_score" in doc
     assert "meta.retry_applied" in doc
+
+
+def test_request_template_descriptions_do_not_hardcode_template_names():
+    from models import ConvertRequest, ExtractRequest
+
+    convert_description = ConvertRequest.model_fields["template"].description
+    extract_description = ExtractRequest.model_fields["template"].description
+
+    assert "live template registry" in convert_description
+    assert "invoice', 'cv', 'contract" not in convert_description
+    assert "live template registry" in extract_description
+    assert "invoice', 'cv', 'contract" not in extract_description
