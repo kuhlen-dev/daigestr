@@ -19,6 +19,7 @@ import json
 import re
 import sys
 import time
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Optional, TYPE_CHECKING
 
@@ -230,6 +231,334 @@ def _extract_bank_statement_page_groups(markdown: str) -> list[tuple[str, str]]:
     ]
 
 
+def _normalize_bank_statement_amount(
+    raw: Any,
+    *,
+    inferred_sign: Optional[str] = None,
+) -> Optional[str]:
+    value = _as_non_empty_string(raw)
+    if value is None:
+        return None
+    cleaned = (
+        value.replace("EUR", "")
+        .replace("€", "")
+        .replace(" ", "")
+        .replace("|", "")
+        .strip()
+    )
+    simple_decimal = re.fullmatch(r"([+-])?(\d+\.\d{2})", cleaned)
+    if simple_decimal:
+        sign = simple_decimal.group(1) or inferred_sign or ""
+        numeric = simple_decimal.group(2)
+        if sign == "-":
+            return f"-{numeric}"
+        if sign == "+":
+            return f"+{numeric}"
+        return numeric
+
+    match = re.search(r"([+-])?(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})([+-])?", cleaned)
+    if not match:
+        return None
+    sign = match.group(1) or match.group(3) or inferred_sign or ""
+    numeric = match.group(2)
+    if "," in numeric:
+        numeric = numeric.replace(".", "").replace(",", ".")
+    if sign == "-":
+        return f"-{numeric}"
+    if sign == "+":
+        return f"+{numeric}"
+    return numeric
+
+
+def _bank_statement_amount_to_decimal(amount: Any) -> Optional[Decimal]:
+    normalized = _normalize_bank_statement_amount(amount)
+    if normalized is None:
+        return None
+    try:
+        return Decimal(normalized)
+    except InvalidOperation:
+        return None
+
+
+def _format_bank_statement_decimal(amount: Decimal) -> str:
+    quantized = amount.quantize(Decimal("0.01"))
+    sign = "+" if quantized >= 0 else "-"
+    absolute = abs(quantized)
+    return f"{sign}{absolute:.2f}"
+
+
+def _bank_statement_date_to_iso(value: str, fallback_year: Optional[str] = None) -> Optional[str]:
+    raw = _as_non_empty_string(value)
+    if raw is None:
+        return None
+    full_match = re.search(r"(\d{2})\.(\d{2})\.(\d{4})", raw)
+    if full_match:
+        day, month, year = full_match.groups()
+        return f"{year}-{month}-{day}"
+    short_match = re.search(r"(\d{2})\.(\d{2})", raw)
+    if short_match and fallback_year:
+        day, month = short_match.groups()
+        return f"{fallback_year}-{month}-{day}"
+    return None
+
+
+def _extract_bank_statement_common_fields(markdown: str) -> dict[str, Any]:
+    extracted: dict[str, Any] = {}
+
+    bank_match = re.search(r"\n([^\n]+?)\s+UST-ID\b", markdown, flags=re.IGNORECASE)
+    bank_name = _as_non_empty_string(bank_match.group(1)) if bank_match else None
+    if bank_name:
+        extracted["bank"] = bank_name
+
+    iban_match = re.search(
+        r"IBAN:\s*\n?\s*([A-Z0-9 ]{12,48})",
+        markdown,
+        flags=re.IGNORECASE,
+    )
+    iban = None
+    if iban_match:
+        iban_line = iban_match.group(1).splitlines()[0]
+        iban = re.sub(r"\s+", "", iban_line).strip()
+    if iban:
+        extracted["iban"] = iban
+
+    bic_match = re.search(r"(?:SWIFT-)?BIC:\s*([A-Z0-9]{8,11})", markdown, flags=re.IGNORECASE)
+    bic = _as_non_empty_string(bic_match.group(1)) if bic_match else None
+    if bic:
+        extracted["bic"] = bic
+
+    holder_match = re.search(
+        r"\n([A-ZÄÖÜa-zäöüß][^\n]*?)\n\s*IBAN:",
+        markdown,
+        flags=re.IGNORECASE,
+    )
+    holder_name = _as_non_empty_string(holder_match.group(1)) if holder_match else None
+    if holder_name:
+        extracted["kontoinhaber"] = {"name": holder_name}
+
+    if bic or iban:
+        extracted["währung"] = "EUR"
+
+    return extracted
+
+
+def _infer_bank_statement_booking_sign(text: str) -> str:
+    lowered = text.lower()
+    positive_markers = (
+        "gutschrift",
+        "ps-sparen",
+        "habenzins",
+        "zinsgutschrift",
+        "eingang",
+    )
+    if any(marker in lowered for marker in positive_markers):
+        return "+"
+    return "-"
+
+
+def _looks_like_bank_statement_noise_line(line: str) -> bool:
+    lowered = line.lower()
+    if not lowered:
+        return True
+    if lowered.startswith(("## seite", "komfortkonto", "stadtsparkasse", "datum erläuterungen", "blatt", "betrag", "iban:", "swift-bic:", "www.")):
+        return True
+    if lowered.startswith("kontostand "):
+        return True
+    if lowered == "hans und marlene kuhlen":
+        return True
+    if re.fullmatch(r"\d+(?:\s+\d+)*", line):
+        return True
+    if re.fullmatch(r"DE\d{2}(?:\s*\d{4}){4,8}", line):
+        return True
+    if re.fullmatch(r"[A-Z0-9]{8,11}", line):
+        return True
+    if re.fullmatch(r"\|?\s*-+\s*(?:\|\s*-+\s*)+\|?", line):
+        return True
+    return False
+
+
+def _extract_bank_statement_segment_opening_balance(statement_markdown: str) -> Optional[str]:
+    match = re.search(
+        r"Kontoauszug\s+\d+.*?Betrag\s*([\d\.,]+[+-])",
+        statement_markdown,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        return None
+    return _normalize_bank_statement_amount(match.group(1))
+
+
+def _extract_bank_statement_segment_statement_date(statement_markdown: str) -> Optional[str]:
+    matches = re.findall(r"Kontostand(?: am)?\s*(\d{2}\.\d{2}\.\d{4})", statement_markdown, flags=re.IGNORECASE)
+    if matches:
+        return _bank_statement_date_to_iso(matches[-1])
+    booking_dates = re.findall(r"Wert:\s*(\d{2}\.\d{2}\.\d{4})", statement_markdown, flags=re.IGNORECASE)
+    if booking_dates:
+        return _bank_statement_date_to_iso(booking_dates[-1])
+    return None
+
+
+def _extract_bank_statement_segment_statement_number(statement_markdown: str) -> Optional[str]:
+    match = re.search(r"Kontoauszug\s+(\d+)", statement_markdown, flags=re.IGNORECASE)
+    if not match:
+        return None
+    return _as_non_empty_string(match.group(1))
+
+
+def _parse_bank_statement_markdown_bookings(statement_markdown: str) -> list[dict[str, Any]]:
+    lines = [line.strip().strip("|").strip() for line in statement_markdown.splitlines()]
+    bookings: list[dict[str, Any]] = []
+    current: Optional[dict[str, Any]] = None
+
+    def _finalize_current() -> None:
+        nonlocal current
+        if current is None:
+            return
+        text_parts = current.pop("_text_parts", [])
+        canonical_text = " ".join(part for part in text_parts if part).strip()
+        current["text"] = canonical_text or current.get("booking_type") or "Kontobewegung"
+        bookings.append(current)
+        current = None
+
+    def _match_start(line: str) -> Optional[re.Match[str]]:
+        return re.match(
+            r"^(?:\|?\s*)?(\d{2}\.\d{2})\s+(.+?)(?:\s+Wert:\s*(\d{2}\.\d{2}\.\d{4}))?(?:\s+([\d\.,]+[+-]?))?$",
+            line,
+            flags=re.IGNORECASE,
+        )
+
+    def _assign_amount(amount_value: str) -> None:
+        normalized = _normalize_bank_statement_amount(amount_value)
+        if normalized is None:
+            return
+        for booking in bookings:
+            if booking.get("amount") is None:
+                booking["amount"] = normalized
+                return
+        if current is not None and current.get("amount") is None:
+            current["amount"] = normalized
+
+    for raw_line in lines:
+        line = re.sub(r"\s+", " ", raw_line).strip()
+        if not line:
+            continue
+
+        start_match = _match_start(line)
+        if start_match:
+            _finalize_current()
+            short_date, booking_type, value_date, inline_amount = start_match.groups()
+            current = {
+                "booking_date": short_date,
+                "value_date": value_date,
+                "booking_type": _as_non_empty_string(booking_type) or "Kontobewegung",
+                "amount": _normalize_bank_statement_amount(inline_amount) if inline_amount else None,
+                "_text_parts": [],
+            }
+            if current["booking_type"]:
+                current["_text_parts"].append(current["booking_type"])
+            continue
+
+        if current is not None:
+            value_match = re.search(r"Wert:\s*(\d{2}\.\d{2}\.\d{4})(?:\s+([\d\.,]+[+-]?))?", line, flags=re.IGNORECASE)
+            if value_match:
+                current["value_date"] = value_match.group(1)
+                if value_match.group(2):
+                    current["amount"] = _normalize_bank_statement_amount(value_match.group(2))
+                continue
+
+        amount_only_match = re.fullmatch(r"([\d\.,]+[+-]?)", line)
+        if amount_only_match:
+            _assign_amount(amount_only_match.group(1))
+            continue
+
+        if _looks_like_bank_statement_noise_line(line):
+            continue
+
+        if current is not None:
+            current["_text_parts"].append(line)
+
+    _finalize_current()
+
+    typed_bookings: list[dict[str, Any]] = []
+    for booking in bookings:
+        booking_date = booking.get("value_date") or booking.get("booking_date")
+        iso_date = _bank_statement_date_to_iso(booking_date)
+        text = _as_non_empty_string(booking.get("text"))
+        amount = _normalize_bank_statement_amount(
+            booking.get("amount"),
+            inferred_sign=_infer_bank_statement_booking_sign(text or ""),
+        )
+        if iso_date is None or text is None or amount is None:
+            continue
+        typed_bookings.append({
+            "datum": iso_date,
+            "text": text,
+            "betrag": amount,
+            "währung": "EUR",
+        })
+
+    typed_bookings.sort(key=lambda item: item["datum"])
+    return typed_bookings
+
+
+def _reconstruct_bank_statement_segment_from_markdown(
+    statement_markdown: str,
+    *,
+    next_statement_markdown: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
+    statement_number = _extract_bank_statement_segment_statement_number(statement_markdown)
+    opening_balance = _extract_bank_statement_segment_opening_balance(statement_markdown)
+    if statement_number is None or opening_balance is None:
+        return None
+
+    common_fields = _extract_bank_statement_common_fields(statement_markdown)
+    bookings = _parse_bank_statement_markdown_bookings(statement_markdown)
+    if not bookings:
+        return None
+
+    opening_decimal = _bank_statement_amount_to_decimal(opening_balance)
+    if opening_decimal is None:
+        return None
+
+    running_balance = opening_decimal
+    for booking in bookings:
+        amount_decimal = _bank_statement_amount_to_decimal(booking.get("betrag"))
+        if amount_decimal is None:
+            return None
+        running_balance += amount_decimal
+        booking["saldo"] = _format_bank_statement_decimal(running_balance)
+
+    next_opening_balance = None
+    if next_statement_markdown:
+        next_opening_balance = _extract_bank_statement_segment_opening_balance(next_statement_markdown)
+
+    ending_balance = next_opening_balance or bookings[-1].get("saldo")
+    if ending_balance is None:
+        return None
+
+    statement_date = _extract_bank_statement_segment_statement_date(statement_markdown) or bookings[-1]["datum"]
+    period = {
+        "von": bookings[0]["datum"],
+        "bis": bookings[-1]["datum"],
+    }
+
+    reconstructed = {
+        **common_fields,
+        "auszugsnummer": statement_number,
+        "datum": statement_date,
+        "zeitraum": period,
+        "anfangssaldo": opening_balance,
+        "endsaldo": ending_balance,
+        "währung": common_fields.get("währung") or "EUR",
+        "buchungen": bookings,
+        "_meta": {
+            "dokumenten_id": statement_number,
+            "zusammenfassung": f"Kontoauszug {statement_number} mit {len(bookings)} Buchungen.",
+        },
+    }
+    return reconstructed
+
+
 def _needs_bank_statement_bundle_recovery(markdown: str, extracted: dict[str, Any]) -> bool:
     page_groups = _extract_bank_statement_page_groups(markdown)
     detected_numbers = [number for number, _ in page_groups]
@@ -290,7 +619,9 @@ async def _recover_bank_statement_bundle(
 
     recovered_statements: list[dict[str, Any]] = []
     recovery_tokens = 0
-    for statement_number, statement_markdown in page_groups:
+    reconstructed_statement_numbers: list[str] = []
+    for index, (statement_number, statement_markdown) in enumerate(page_groups):
+        next_statement_markdown = page_groups[index + 1][1] if index + 1 < len(page_groups) else None
         statement_result = await extract_structured_data(
             statement_markdown,
             schema,
@@ -303,6 +634,26 @@ async def _recover_bank_statement_bundle(
             strict_schema_validation=False,
         )
         recovery_tokens += int(statement_result.get("tokens") or 0)
+        statement_extracted = statement_result.get("extracted")
+        if statement_result.get("success") and isinstance(statement_extracted, dict):
+            recovered_statements.append(statement_extracted)
+            continue
+
+        reconstructed_statement = _reconstruct_bank_statement_segment_from_markdown(
+            statement_markdown,
+            next_statement_markdown=next_statement_markdown,
+        )
+        if reconstructed_statement is not None:
+            reconstructed_statement_numbers.append(statement_number)
+            recovered_statements.append(reconstructed_statement)
+            log.warning(
+                "extract_structured_data_bank_bundle_recovery_segment_reconstructed",
+                request_id=request_id,
+                attempt_number=attempt_number,
+                statement_number=statement_number,
+            )
+            continue
+
         if not statement_result.get("success"):
             log.warning(
                 "extract_structured_data_bank_bundle_recovery_failed",
@@ -312,10 +663,8 @@ async def _recover_bank_statement_bundle(
                 error=statement_result.get("error"),
             )
             return None
-        statement_extracted = statement_result.get("extracted")
         if not isinstance(statement_extracted, dict):
             return None
-        recovered_statements.append(statement_extracted)
 
     if not recovered_statements:
         return None
@@ -324,11 +673,20 @@ async def _recover_bank_statement_bundle(
         "kontoauszuege": recovered_statements,
     }
     extracted = _harmonize_extracted_summary_fields(extracted)
+    if reconstructed_statement_numbers:
+        meta_block = extracted.get("_meta")
+        if not isinstance(meta_block, dict):
+            meta_block = {}
+            extracted["_meta"] = meta_block
+        reconstructed_label = ",".join(reconstructed_statement_numbers)
+        meta_block["reconstructed_statement_numbers"] = reconstructed_label
+        meta_block["reconstructed_from_markdown"] = True
     log.info(
         "extract_structured_data_bank_bundle_recovery_success",
         request_id=request_id,
         attempt_number=attempt_number,
         recovered_statement_count=len(recovered_statements),
+        reconstructed_statement_count=len(reconstructed_statement_numbers),
         tokens=recovery_tokens,
     )
     return {

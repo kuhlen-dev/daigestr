@@ -584,6 +584,103 @@ Kontostand am 30.09.2024, 20:03 Uhr 12.263,23+
         assert extracted["summary"].startswith("Sammel-Kontoauszug")
         assert "mit 8 Auszügen" in extracted["summary"]
 
+    def test_reconstruct_bank_statement_segment_from_realistic_fixture_markdown(self):
+        """A failed statement segment must be reconstructable directly from markdown."""
+        markdown = read_text_fixture("bank_statement_bundle_12421_sanitized.md")
+        page_groups = dict(_intelligence._extract_bank_statement_page_groups(markdown))
+
+        reconstructed = _intelligence._reconstruct_bank_statement_segment_from_markdown(
+            page_groups["12"],
+            next_statement_markdown=page_groups.get("13"),
+        )
+
+        assert reconstructed is not None
+        assert reconstructed["auszugsnummer"] == "12"
+        assert reconstructed["anfangssaldo"] == "+15504.16"
+        assert reconstructed["endsaldo"] == "+12263.23"
+        assert reconstructed["zeitraum"]["von"] == "2024-09-02"
+        assert reconstructed["zeitraum"]["bis"] >= "2024-09-12"
+        assert len(reconstructed["buchungen"]) >= 2
+
+    def test_extract_recovers_bank_statement_bundle_when_one_segment_uses_markdown_fallback(self):
+        """A single failing statement segment must not collapse the entire bundle contract."""
+        markdown = read_text_fixture("bank_statement_bundle_12421_sanitized.md")
+        schema = get_template_by_id("bank_statement")["schema"]
+
+        async def fake_extract(statement_markdown, passed_schema, **kwargs):
+            assert passed_schema == schema
+            match = re.search(r"Kontoauszug\s+(\d+)", statement_markdown)
+            assert match is not None
+            statement_number = match.group(1)
+            if statement_number == "12":
+                return {
+                    "success": False,
+                    "tokens": 0,
+                    "error": "API-Fehler bei Extraktion: upstream 520",
+                    "extracted": None,
+                }
+            booking_dates = re.findall(r"Wert:\s*(\d{2}\.\d{2}\.\d{4})", statement_markdown)
+            assert booking_dates, f"fixture segment for statement {statement_number} has no booking dates"
+            first_date = booking_dates[0]
+            last_date = booking_dates[-1]
+            return {
+                "success": True,
+                "tokens": 10,
+                "extracted": {
+                    "bank": "Stadtsparkasse Mönchengladbach",
+                    "iban": "DE62310500000000019752",
+                    "bic": "MGLSDE33",
+                    "kontoinhaber": {"name": "Hans und Marlene Kuhlen"},
+                    "auszugsnummer": statement_number,
+                    "datum": last_date[-4:] + "-" + last_date[3:5] + "-" + last_date[0:2],
+                    "anfangssaldo": "1000.00",
+                    "endsaldo": "1100.00",
+                    "buchungen": [
+                        {
+                            "datum": first_date[-4:] + "-" + first_date[3:5] + "-" + first_date[0:2],
+                            "text": f"Segment {statement_number}",
+                            "betrag": "-10.00",
+                            "saldo": "990.00",
+                            "währung": "EUR",
+                        },
+                        {
+                            "datum": last_date[-4:] + "-" + last_date[3:5] + "-" + last_date[0:2],
+                            "text": f"Abschluss {statement_number}",
+                            "betrag": "+110.00",
+                            "saldo": "1100.00",
+                            "währung": "EUR",
+                        },
+                    ],
+                    "_meta": {
+                        "dokumenten_id": statement_number,
+                        "zusammenfassung": f"Auszug {statement_number}",
+                    },
+                },
+            }
+
+        with patch.object(_intelligence, "extract_structured_data", new=AsyncMock(side_effect=fake_extract)):
+            result = run_async(
+                _intelligence._recover_bank_statement_bundle(
+                    markdown,
+                    schema,
+                    language="de",
+                    field_descriptions=None,
+                    notes=None,
+                    request_id="fixture-12421-fallback",
+                    attempt_number=2,
+                )
+            )
+
+        assert result is not None
+        assert result["success"] is True
+        extracted = result["extracted"]
+        assert extracted["auszugsnummer"] == "11,12,13,14,15,16,17,18"
+        assert extracted["zeitraum"] == {"von": "2024-08-19", "bis": "2025-03-17"}
+        assert len(extracted["kontoauszuege"]) == 8
+        assert len(extracted["buchungen"]) == 16
+        assert extracted["_meta"]["reconstructed_from_markdown"] is True
+        assert extracted["_meta"]["reconstructed_statement_numbers"] == "12"
+
 
 # ---------------------------------------------------------------------------
 # Tests: EXTRACTION_TEMPLATES
