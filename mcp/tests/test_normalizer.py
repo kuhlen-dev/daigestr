@@ -239,6 +239,78 @@ def test_convert_boolean_1():
     assert _convert_boolean("1") is True
 
 
+def test_normalize_bank_statement_bundle_preserves_full_period():
+    from normalizer import normalize
+
+    extracted = {
+        "bank": "Stadtsparkasse Mönchengladbach",
+        "iban": "DE62310500000000019752",
+        "bic": "MGLSDE33",
+        "währung": "EUR",
+        "auszugsnummer": "11,12",
+        "datum": "2024-09-30",
+        "zeitraum": {"von": "2024-08-19", "bis": "2024-09-02"},
+        "anfangssaldo": "14902.01",
+        "endsaldo": "12235.38",
+        "buchungen": [
+            {"datum": "2024-08-19", "text": "A", "betrag": "-41.90", "saldo": "14860.11", "währung": "EUR"},
+            {"datum": "2024-08-30", "text": "B", "betrag": "+766.09", "saldo": "15504.16", "währung": "EUR"},
+            {"datum": "2024-09-02", "text": "C", "betrag": "-27.85", "saldo": "12235.38", "währung": "EUR"},
+        ],
+        "_meta": {
+            "absender": {
+                "name": None,
+                "firma": "Stadtsparkasse Mönchengladbach",
+                "slug": "sparkasse-mg",
+                "email": None,
+                "telefon": "+492161270",
+                "ust_id": "DE120499145",
+                "bic": "MGLSDE33",
+                "adresse": {"land": "DE"},
+            },
+            "empfaenger": {"name": "Hans und Marlene Kuhlen", "adresse": {"land": "DE"}},
+            "empfaenger_iban": "DE62310500000000019752",
+            "steuerrelevant": True,
+            "steuer_kategorie": None,
+            "mwst_betrag": None,
+            "mwst_satz": None,
+            "zusammenfassung": "Sammel-Kontoauszug",
+        },
+        "kontoauszuege": [
+            {
+                "auszugsnummer": "11",
+                "datum": "2024-08-30",
+                "anfangssaldo": "14902.01",
+                "endsaldo": "15504.16",
+                "buchungen": [
+                    {"datum": "2024-08-19", "text": "A", "betrag": "-41.90", "saldo": "14860.11", "währung": "EUR"},
+                    {"datum": "2024-08-30", "text": "B", "betrag": "+766.09", "saldo": "15504.16", "währung": "EUR"},
+                ],
+            },
+            {
+                "auszugsnummer": "12",
+                "datum": "2024-09-30",
+                "anfangssaldo": "15504.16",
+                "endsaldo": "12235.38",
+                "buchungen": [
+                    {"datum": "2024-09-02", "text": "C", "betrag": "-27.85", "saldo": "12235.38", "währung": "EUR"},
+                ],
+            },
+        ],
+    }
+
+    result = run(normalize(extracted, "bank_statement", {"quality_score": 0.91}))
+    normalized = result["normalized"]
+
+    assert normalized["invoice_number"] == "11,12"
+    assert normalized["currency"] == "EUR"
+    assert normalized["date_period_from"] == "2024-08-19"
+    assert normalized["date_period_to"] == "2024-09-02"
+    assert normalized["line_items_count"] == 3
+    assert len(normalized["line_items"]) == 3
+    assert normalized["amount"] == pytest.approx(12235.38)
+
+
 def test_convert_boolean_0():
     from normalizer import _convert_boolean
     assert _convert_boolean("0") is False
@@ -267,7 +339,8 @@ def test_normalize_none_extracted_returns_none():
 def test_normalize_no_mapping_returns_none():
     from normalizer import normalize
     result = run(normalize({"amount": "100"}, "__no_such_template__", {}))
-    assert result is None
+    assert result["normalized"] is None
+    assert result["normalized_warnings"] == ["No normalize_mapping found for template '__no_such_template__'"]
 
 
 # ---------------------------------------------------------------------------

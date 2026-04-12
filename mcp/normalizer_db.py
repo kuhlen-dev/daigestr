@@ -202,6 +202,13 @@ def init_normalization_db() -> None:
                 conn.commit()
                 log.info("normalization_seeded", source=str(seed_path))
 
+        repair_path = Path(__file__).parent / "seed_normalization_repairs.sql"
+        if repair_path.exists():
+            repair_sql = repair_path.read_text(encoding="utf-8")
+            cur.execute(repair_sql)
+            conn.commit()
+            log.info("normalization_repaired", source=str(repair_path))
+
         log.info("normalization_db_initialized")
     finally:
         _return_conn(conn)

@@ -220,6 +220,13 @@ def init_templates_db() -> None:
                 cur.execute(seed_sql)
                 conn.commit()
                 log.info("templates_seeded", source=str(seed_path))
+
+        repair_path = Path(__file__).parent / "template_repairs.sql"
+        if repair_path.exists():
+            repair_sql = repair_path.read_text(encoding="utf-8")
+            cur.execute(repair_sql)
+            conn.commit()
+            log.info("templates_repaired", source=str(repair_path))
     finally:
         _return_conn(conn)
 

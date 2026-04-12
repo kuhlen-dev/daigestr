@@ -94,8 +94,303 @@ def get_meta_schema() -> dict:
     return _META_SCHEMA
 
 
+def _as_non_empty_string(value: Any) -> Optional[str]:
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped or None
+    return None
+
+
+def _looks_like_bank_statement(extracted: dict[str, Any]) -> bool:
+    if not isinstance(extracted, dict):
+        return False
+    return (
+        isinstance(extracted.get("kontoauszuege"), list)
+        or (
+            "auszugsnummer" in extracted
+            and "buchungen" in extracted
+            and ("iban" in extracted or "bank" in extracted)
+        )
+    )
+
+
+def _format_german_amount(amount: Any) -> Optional[str]:
+    raw = _as_non_empty_string(amount)
+    if raw is None:
+        return None
+    sign = ""
+    if raw.startswith(("+", "-")):
+        sign = raw[0]
+        raw = raw[1:]
+    if "." in raw:
+        integer_part, decimal_part = raw.split(".", 1)
+    else:
+        integer_part, decimal_part = raw, "00"
+    integer_part = integer_part or "0"
+    try:
+        grouped = f"{int(integer_part):,}".replace(",", ".")
+    except ValueError:
+        return sign + raw
+    decimal_part = decimal_part[:2].ljust(2, "0")
+    return f"{sign}{grouped},{decimal_part}"
+
+
+def _merge_bank_statement_bookings(bookings: Any, default_currency: Optional[str]) -> list[dict[str, Any]]:
+    if not isinstance(bookings, list):
+        return []
+
+    enriched: list[tuple[str, int, dict[str, Any]]] = []
+    for index, booking in enumerate(bookings):
+        if not isinstance(booking, dict):
+            continue
+        normalized_booking = copy.deepcopy(booking)
+        if normalized_booking.get("währung") is None and default_currency:
+            normalized_booking["währung"] = default_currency
+        booking_date = _as_non_empty_string(normalized_booking.get("datum")) or "9999-99-99"
+        enriched.append((booking_date, index, normalized_booking))
+
+    enriched.sort(key=lambda item: (item[0], item[1]))
+    return [item[2] for item in enriched]
+
+
+def _extract_bank_statement_page_groups(markdown: str) -> list[tuple[str, str]]:
+    """Split markdown into per-statement page groups for bundled bank-statement PDFs."""
+    if not isinstance(markdown, str) or not markdown.strip():
+        return []
+
+    pages = [
+        chunk.strip()
+        for chunk in re.split(r"(?=^## Seite \d+\s*$)", markdown, flags=re.MULTILINE)
+        if chunk.strip()
+    ]
+    if not pages:
+        return []
+
+    groups: list[tuple[str, list[str]]] = []
+    current_number: Optional[str] = None
+
+    for page in pages:
+        matches = re.findall(r"Kontoauszug\s+(\d+)", page, flags=re.IGNORECASE)
+        statement_number = matches[0] if matches else current_number
+        if statement_number is None:
+            continue
+        current_number = statement_number
+        if not groups or groups[-1][0] != statement_number:
+            groups.append((statement_number, [page]))
+        else:
+            groups[-1][1].append(page)
+
+    return [
+        (statement_number, "\n\n".join(group_pages))
+        for statement_number, group_pages in groups
+        if statement_number and group_pages
+    ]
+
+
+def _needs_bank_statement_bundle_recovery(markdown: str, extracted: dict[str, Any]) -> bool:
+    if not _looks_like_bank_statement(extracted):
+        return False
+
+    page_groups = _extract_bank_statement_page_groups(markdown)
+    detected_numbers = [number for number, _ in page_groups]
+    unique_numbers = list(dict.fromkeys(detected_numbers))
+    if len(unique_numbers) <= 1:
+        return False
+
+    raw_statements = extracted.get("kontoauszuege")
+    if isinstance(raw_statements, list) and len(raw_statements) >= len(unique_numbers):
+        return False
+
+    top_level_number = _as_non_empty_string(extracted.get("auszugsnummer"))
+    if top_level_number and "," in top_level_number:
+        materialized_numbers = [part.strip() for part in top_level_number.split(",") if part.strip()]
+        if len(materialized_numbers) >= len(unique_numbers):
+            return False
+
+    return True
+
+
+def _build_bank_statement_entry(
+    statement: dict[str, Any],
+    fallback: dict[str, Any],
+    default_currency: Optional[str],
+) -> dict[str, Any]:
+    entry = copy.deepcopy(statement)
+
+    for field_name in ("bank", "iban", "bic", "kontoinhaber"):
+        if entry.get(field_name) is None and fallback.get(field_name) is not None:
+            entry[field_name] = copy.deepcopy(fallback[field_name])
+
+    bookings = _merge_bank_statement_bookings(entry.get("buchungen"), default_currency)
+    entry["buchungen"] = bookings
+
+    statement_number = _as_non_empty_string(entry.get("auszugsnummer"))
+    if statement_number is None and isinstance(entry.get("_meta"), dict):
+        statement_number = _as_non_empty_string(entry["_meta"].get("dokumenten_id"))
+    if statement_number is not None:
+        entry["auszugsnummer"] = statement_number
+
+    if entry.get("datum") is None and bookings:
+        entry["datum"] = bookings[-1].get("datum")
+    if entry.get("endsaldo") is None and bookings:
+        entry["endsaldo"] = bookings[-1].get("saldo")
+
+    booking_dates = [_as_non_empty_string(item.get("datum")) for item in bookings]
+    booking_dates = [item for item in booking_dates if item]
+    if booking_dates:
+        entry["zeitraum"] = {
+            "von": booking_dates[0],
+            "bis": booking_dates[-1],
+        }
+
+    currencies = {
+        _as_non_empty_string(item.get("währung"))
+        for item in bookings
+        if isinstance(item, dict)
+    }
+    currencies.discard(None)
+    if len(currencies) == 1:
+        entry["währung"] = next(iter(currencies))
+    elif default_currency and entry.get("währung") is None:
+        entry["währung"] = default_currency
+
+    return entry
+
+
+def _synthesize_bank_statement_bundle_summary(extracted: dict[str, Any]) -> Optional[str]:
+    statements = extracted.get("kontoauszuege")
+    if not isinstance(statements, list) or not statements:
+        return None
+
+    statement_numbers: list[str] = []
+    for statement in statements:
+        if not isinstance(statement, dict):
+            continue
+        statement_number = _as_non_empty_string(statement.get("auszugsnummer"))
+        if statement_number and statement_number not in statement_numbers:
+            statement_numbers.append(statement_number)
+
+    holder_name = None
+    holder = extracted.get("kontoinhaber")
+    if isinstance(holder, dict):
+        holder_name = _as_non_empty_string(holder.get("name"))
+    elif isinstance(holder, str):
+        holder_name = _as_non_empty_string(holder)
+
+    bank_name = _as_non_empty_string(extracted.get("bank"))
+    date_period = extracted.get("zeitraum") if isinstance(extracted.get("zeitraum"), dict) else {}
+    date_from = _as_non_empty_string(date_period.get("von"))
+    date_to = _as_non_empty_string(date_period.get("bis"))
+    booking_count = len(extracted.get("buchungen") or [])
+    first_balance = _format_german_amount(extracted.get("anfangssaldo"))
+    last_balance = _format_german_amount(extracted.get("endsaldo"))
+    statement_label = ", ".join(statement_numbers) if statement_numbers else str(len(statements))
+
+    subject_parts = ["Sammel-Kontoauszug"]
+    if bank_name:
+        subject_parts.append(f"der {bank_name}")
+    if holder_name:
+        subject_parts.append(f"für {holder_name}")
+
+    summary = " ".join(subject_parts)
+    summary += f" mit {len(statements)} Auszügen ({statement_label})"
+    if booking_count:
+        summary += f" und {booking_count} Buchungen"
+    if date_from and date_to:
+        summary += f" vom {date_from} bis {date_to}"
+    if first_balance and last_balance:
+        summary += f", Anfangssaldo {first_balance} EUR, Endsaldo {last_balance} EUR"
+    summary += "."
+    return summary
+
+
+def _harmonize_bank_statement_bundle_fields(extracted: dict[str, Any]) -> dict[str, Any]:
+    """Materialize a canonical bank-statement bundle shape without breaking legacy fields."""
+    if not _looks_like_bank_statement(extracted):
+        return extracted
+
+    fallback = copy.deepcopy(extracted)
+    top_level_currency = _as_non_empty_string(extracted.get("währung"))
+
+    raw_statements = extracted.get("kontoauszuege")
+    if isinstance(raw_statements, list) and raw_statements:
+        statements = [
+            _build_bank_statement_entry(item, fallback, top_level_currency)
+            for item in raw_statements
+            if isinstance(item, dict)
+        ]
+    else:
+        statements = [_build_bank_statement_entry(fallback, fallback, top_level_currency)]
+
+    if not statements:
+        return extracted
+
+    statement_numbers: list[str] = []
+    merged_bookings: list[dict[str, Any]] = []
+    booking_dates: list[str] = []
+    detected_currencies: list[str] = []
+
+    for statement in statements:
+        statement_number = _as_non_empty_string(statement.get("auszugsnummer"))
+        if statement_number and statement_number not in statement_numbers:
+            statement_numbers.append(statement_number)
+
+        statement_bookings = statement.get("buchungen") if isinstance(statement.get("buchungen"), list) else []
+        for booking in statement_bookings:
+            if not isinstance(booking, dict):
+                continue
+            merged_bookings.append(copy.deepcopy(booking))
+            booking_date = _as_non_empty_string(booking.get("datum"))
+            if booking_date:
+                booking_dates.append(booking_date)
+            booking_currency = _as_non_empty_string(booking.get("währung"))
+            if booking_currency:
+                detected_currencies.append(booking_currency)
+
+    merged_bookings = _merge_bank_statement_bookings(merged_bookings, top_level_currency)
+    booking_dates = sorted(booking_dates)
+    overall_currency = None
+    if detected_currencies and len(set(detected_currencies)) == 1:
+        overall_currency = detected_currencies[0]
+
+    extracted["kontoauszuege"] = statements
+    extracted["buchungen"] = merged_bookings
+    if statement_numbers:
+        extracted["auszugsnummer"] = ",".join(statement_numbers)
+    extracted["anfangssaldo"] = statements[0].get("anfangssaldo")
+    extracted["endsaldo"] = statements[-1].get("endsaldo")
+    extracted["datum"] = statements[-1].get("datum")
+    if overall_currency is not None:
+        extracted["währung"] = overall_currency
+
+    if booking_dates:
+        extracted["zeitraum"] = {
+            "von": booking_dates[0],
+            "bis": booking_dates[-1],
+        }
+
+    meta_block = extracted.get("_meta")
+    if not isinstance(meta_block, dict):
+        meta_block = {}
+        extracted["_meta"] = meta_block
+    if statement_numbers:
+        meta_block["dokumenten_id"] = ",".join(statement_numbers)
+
+    if len(statements) > 1:
+        summary = _synthesize_bank_statement_bundle_summary(extracted)
+        if summary is not None:
+            extracted["summary"] = summary
+            meta_block["zusammenfassung"] = summary
+            if "zusammenfassung" in extracted:
+                extracted["zusammenfassung"] = summary
+
+    return extracted
+
+
 def _harmonize_extracted_summary_fields(extracted: dict[str, Any]) -> dict[str, Any]:
-    """Normalize summary fields onto a single canonical value."""
+    """Normalize bundle semantics and summary fields onto canonical values."""
+    extracted = _harmonize_bank_statement_bundle_fields(extracted)
+
     meta_summary = None
     if isinstance(extracted.get("_meta"), dict):
         meta_summary = extracted["_meta"].get("zusammenfassung")
@@ -553,6 +848,7 @@ async def extract_structured_data(
     notes: Optional[str] = None,
     request_id: Optional[str] = None,
     attempt_number: Optional[int] = None,
+    enable_bank_bundle_recovery: bool = True,
 ) -> dict:
     """
     Extrahiert strukturierte Daten aus Markdown gemäß einem JSON-Schema via Mistral API.
@@ -692,6 +988,58 @@ async def extract_structured_data(
             }
 
         extracted = _harmonize_extracted_summary_fields(json.loads(json_match.group(0)))
+
+        if enable_bank_bundle_recovery and _needs_bank_statement_bundle_recovery(markdown, extracted):
+            page_groups = _extract_bank_statement_page_groups(markdown)
+            unique_numbers = [number for number, _ in page_groups]
+            log.info(
+                "extract_structured_data_bank_bundle_recovery_start",
+                request_id=request_id,
+                attempt_number=attempt_number,
+                detected_statement_numbers=unique_numbers,
+                detected_statement_count=len(unique_numbers),
+            )
+            recovered_statements: list[dict[str, Any]] = []
+            recovery_tokens = 0
+            for statement_number, statement_markdown in page_groups:
+                statement_result = await extract_structured_data(
+                    statement_markdown,
+                    schema,
+                    language=language,
+                    field_descriptions=field_descriptions,
+                    notes=notes,
+                    request_id=request_id,
+                    attempt_number=attempt_number,
+                    enable_bank_bundle_recovery=False,
+                )
+                recovery_tokens += int(statement_result.get("tokens") or 0)
+                if not statement_result.get("success"):
+                    log.warning(
+                        "extract_structured_data_bank_bundle_recovery_failed",
+                        request_id=request_id,
+                        attempt_number=attempt_number,
+                        statement_number=statement_number,
+                        error=statement_result.get("error"),
+                    )
+                    recovered_statements = []
+                    break
+                statement_extracted = statement_result.get("extracted")
+                if not isinstance(statement_extracted, dict):
+                    recovered_statements = []
+                    break
+                recovered_statements.append(statement_extracted)
+
+            if recovered_statements:
+                extracted["kontoauszuege"] = recovered_statements
+                extracted = _harmonize_extracted_summary_fields(extracted)
+                tokens += recovery_tokens
+                log.info(
+                    "extract_structured_data_bank_bundle_recovery_success",
+                    request_id=request_id,
+                    attempt_number=attempt_number,
+                    recovered_statement_count=len(recovered_statements),
+                    tokens=tokens,
+                )
 
         # Schema-Validierung (AC-014-7) — null-tolerant
         if _jsonschema_available:
