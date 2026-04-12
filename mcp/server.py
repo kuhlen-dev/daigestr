@@ -154,6 +154,7 @@ from intelligence import (
 from debug_snapshots import (  # noqa: F401
     should_capture_debug_snapshot,
     build_debug_snapshot_payload,
+    replay_normalization_from_snapshot,
 )
 
 # Re-export availability flags and key names from sub-modules so tests can patch
@@ -271,6 +272,9 @@ from api_rest import (  # noqa: F401
     api_get_job,
     api_get_job_result,
     api_delete_job,
+    api_list_debug_snapshots,
+    api_get_debug_snapshot,
+    api_replay_debug_snapshot_normalize,
     _fire_webhook,
     _run_async_job,
     _api_convert_impl,

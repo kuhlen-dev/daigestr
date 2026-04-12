@@ -73,6 +73,8 @@ from templates_db import (
     get_all_template_ids, search_templates, cache_clear, check_persistence_health,
     job_create, job_update, job_set_result, job_get, job_delete, job_list,
 )
+from debug_snapshot_db import debug_snapshot_list, debug_snapshot_get
+from debug_snapshots import replay_normalization_from_snapshot
 from routing import (
     convert_auto,
     convert_url,
@@ -1058,6 +1060,47 @@ async def api_delete_job(job_id: str) -> dict:
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
     return {"success": True, "job_id": job_id}
+
+
+@app.get("/v1/debug/snapshots")
+async def api_list_debug_snapshots(
+    request_id: Optional[str] = None,
+    job_id: Optional[str] = None,
+    stage: Optional[str] = None,
+    limit: int = 100,
+) -> dict:
+    """List stored debug snapshots for replay and regression analysis."""
+    _snapshot_list = _get("debug_snapshot_list", debug_snapshot_list)
+    rows = _snapshot_list(request_id=request_id, job_id=job_id, stage=stage, limit=limit)
+    return {"snapshots": rows, "count": len(rows)}
+
+
+@app.get("/v1/debug/snapshots/{snapshot_id}")
+async def api_get_debug_snapshot(snapshot_id: int) -> dict:
+    """Return one stored debug snapshot."""
+    _snapshot_get = _get("debug_snapshot_get", debug_snapshot_get)
+    row = _snapshot_get(snapshot_id)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Debug snapshot '{snapshot_id}' not found")
+    return row
+
+
+@app.post("/v1/debug/snapshots/{snapshot_id}/replay/normalize")
+async def api_replay_debug_snapshot_normalize(
+    snapshot_id: int,
+    template_name: Optional[str] = None,
+    compact: bool = False,
+) -> dict:
+    """Replay normalization from a stored snapshot without new OCR/LLM calls."""
+    _snapshot_get = _get("debug_snapshot_get", debug_snapshot_get)
+    _replay_normalize = _get("replay_normalization_from_snapshot", replay_normalization_from_snapshot)
+    row = _snapshot_get(snapshot_id)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Debug snapshot '{snapshot_id}' not found")
+    try:
+        return await _replay_normalize(row, template_name=template_name, compact=compact)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/v1/tips")

@@ -98,3 +98,33 @@ def build_debug_snapshot_payload(
     if DEBUG_SNAPSHOTS_INCLUDE_ERRORS:
         payload["error"] = error
     return payload
+
+
+async def replay_normalization_from_snapshot(
+    snapshot: dict[str, Any],
+    *,
+    template_name: Optional[str] = None,
+    compact: bool = False,
+) -> dict[str, Any]:
+    """Re-run normalization from a stored snapshot without new OCR/LLM calls."""
+    payload = snapshot.get("payload_json")
+    if not isinstance(payload, dict):
+        raise ValueError("Snapshot payload is missing or invalid")
+
+    extracted = payload.get("extracted")
+    if not isinstance(extracted, dict):
+        raise ValueError("Snapshot has no extracted payload to replay")
+
+    meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+    effective_template = template_name or meta.get("template_used") or meta.get("document_type")
+    if not effective_template:
+        raise ValueError("Snapshot has no template metadata for normalization replay")
+
+    from normalizer import normalize  # noqa: PLC0415
+
+    result = await normalize(extracted, effective_template, meta, compact=compact)
+    return {
+        "snapshot_id": snapshot.get("id"),
+        "template_name": effective_template,
+        **result,
+    }

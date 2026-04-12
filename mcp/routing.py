@@ -15,6 +15,7 @@ alle anderen extrahierten Module).
 import asyncio
 import base64
 import hashlib
+import re
 import time
 import uuid
 from pathlib import Path
@@ -98,6 +99,8 @@ from intelligence import (
 )
 from templates_db import get_all_template_ids, get_template_by_id, cache_get, cache_set
 from audit_db import audit_log_event as _audit_log_event
+from debug_snapshots import should_capture_debug_snapshot, build_debug_snapshot_payload
+from debug_snapshot_db import debug_snapshot_store
 
 log = structlog.get_logger()
 
@@ -881,7 +884,7 @@ async def _convert_auto_impl(
         _cache_key = None
 
     def _cache_and_return(resp: ConvertResponse) -> ConvertResponse:
-        """Speichert erfolgreiche Responses im Cache, feuert Audit-Event und gibt sie zurück."""
+        """Finalisiert Response mit Cache, Audit und optionalem Debug-Snapshot."""
         nonlocal _job_completed
         _job_completed = True  # Guard: prevent _update_progress from resetting status after this
         if _cache_enabled and _cache_key is not None and resp.success:
@@ -889,6 +892,58 @@ async def _convert_auto_impl(
                 _cache_set(_cache_key, resp.model_dump_json())
             except Exception as _ce:
                 log.warning("cache_set_error", error=str(_ce))
+        try:
+            _should_capture_snapshot = _get("should_capture_debug_snapshot", should_capture_debug_snapshot)
+            _build_snapshot_payload = _get("build_debug_snapshot_payload", build_debug_snapshot_payload)
+            _snapshot_store = _get("debug_snapshot_store", debug_snapshot_store)
+            _resp_meta = resp.meta.model_dump() if hasattr(resp.meta, "model_dump") else dict(meta)
+            _page_count = _resp_meta.get("pages_processed") or _resp_meta.get("pages")
+            if _page_count is None and isinstance(resp.markdown, str):
+                _page_matches = re.findall(r"^## Seite \d+\s*$", resp.markdown, flags=re.MULTILINE)
+                _page_count = len(_page_matches) or None
+            if _should_capture_snapshot(
+                success=resp.success,
+                quality_score=_resp_meta.get("quality_score"),
+                page_count=_page_count,
+                retry_applied=_resp_meta.get("retry_applied"),
+            ):
+                _stage = "normalized_result"
+                if not resp.success:
+                    _stage = "error_result"
+                elif resp.normalized is None and resp.extracted is not None:
+                    _stage = "extract_result"
+                elif resp.normalized is None and resp.extracted is None:
+                    _stage = "convert_result"
+                _payload = _build_snapshot_payload(
+                    request_id=request_id,
+                    job_id=_job_id,
+                    filename=filename,
+                    source_type=source_type,
+                    stage=_stage,
+                    attempt_number=attempt_number,
+                    attempt_count=_resp_meta.get("attempt_count"),
+                    attempt_mode=_resp_meta.get("attempt_mode"),
+                    meta=_resp_meta,
+                    markdown=resp.markdown,
+                    extracted=resp.extracted,
+                    normalized=resp.normalized,
+                    error=resp.error.message if resp.error else None,
+                )
+                _snapshot_id = _snapshot_store(
+                    request_id=request_id,
+                    job_id=_job_id,
+                    stage=_stage,
+                    attempt_number=attempt_number,
+                    attempt_count=_resp_meta.get("attempt_count"),
+                    attempt_mode=_resp_meta.get("attempt_mode"),
+                    filename=filename,
+                    source_type=source_type,
+                    payload=_payload,
+                )
+                _resp_meta["debug_snapshot_id"] = _snapshot_id
+                resp.meta = MetaData(**_resp_meta)
+        except Exception as _snapshot_err:
+            log.warning("debug_snapshot_capture_failed", request_id=request_id, error=str(_snapshot_err))
         _audit(
             "response",
             detail=filename,
@@ -976,9 +1031,7 @@ async def _convert_auto_impl(
             f"Datei zu groß: {len(file_data) / 1024 / 1024:.1f}MB (Max: {_max_file_size_mb}MB)",
             meta=meta
         )
-        _audit("response", detail=filename, duration_ms=meta["duration_ms"],
-               metadata={"success": False, "markdown_length": 0, "cached": None})
-        return _err_resp
+        return _cache_and_return(_err_resp)
 
     # T-MKIT-020: Accuracy-Modus immer in Meta dokumentieren
     meta["accuracy_mode"] = accuracy
@@ -1133,9 +1186,7 @@ async def _convert_auto_impl(
             return _cache_and_return(response)
         else:
             _err = create_error_response(result.get("error_code", ErrorCode.VISION_FAILED), result["error"], meta=meta)
-            _audit("response", detail=filename, duration_ms=int((time.time() - start_time) * 1000),
-                   metadata={"success": False, "markdown_length": 0, "cached": None})
-            return _err
+            return _cache_and_return(_err)
 
     # Audio/Video → faster-whisper Transkription (FR-MKIT-006)
     elif ext in _audio_extensions or ext in _video_extensions:
@@ -1154,9 +1205,7 @@ async def _convert_auto_impl(
                 except RuntimeError as exc:
                     meta["duration_ms"] = int((time.time() - start_time) * 1000)
                     _err = create_error_response(ErrorCode.CONVERSION_FAILED, f"Audio-Extraktion fehlgeschlagen: {str(exc)}", meta=meta)
-                    _audit("response", detail=filename, duration_ms=meta["duration_ms"],
-                           metadata={"success": False, "markdown_length": 0, "cached": None})
-                    return _err
+                    return _cache_and_return(_err)
 
             # Transkribieren
             transcription = _transcribe(audio_path)
@@ -1164,9 +1213,7 @@ async def _convert_auto_impl(
 
             if not transcription["success"]:
                 _err = create_error_response(ErrorCode.CONVERSION_FAILED, transcription.get("error", "Transkription fehlgeschlagen"), meta=meta)
-                _audit("response", detail=filename, duration_ms=int((time.time() - start_time) * 1000),
-                       metadata={"success": False, "markdown_length": 0, "cached": None})
-                return _err
+                return _cache_and_return(_err)
 
             # Meta-Daten setzen (AC-006-6)
             meta["language"] = transcription.get("language", "unknown")
@@ -1275,9 +1322,7 @@ async def _convert_auto_impl(
                 except ValueError as _pe:
                     meta["duration_ms"] = int((time.time() - start_time) * 1000)
                     _err = create_error_response(ErrorCode.INVALID_INPUT, f"Ungültige Seitenauswahl: {str(_pe)}", meta=meta)
-                    _audit("response", detail=filename, duration_ms=meta["duration_ms"],
-                           metadata={"success": False, "markdown_length": 0, "cached": None})
-                    return _err
+                    return _cache_and_return(_err)
                 except Exception as _pe:
                     log.warning("pdf_page_selection_failed", error=str(_pe))
                     # Fallback: alle Seiten
@@ -1453,9 +1498,7 @@ async def _convert_auto_impl(
                     return _cache_and_return(response)
                 else:
                     _err = create_error_response(result.get("error_code", ErrorCode.CONVERSION_FAILED), result["error"], meta=meta)
-                    _audit("response", detail=filename, duration_ms=int((time.time() - start_time) * 1000),
-                           metadata={"success": False, "markdown_length": 0, "cached": None})
-                    return _err
+                    return _cache_and_return(_err)
 
             # T-DAI-025: Non-scanned PDF page selection — create temp PDF with only requested pages
             if ext == ".pdf" and _page_indices is not None:
@@ -1720,9 +1763,7 @@ async def _convert_auto_impl(
                 return _cache_and_return(response)
             else:
                 _err = create_error_response(result.get("error_code", ErrorCode.CONVERSION_FAILED), result["error"], meta=meta)
-                _audit("response", detail=filename, duration_ms=int((time.time() - start_time) * 1000),
-                       metadata={"success": False, "markdown_length": 0, "cached": None})
-                return _err
+                return _cache_and_return(_err)
         finally:
             temp_path.unlink(missing_ok=True)
             if sliced_temp_path is not None and original_temp_path != sliced_temp_path:
@@ -1731,9 +1772,7 @@ async def _convert_auto_impl(
     else:
         meta["duration_ms"] = int((time.time() - start_time) * 1000)
         _err = create_error_response(ErrorCode.UNSUPPORTED_FORMAT, f"Nicht unterstütztes Format: {ext}", meta=meta)
-        _audit("response", detail=filename, duration_ms=meta["duration_ms"],
-               metadata={"success": False, "markdown_length": 0, "cached": None})
-        return _err
+        return _cache_and_return(_err)
 
 
 async def convert_folder_contents(
