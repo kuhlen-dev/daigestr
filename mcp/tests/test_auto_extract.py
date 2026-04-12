@@ -258,8 +258,8 @@ class TestAutoExtractInConvertAuto:
         assert response.meta.template_used == "invoice"
         assert response.meta.document_type == "invoice"
 
-    def test_auto_extract_no_template_returns_null_extracted(self):
-        """auto_extract=True aber kein Template → extracted=None + hint."""
+    def test_auto_extract_no_template_returns_error(self):
+        """auto_extract=True ohne Template darf keinen Success-Envelope liefern."""
         markdown = "# Unknown Document\nSome content"
 
         with patch.object(_server, "CACHE_ENABLED", False), \
@@ -282,15 +282,16 @@ class TestAutoExtractInConvertAuto:
                 auto_extract=True,
             ))
 
-        assert response.success is True
+        assert response.success is False
         assert response.extracted is None
         assert response.meta.template_used is None
+        assert response.error is not None
         # Hint über fehlendes Template sollte gesetzt sein
         hints = response.meta.hints or []
         assert any("No template registered" in h for h in hints)
 
-    def test_auto_extract_low_confidence_skips_template(self):
-        """Konfidenz unter min_confidence → kein Template, kein Extraction."""
+    def test_auto_extract_low_confidence_returns_error(self):
+        """Konfidenz unter min_confidence → echter Fehler statt leerem Success-Envelope."""
         markdown = "# Some doc"
 
         with patch.object(_server, "CACHE_ENABLED", False), \
@@ -314,8 +315,9 @@ class TestAutoExtractInConvertAuto:
                 min_confidence=0.7,  # Konfidenz 0.5 < 0.7 → skip
             ))
 
-        assert response.success is True
+        assert response.success is False
         assert response.extracted is None
+        assert response.error is not None
         mock_find.assert_not_called()
         mock_extract.assert_not_called()
 
@@ -463,8 +465,8 @@ class TestAutoExtractInConvertAuto:
         hints = response.meta.hints or []
         assert any("auto_extract=true" in h for h in hints)
 
-    def test_auto_extract_extraction_failure_graceful(self):
-        """Wenn extract_structured_data fehlschlägt → extracted=None, kein Crash."""
+    def test_auto_extract_extraction_failure_returns_error_and_preserves_template(self):
+        """Wenn extract_structured_data fehlschlägt, bleibt das Template materialisiert und der Response wird fehlerhaft."""
         tmpl = _mock_template("invoice")
         markdown = "# Rechnung\nInvoice"
 
@@ -487,9 +489,11 @@ class TestAutoExtractInConvertAuto:
                 auto_extract=True,
             ))
 
-        # Kein Crash, aber extracted bleibt None
-        assert response.success is True
+        assert response.success is False
         assert response.extracted is None
+        assert response.error is not None
+        assert response.meta.template_used == "invoice"
+        assert response.meta.template_version == 1
 
     def test_auto_extract_classify_already_done(self):
         """Wenn classify=True UND auto_extract=True → classify nur einmal aufgerufen."""

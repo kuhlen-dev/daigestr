@@ -11,6 +11,15 @@ _server = load_server_module(use_real_pil=False)
 convert_auto = _server.convert_auto
 
 
+async def _complete_auto_extract_response(response, *args, **kwargs):
+    response.extracted = {"invoice_number": "INV-1"}
+    meta = response.meta.model_dump()
+    meta["template_used"] = "invoice"
+    meta["template_version"] = 1
+    response.meta = _server.MetaData(**meta)
+    return response
+
+
 class TestQualityRetryEscalation:
     """Low-quality retry should deterministically escalate from default to full."""
 
@@ -29,7 +38,7 @@ class TestQualityRetryEscalation:
                  {"quality_score": 0.41, "quality_grade": "poor"},
                  {"quality_score": 0.91, "quality_grade": "excellent"},
              ]), \
-             patch.object(_server, "_apply_auto_extract", new=AsyncMock(side_effect=lambda response, *args, **kwargs: response)), \
+             patch.object(_server, "_apply_auto_extract", new=AsyncMock(side_effect=_complete_auto_extract_response)), \
              patch.object(_server, "classify_document", new=classify_mock), \
              patch.object(_server, "correct_ocr_text", new=ocr_mock):
             result = run_async(convert_auto(

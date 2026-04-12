@@ -581,7 +581,8 @@ Kontostand am 30.09.2024, 20:03 Uhr 12.263,23+
         assert len(extracted["kontoauszuege"]) == 8
         assert len(extracted["buchungen"]) == 16
         assert extracted["_meta"]["dokumenten_id"] == "11,12,13,14,15,16,17,18"
-        assert extracted["summary"].startswith("Sammel-Kontoauszug mit 8 Auszügen")
+        assert extracted["summary"].startswith("Sammel-Kontoauszug")
+        assert "mit 8 Auszügen" in extracted["summary"]
 
 
 # ---------------------------------------------------------------------------
@@ -738,8 +739,8 @@ class TestExtractInConvertAuto:
         assert result.extracted is not None
         assert result.extracted["invoice_number"] == "INV-42"
 
-    def test_extract_failure_graceful(self):
-        """Wenn Extraktion fehlschlägt, bleibt der convert-Erfolg erhalten (extracted=None)."""
+    def test_extract_failure_returns_error(self):
+        """Wenn Extraktion fehlschlägt, muss der Convert-Response als Fehler enden."""
         with patch.object(_server, "extract_structured_data",
                           new=AsyncMock(return_value={
                               "success": False,
@@ -761,10 +762,10 @@ class TestExtractInConvertAuto:
                 no_cache=True,  # Verhindert Cache-Treffer vom vorherigen Test
             ))
 
-        # Konvertierung war erfolgreich, auch wenn Extraktion fehlschlug
-        assert result.success is True
+        assert result.success is False
         assert result.markdown is not None
         assert result.extracted is None
+        assert result.error is not None
 
 
 class TestStructuredOutputRegression:
@@ -776,6 +777,7 @@ class TestStructuredOutputRegression:
             "total_amount": "100.00",
             "_meta": {
                 "steuerrelevant": True,
+                "mwst_ausgewiesen": False,
                 "zusammenfassung": "Rechnung über 100 EUR.",
             },
         }

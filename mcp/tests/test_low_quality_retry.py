@@ -24,8 +24,10 @@ def _kwargs(**overrides):
 
 
 def test_retry_on_low_quality_escalates_default_to_full():
-    first = _server.create_success_response("# first", meta={"quality_score": 0.42})
-    second = _server.create_success_response("# second", meta={"quality_score": 0.91})
+    first = _server.create_success_response("# first", meta={"quality_score": 0.42, "template_used": "invoice", "template_version": 1})
+    first.extracted = {"invoice_number": "INV-1"}
+    second = _server.create_success_response("# second", meta={"quality_score": 0.91, "template_used": "invoice", "template_version": 1})
+    second.extracted = {"invoice_number": "INV-1"}
 
     with patch.object(_server, "_convert_auto_impl", new=AsyncMock(side_effect=[first, second])) as impl:
         result = run_async(_server.convert_auto(
@@ -56,7 +58,8 @@ def test_retry_on_low_quality_escalates_default_to_full():
 
 
 def test_retry_skipped_when_quality_is_high_enough():
-    first = _server.create_success_response("# first", meta={"quality_score": 0.88})
+    first = _server.create_success_response("# first", meta={"quality_score": 0.88, "template_used": "invoice", "template_version": 1})
+    first.extracted = {"invoice_number": "INV-1"}
 
     with patch.object(_server, "_convert_auto_impl", new=AsyncMock(return_value=first)) as impl:
         result = run_async(_server.convert_auto(
@@ -78,7 +81,8 @@ def test_retry_skipped_when_quality_is_high_enough():
 
 
 def test_retry_skipped_when_mode_already_full():
-    first = _server.create_success_response("# first", meta={"quality_score": 0.42})
+    first = _server.create_success_response("# first", meta={"quality_score": 0.42, "template_used": "invoice", "template_version": 1})
+    first.extracted = {"invoice_number": "INV-1"}
 
     with patch.object(_server, "_convert_auto_impl", new=AsyncMock(return_value=first)) as impl:
         result = run_async(_server.convert_auto(
@@ -98,8 +102,10 @@ def test_retry_skipped_when_mode_already_full():
 
 
 def test_retry_triggers_on_missing_quality_score():
-    first = _server.create_success_response("# first", meta={"quality_score": None})
-    second = _server.create_success_response("# second", meta={"quality_score": 0.81})
+    first = _server.create_success_response("# first", meta={"quality_score": None, "template_used": "invoice", "template_version": 1})
+    first.extracted = {"invoice_number": "INV-1"}
+    second = _server.create_success_response("# second", meta={"quality_score": 0.81, "template_used": "invoice", "template_version": 1})
+    second.extracted = {"invoice_number": "INV-1"}
 
     with patch.object(_server, "_convert_auto_impl", new=AsyncMock(side_effect=[first, second])) as impl:
         result = run_async(_server.convert_auto(
@@ -117,8 +123,10 @@ def test_retry_triggers_on_missing_quality_score():
 
 
 def test_retry_uses_env_defaults_when_request_omits_overrides():
-    first = _server.create_success_response("# first", meta={"quality_score": 0.42})
-    second = _server.create_success_response("# second", meta={"quality_score": 0.90})
+    first = _server.create_success_response("# first", meta={"quality_score": 0.42, "template_used": "invoice", "template_version": 1})
+    first.extracted = {"invoice_number": "INV-1"}
+    second = _server.create_success_response("# second", meta={"quality_score": 0.90, "template_used": "invoice", "template_version": 1})
+    second.extracted = {"invoice_number": "INV-1"}
 
     with patch.object(_server, "QUALITY_RETRY_ENABLED", True), \
          patch.object(_server, "QUALITY_RETRY_THRESHOLD", 0.75), \
@@ -128,4 +136,53 @@ def test_retry_uses_env_defaults_when_request_omits_overrides():
 
     assert result.markdown == "# second"
     assert impl.await_count == 2
+    assert result.meta.retry_applied is True
+
+
+def test_retry_keeps_initial_result_when_retry_contract_is_incomplete():
+    first = _server.create_success_response(
+        "# first",
+        meta={"quality_score": 0.42, "template_used": "bank_statement", "template_version": 1},
+    )
+    first.extracted = {"auszugsnummer": "11", "buchungen": [{"datum": "2024-08-19"}]}
+    second = _server.create_success_response("# second", meta={"quality_score": 0.90})
+    second.extracted = None
+
+    with patch.object(_server, "_convert_auto_impl", new=AsyncMock(side_effect=[first, second])) as impl:
+        result = run_async(_server.convert_auto(
+            **_kwargs(
+                retry_on_low_quality=True,
+                quality_retry_threshold=0.75,
+                quality_retry_mode="full",
+            )
+        ))
+
+    assert impl.await_count == 2
+    assert result.success is True
+    assert result.markdown == "# first"
+    assert result.extracted == first.extracted
+    assert result.meta.template_used == "bank_statement"
+    assert result.meta.retry_applied is True
+    assert result.meta.final_mode == "default"
+
+
+def test_retry_fails_when_both_attempts_violate_extraction_contract():
+    first = _server.create_success_response("# first", meta={"quality_score": 0.42})
+    first.extracted = None
+    second = _server.create_success_response("# second", meta={"quality_score": 0.90})
+    second.extracted = None
+
+    with patch.object(_server, "_convert_auto_impl", new=AsyncMock(side_effect=[first, second])) as impl:
+        result = run_async(_server.convert_auto(
+            **_kwargs(
+                retry_on_low_quality=True,
+                quality_retry_threshold=0.75,
+                quality_retry_mode="full",
+            )
+        ))
+
+    assert impl.await_count == 2
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.code == "CONVERSION_FAILED"
     assert result.meta.retry_applied is True

@@ -149,6 +149,68 @@ def _apply_retry_meta(
     return response
 
 
+def _has_meaningful_extracted_payload(extracted: Any) -> bool:
+    if not isinstance(extracted, dict) or not extracted:
+        return False
+
+    def _value_present(value: Any) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return bool(value.strip())
+        if isinstance(value, dict):
+            return any(
+                _value_present(child)
+                for key, child in value.items()
+                if not str(key).startswith("_")
+            )
+        if isinstance(value, list):
+            return any(_value_present(item) for item in value)
+        return True
+
+    return any(
+        _value_present(value)
+        for key, value in extracted.items()
+        if not str(key).startswith("_")
+    )
+
+
+def _response_has_complete_extraction_contract(
+    response: ConvertResponse,
+    *,
+    auto_extract: bool,
+    extract_schema: Optional[dict[str, Any]],
+    template: Optional[str],
+) -> bool:
+    extraction_requested = bool(auto_extract or extract_schema or template)
+    if not extraction_requested:
+        return response.success
+    if not response.success:
+        return False
+    if not _has_meaningful_extracted_payload(response.extracted):
+        return False
+    if (auto_extract or template) and not getattr(response.meta, "template_used", None):
+        return False
+    return True
+
+
+def _create_extraction_error_response(
+    *,
+    markdown: str,
+    meta: dict[str, Any],
+    message: str,
+    details: Optional[dict[str, Any]] = None,
+) -> ConvertResponse:
+    error_response = create_error_response(
+        ErrorCode.CONVERSION_FAILED,
+        message,
+        meta=meta,
+        details=details,
+    )
+    error_response.markdown = markdown
+    return error_response
+
+
 def _bind_request_log_context(
     *,
     request_id: str,
@@ -400,6 +462,8 @@ async def finalize_url_markdown_response(
             request_id=effective_meta.get("request_id"),
             attempt_number=effective_meta.get("attempt_number"),
         )
+        if not response.success:
+            return response
     elif extract_schema:
         extraction = await _extract_struct(
             markdown_text,
@@ -415,6 +479,16 @@ async def finalize_url_markdown_response(
                 updated_steps.append("schema_extraction")
             effective_meta["pipeline_steps"] = updated_steps
             response.meta = MetaData(**{k: v for k, v in effective_meta.items()})
+        else:
+            return _create_extraction_error_response(
+                markdown=markdown_text,
+                meta=effective_meta,
+                message="Schema-basierte Extraktion fehlgeschlagen",
+                details={
+                    "template_used": effective_meta.get("template_used") or template,
+                    "extraction_error": extraction.get("error"),
+                },
+            )
 
     norm_template = effective_meta.get("template_used") or template or effective_meta.get("document_type")
     response = await _apply_normalizer(response, effective_meta, norm_template, compact)
@@ -423,15 +497,26 @@ async def finalize_url_markdown_response(
     response = _apply_output_format(response, output_format)
 
     score = response.meta.quality_score
+    response_contract_complete = _response_has_complete_extraction_contract(
+        response,
+        auto_extract=auto_extract,
+        extract_schema=extract_schema,
+        template=template,
+    )
     should_retry = (
-        response.success
-        and retry_on_low_quality
+        retry_on_low_quality
         and mode == "default"
         and quality_retry_mode == "full"
-        and (score is None or score < quality_retry_threshold)
+        and (
+            not response_contract_complete
+            or (response.success and (score is None or score < quality_retry_threshold))
+        )
     )
     if should_retry:
-        retry_reason = "missing_quality_score" if score is None else "low_quality"
+        if not response_contract_complete:
+            retry_reason = "incomplete_extraction_contract"
+        else:
+            retry_reason = "missing_quality_score" if score is None else "low_quality"
         _attempt_log.info(
             "convert_retry_triggered",
             retry_reason=retry_reason,
@@ -472,13 +557,49 @@ async def finalize_url_markdown_response(
             retry_threshold_used=float(quality_retry_threshold),
             next_mode=quality_retry_mode,
         )
-        final_score = retried_response.meta.quality_score
-        return _apply_retry_meta(
+        retried_contract_complete = _response_has_complete_extraction_contract(
             retried_response,
+            auto_extract=auto_extract,
+            extract_schema=extract_schema,
+            template=template,
+        )
+        final_response = retried_response
+        final_mode = quality_retry_mode
+        final_score = retried_response.meta.quality_score
+        if response_contract_complete and not retried_contract_complete:
+            final_response = response
+            final_mode = mode
+            final_score = score
+        elif response_contract_complete and retried_contract_complete:
+            comparable_initial = float(score) if isinstance(score, (int, float)) else float("-inf")
+            comparable_retry = float(retried_response.meta.quality_score) if isinstance(retried_response.meta.quality_score, (int, float)) else float("-inf")
+            if comparable_initial > comparable_retry:
+                final_response = response
+                final_mode = mode
+                final_score = score
+        elif not response_contract_complete and not retried_contract_complete:
+            failure_meta = retried_response.meta.model_dump() if retried_response.meta else effective_meta
+            final_response = _create_extraction_error_response(
+                markdown=retried_response.markdown or response.markdown or markdown_text,
+                meta=failure_meta,
+                message="Strukturierte Extraktion lieferte in keinem Versuch einen vollständigen kanonischen Contract",
+                details={
+                    "initial_success": response.success,
+                    "initial_quality_score": score,
+                    "initial_template_used": getattr(response.meta, "template_used", None),
+                    "retry_success": retried_response.success,
+                    "retry_quality_score": getattr(retried_response.meta, "quality_score", None),
+                    "retry_template_used": getattr(retried_response.meta, "template_used", None),
+                },
+            )
+            final_mode = quality_retry_mode
+            final_score = getattr(retried_response.meta, "quality_score", None)
+        return _apply_retry_meta(
+            final_response,
             retry_applied=True,
             retry_reason=retry_reason,
             initial_mode=mode,
-            final_mode=quality_retry_mode,
+            final_mode=final_mode,
             initial_quality_score=score,
             final_quality_score=final_score,
             retry_threshold_used=float(quality_retry_threshold),
@@ -658,13 +779,21 @@ async def convert_auto(
 
     extraction_requested = bool(auto_extract or extract_schema or template)
     initial_score = getattr(response.meta, "quality_score", None)
+    initial_contract_complete = _response_has_complete_extraction_contract(
+        response,
+        auto_extract=auto_extract,
+        extract_schema=extract_schema,
+        template=template,
+    )
     should_retry = (
         bool(effective_retry_enabled)
         and mode == "default"
         and extraction_requested
-        and response.success
         and effective_retry_mode == "full"
-        and (initial_score is None or initial_score < float(effective_retry_threshold))
+        and (
+            not initial_contract_complete
+            or (response.success and (initial_score is None or initial_score < float(effective_retry_threshold)))
+        )
     )
 
     if not should_retry:
@@ -679,22 +808,70 @@ async def convert_auto(
             retry_threshold_used=float(effective_retry_threshold) if effective_retry_enabled else None,
         )
 
-    retry_reason = "missing_quality_score" if initial_score is None else "low_quality"
+    if not initial_contract_complete:
+        retry_reason = "incomplete_extraction_contract"
+    else:
+        retry_reason = "missing_quality_score" if initial_score is None else "low_quality"
     retried_response = await _run_impl_with_timeout(
         current_mode=effective_retry_mode,
         current_attempt=2,
         current_attempt_count=2,
         retry_flag=False,
     )
-    final_score = getattr(retried_response.meta, "quality_score", None)
-    return _apply_retry_meta(
+    retried_contract_complete = _response_has_complete_extraction_contract(
         retried_response,
+        auto_extract=auto_extract,
+        extract_schema=extract_schema,
+        template=template,
+    )
+    retried_score = getattr(retried_response.meta, "quality_score", None)
+
+    selected_response = retried_response
+    selected_mode = effective_retry_mode
+    selected_score = retried_score
+
+    if initial_contract_complete and not retried_contract_complete:
+        selected_response = response
+        selected_mode = mode
+        selected_score = initial_score
+    elif initial_contract_complete and retried_contract_complete:
+        comparable_initial = float(initial_score) if isinstance(initial_score, (int, float)) else float("-inf")
+        comparable_retry = float(retried_score) if isinstance(retried_score, (int, float)) else float("-inf")
+        if comparable_initial > comparable_retry:
+            selected_response = response
+            selected_mode = mode
+            selected_score = initial_score
+    elif not initial_contract_complete and not retried_contract_complete:
+        failure_meta = retried_response.meta.model_dump() if retried_response.meta else response.meta.model_dump()
+        failure_meta.setdefault("request_id", getattr(response.meta, "request_id", None))
+        failure_meta.setdefault("attempt_number", getattr(retried_response.meta, "attempt_number", None))
+        failure_meta.setdefault("attempt_mode", effective_retry_mode)
+        failure_meta.setdefault("template_used", getattr(retried_response.meta, "template_used", None))
+        failure_meta.setdefault("template_version", getattr(retried_response.meta, "template_version", None))
+        selected_response = _create_extraction_error_response(
+            markdown=retried_response.markdown or response.markdown or "",
+            meta=failure_meta,
+            message="Strukturierte Extraktion lieferte in keinem Versuch einen vollständigen kanonischen Contract",
+            details={
+                "initial_success": response.success,
+                "initial_quality_score": initial_score,
+                "initial_template_used": getattr(response.meta, "template_used", None),
+                "retry_success": retried_response.success,
+                "retry_quality_score": retried_score,
+                "retry_template_used": getattr(retried_response.meta, "template_used", None),
+            },
+        )
+        selected_mode = effective_retry_mode
+        selected_score = retried_score
+
+    return _apply_retry_meta(
+        selected_response,
         retry_applied=True,
         retry_reason=retry_reason,
         initial_mode=mode,
-        final_mode=effective_retry_mode,
+        final_mode=selected_mode,
         initial_quality_score=initial_score,
-        final_quality_score=final_score,
+        final_quality_score=selected_score,
         retry_threshold_used=float(effective_retry_threshold),
     )
 
@@ -1225,6 +1402,8 @@ async def _convert_auto_impl(
                     request_id=request_id,
                     attempt_number=attempt_number,
                 )
+                if not response.success:
+                    return _cache_and_return(response)
             # AC-014-2/AC-014-3: Strukturierte Extraktion falls Schema gesetzt
             elif extract_schema:
                 extraction = await _extract_struct(
@@ -1245,7 +1424,14 @@ async def _convert_auto_impl(
                             k: v for k, v in meta.items()
                         })
                 else:
-                    log.warning("extract_structured_data_failed_vision", error=extraction.get("error"))
+                    return _cache_and_return(
+                        _create_extraction_error_response(
+                            markdown=markdown,
+                            meta=meta,
+                            message="Schema-basierte Extraktion fehlgeschlagen",
+                            details={"extraction_error": extraction.get("error")},
+                        )
+                    )
             # T-DAI-055: Normalisierung nach Extraktion
             _norm_template = meta.get("template_used") or template or meta.get("document_type")
             response = await _apply_normalizer(response, meta, _norm_template, compact)
@@ -1341,6 +1527,8 @@ async def _convert_auto_impl(
                     request_id=request_id,
                     attempt_number=attempt_number,
                 )
+                if not response.success:
+                    return _cache_and_return(response)
                 if "extraction" not in audio_pipeline_steps:
                     audio_pipeline_steps.append("extraction")
                 meta["pipeline_steps"] = audio_pipeline_steps
@@ -1353,7 +1541,14 @@ async def _convert_auto_impl(
                         audio_pipeline_steps.append("extraction")
                     meta["pipeline_steps"] = audio_pipeline_steps
                 else:
-                    log.warning("extract_structured_data_failed_audio", error=extraction.get("error"))
+                    return _cache_and_return(
+                        _create_extraction_error_response(
+                            markdown=markdown,
+                            meta=meta,
+                            message="Schema-basierte Extraktion fehlgeschlagen",
+                            details={"extraction_error": extraction.get("error")},
+                        )
+                    )
 
             # T-DAI-055: Normalisierung nach Extraktion
             _norm_template = meta.get("template_used") or template or meta.get("document_type")
@@ -1544,6 +1739,8 @@ async def _convert_auto_impl(
                             request_id=request_id,
                             attempt_number=attempt_number,
                         )
+                        if not response.success:
+                            return _cache_and_return(response)
                     # AC-014-2/AC-014-3: Strukturierte Extraktion falls Schema gesetzt
                     elif extract_schema:
                         _update_progress("extract", filename, 80)
@@ -1565,7 +1762,14 @@ async def _convert_auto_impl(
                                     k: v for k, v in meta.items()
                                 })
                         else:
-                            log.warning("extract_structured_data_failed_scanned_pdf", error=extraction.get("error"))
+                            return _cache_and_return(
+                                _create_extraction_error_response(
+                                    markdown=scanned_markdown,
+                                    meta=meta,
+                                    message="Schema-basierte Extraktion fehlgeschlagen",
+                                    details={"extraction_error": extraction.get("error")},
+                                )
+                            )
                     # T-DAI-055: Normalisierung nach Extraktion
                     _norm_template = meta.get("template_used") or template or meta.get("document_type")
                     response = await _apply_normalizer(response, meta, _norm_template, compact)
@@ -1807,6 +2011,8 @@ async def _convert_auto_impl(
                         request_id=request_id,
                         attempt_number=attempt_number,
                     )
+                    if not response.success:
+                        return _cache_and_return(response)
                 # T-MKIT-024: ZUGFeRD Daten direkt als extracted verwenden (kein LLM nötig)
                 elif extract_schema and meta.get("zugferd") is not None:
                     _update_progress("extract", filename, 80)
@@ -1836,7 +2042,14 @@ async def _convert_auto_impl(
                                 k: v for k, v in meta.items()
                             })
                     else:
-                        log.warning("extract_structured_data_failed_markitdown", error=extraction.get("error"))
+                        return _cache_and_return(
+                            _create_extraction_error_response(
+                                markdown=markdown,
+                                meta=meta,
+                                message="Schema-basierte Extraktion fehlgeschlagen",
+                                details={"extraction_error": extraction.get("error")},
+                            )
+                        )
                 # T-DAI-055: Normalisierung nach Extraktion
                 _norm_template = meta.get("template_used") or template or meta.get("document_type")
                 response = await _apply_normalizer(response, meta, _norm_template, compact)
@@ -2018,7 +2231,7 @@ def _build_tips_dict() -> dict:
         },
         "common_mistakes": [
             {"problem": "extracted is null", "cause": "Missing extract_schema or template parameter", "fix": "Add template='invoice' or extract_schema={...} to get structured JSON in the extracted field"},
-            {"problem": "extracted is null with auto_extract=true", "cause": "No template registered for this document type", "fix": "Register a template via POST /v1/templates or check meta.document_type and meta.template_used for details"},
+            {"problem": "auto_extract returns an error", "cause": "No matching template, insufficient classification confidence, or extraction contract incomplete", "fix": "Check meta.document_type, meta.document_type_confidence, meta.template_used, and error.details; register a template or raise confidence/quality before retrying"},
             {"problem": "chunks is null", "cause": "Missing chunk parameter", "fix": "Add chunk=true to get RAG-ready chunks in the chunks field"},
             {"problem": "Poor quality on scanned PDFs", "cause": "Using standard accuracy", "fix": "Set accuracy='high' for OCR correction + dual-pass validation"},
             {"problem": "Images in DOCX/PPTX/PDF/ODT/ODP/HTML not described", "cause": "describe_images defaults to false", "fix": "Set describe_images=true (costs extra API calls)"},

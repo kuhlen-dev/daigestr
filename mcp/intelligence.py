@@ -44,7 +44,7 @@ from settings import (
 )
 from mistral_client import call_mistral_vision_api, analyze_with_mistral_vision
 from utils import strip_llm_artifacts, _get, _LOADED_BY_SERVER  # noqa: F401
-from models import MetaData, ConvertResponse
+from models import MetaData, ConvertResponse, ErrorCode, create_error_response
 
 log = structlog.get_logger()
 
@@ -130,6 +130,33 @@ def _looks_like_bank_statement(extracted: dict[str, Any]) -> bool:
     )
 
 
+def _has_meaningful_extracted_payload(extracted: Any) -> bool:
+    """Return True when extracted data contains meaningful non-meta content."""
+    if not isinstance(extracted, dict) or not extracted:
+        return False
+
+    def _value_present(value: Any) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return bool(value.strip())
+        if isinstance(value, dict):
+            return any(
+                _value_present(child)
+                for key, child in value.items()
+                if not str(key).startswith("_")
+            )
+        if isinstance(value, list):
+            return any(_value_present(item) for item in value)
+        return True
+
+    return any(
+        _value_present(value)
+        for key, value in extracted.items()
+        if not str(key).startswith("_")
+    )
+
+
 def _format_german_amount(amount: Any) -> Optional[str]:
     raw = _as_non_empty_string(amount)
     if raw is None:
@@ -204,13 +231,15 @@ def _extract_bank_statement_page_groups(markdown: str) -> list[tuple[str, str]]:
 
 
 def _needs_bank_statement_bundle_recovery(markdown: str, extracted: dict[str, Any]) -> bool:
-    if not _looks_like_bank_statement(extracted):
-        return False
-
     page_groups = _extract_bank_statement_page_groups(markdown)
     detected_numbers = [number for number, _ in page_groups]
     unique_numbers = list(dict.fromkeys(detected_numbers))
     if len(unique_numbers) <= 1:
+        return False
+
+    if not _has_meaningful_extracted_payload(extracted):
+        return True
+    if not _looks_like_bank_statement(extracted):
         return False
 
     raw_statements = extracted.get("kontoauszuege")
@@ -271,6 +300,7 @@ async def _recover_bank_statement_bundle(
             request_id=request_id,
             attempt_number=attempt_number,
             enable_bank_bundle_recovery=False,
+            strict_schema_validation=False,
         )
         recovery_tokens += int(statement_result.get("tokens") or 0)
         if not statement_result.get("success"):
@@ -453,6 +483,9 @@ def _harmonize_bank_statement_bundle_fields(extracted: dict[str, Any]) -> dict[s
 
     extracted["kontoauszuege"] = statements
     extracted["buchungen"] = merged_bookings
+    for shared_field in ("kontoinhaber", "iban", "bic", "bank"):
+        if extracted.get(shared_field) is None and statements[0].get(shared_field) is not None:
+            extracted[shared_field] = copy.deepcopy(statements[0][shared_field])
     if statement_numbers:
         extracted["auszugsnummer"] = ",".join(statement_numbers)
     extracted["anfangssaldo"] = statements[0].get("anfangssaldo")
@@ -489,9 +522,18 @@ def _harmonize_extracted_summary_fields(extracted: dict[str, Any]) -> dict[str, 
     """Normalize bundle semantics and summary fields onto canonical values."""
     extracted = _harmonize_bank_statement_bundle_fields(extracted)
 
-    meta_summary = None
-    if isinstance(extracted.get("_meta"), dict):
-        meta_summary = extracted["_meta"].get("zusammenfassung")
+    meta_block = extracted.get("_meta")
+    should_materialize_meta_defaults = isinstance(meta_block, dict) or _looks_like_bank_statement(extracted)
+    if should_materialize_meta_defaults:
+        if not isinstance(meta_block, dict):
+            meta_block = {}
+            extracted["_meta"] = meta_block
+        meta_block.setdefault("steuerrelevant", False)
+        meta_block.setdefault("mwst_ausgewiesen", False)
+    elif not isinstance(meta_block, dict):
+        meta_block = None
+
+    meta_summary = meta_block.get("zusammenfassung") if isinstance(meta_block, dict) else None
 
     canonical_summary = None
     for value in (extracted.get("summary"), extracted.get("zusammenfassung"), meta_summary):
@@ -503,7 +545,6 @@ def _harmonize_extracted_summary_fields(extracted: dict[str, Any]) -> dict[str, 
         return extracted
 
     extracted["summary"] = canonical_summary
-    meta_block = extracted.get("_meta")
     if not isinstance(meta_block, dict):
         meta_block = {}
         extracted["_meta"] = meta_block
@@ -947,6 +988,7 @@ async def extract_structured_data(
     request_id: Optional[str] = None,
     attempt_number: Optional[int] = None,
     enable_bank_bundle_recovery: bool = True,
+    strict_schema_validation: bool = True,
 ) -> dict:
     """
     Extrahiert strukturierte Daten aus Markdown gemäß einem JSON-Schema via Mistral API.
@@ -1120,6 +1162,19 @@ async def extract_structured_data(
                 extracted = recovery_result["extracted"]
                 tokens += int(recovery_result.get("tokens") or 0)
 
+        if not _has_meaningful_extracted_payload(extracted):
+            log.warning(
+                "extract_structured_data_empty_payload",
+                request_id=request_id,
+                attempt_number=attempt_number,
+            )
+            return {
+                "success": False,
+                "error": "Strukturierte Extraktion lieferte keine verwertbaren Felder",
+                "extracted": extracted,
+                "tokens": tokens,
+            }
+
         # Schema-Validierung (AC-014-7) — null-tolerant
         if _jsonschema_available:
             try:
@@ -1135,7 +1190,13 @@ async def extract_structured_data(
                     request_id=request_id,
                     attempt_number=attempt_number,
                 )
-                # Graceful: trotzdem zurückgeben, aber Warnung im Log
+                if strict_schema_validation:
+                    return {
+                        "success": False,
+                        "error": f"Schema-Verletzung in strukturierter Extraktion: {ve.message}",
+                        "extracted": extracted,
+                        "tokens": tokens,
+                    }
         else:
             log.debug("extract_structured_data_no_jsonschema")
 
@@ -1668,6 +1729,16 @@ async def _apply_auto_extract(
     _find_tmpl = _get("find_matching_template", find_matching_template)
     _extract = _get("extract_structured_data", extract_structured_data)
 
+    def _error_response(message: str, *, details: Optional[dict[str, Any]] = None) -> "ConvertResponse":
+        error_response = create_error_response(
+            ErrorCode.CONVERSION_FAILED,
+            message,
+            meta=meta,
+            details=details,
+        )
+        error_response.markdown = markdown
+        return error_response
+
     # Schritt 1: Klassifizierung wenn noch nicht vorhanden
     if not meta.get("document_type"):
         classify_result = await _classify(
@@ -1688,6 +1759,9 @@ async def _apply_auto_extract(
     if confidence >= min_confidence and doc_type and doc_type != "other":
         tmpl = _find_tmpl(doc_type, markdown)
         if tmpl:
+            meta["template_used"] = tmpl["id"]
+            meta["template_version"] = tmpl.get("version", 1)
+            response.meta = MetaData(**{k: v for k, v in meta.items()})
             schema = tmpl["schema"] if isinstance(tmpl["schema"], dict) else json.loads(tmpl["schema"])
             extraction = await _extract(
                 markdown, schema, language,
@@ -1698,9 +1772,8 @@ async def _apply_auto_extract(
             )
             if extraction["success"]:
                 response.extracted = extraction["extracted"]
-                meta["template_used"] = tmpl["id"]
-                meta["template_version"] = tmpl.get("version", 1)
                 response.meta = MetaData(**{k: v for k, v in meta.items()})
+                return response
             else:
                 log.warning(
                     "auto_extract_failed",
@@ -1710,10 +1783,19 @@ async def _apply_auto_extract(
                     request_id=request_id,
                     attempt_number=attempt_number,
                 )
-                meta["template_used"] = None
-                response.meta = MetaData(**{k: v for k, v in meta.items()})
+                return _error_response(
+                    f"Auto-Extract mit Template '{tmpl['id']}' fehlgeschlagen",
+                    details={
+                        "document_type": doc_type,
+                        "document_type_confidence": confidence,
+                        "template_used": tmpl["id"],
+                        "template_version": tmpl.get("version", 1),
+                        "extraction_error": extraction.get("error"),
+                    },
+                )
         else:
             meta["template_used"] = None
+            meta["template_version"] = None
             response.meta = MetaData(**{k: v for k, v in meta.items()})
             hints.append(
                 f"No template registered for document_type '{doc_type}'. "
@@ -1721,8 +1803,24 @@ async def _apply_auto_extract(
             )
             meta["hints"] = hints
             response.meta = MetaData(**{k: v for k, v in meta.items()})
+            return _error_response(
+                f"Auto-Extract konnte kein Template für document_type '{doc_type}' finden",
+                details={
+                    "document_type": doc_type,
+                    "document_type_confidence": confidence,
+                },
+            )
     else:
         meta["template_used"] = None
+        meta["template_version"] = None
         response.meta = MetaData(**{k: v for k, v in meta.items()})
+        return _error_response(
+            "Auto-Extract konnte keinen ausreichend sicheren Dokumenttyp bestimmen",
+            details={
+                "document_type": doc_type,
+                "document_type_confidence": confidence,
+                "min_confidence": min_confidence,
+            },
+        )
 
     return response
