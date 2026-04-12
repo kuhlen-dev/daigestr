@@ -227,6 +227,26 @@ class ProgressState(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict, description="Zusätzlicher Progress-Kontext wie Dateiname oder Quelle")
 
 
+class AsyncJobStartResponse(BaseModel):
+    """Antwort nach dem Start eines asynchronen Convert-Jobs."""
+    job_id: str = Field(..., description="ID des gestarteten Jobs")
+    status: str = Field(..., description="Initialer Jobstatus, typischerweise 'queued'")
+
+
+class JobStatusResponse(BaseModel):
+    """Pollbarer Status für asynchrone Convert-Jobs."""
+    job_id: str = Field(..., description="ID des Jobs")
+    status: str = Field(..., description="Aktueller Jobstatus")
+    created_at: Any = Field(..., description="Erstellungszeitpunkt des Jobs")
+    updated_at: Any = Field(..., description="Letzte Statusänderung des Jobs")
+    progress: Optional[ProgressState] = Field(None, description="Kanonischer Progress-Snapshot oder null")
+
+
+class JobListResponse(BaseModel):
+    """Liste pollbarer Jobstatus-Einträge."""
+    jobs: list[JobStatusResponse] = Field(default_factory=list, description="Neueste Jobs zuerst")
+
+
 # =============================================================================
 # Request-Schemas
 # =============================================================================

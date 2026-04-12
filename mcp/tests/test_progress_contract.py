@@ -1,10 +1,37 @@
 import json
-from unittest.mock import AsyncMock, patch
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from conftest import PNG_100x100, load_server_module, run_async
 
 
 _server = load_server_module(use_real_pil=False)
+
+
+def _load_api_server():
+    fastapi_mock = MagicMock()
+    app_mock = MagicMock()
+    app_mock.post = lambda *a, **kw: (lambda f: f)
+    app_mock.get = lambda *a, **kw: (lambda f: f)
+    app_mock.delete = lambda *a, **kw: (lambda f: f)
+    app_mock.put = lambda *a, **kw: (lambda f: f)
+    app_mock.exception_handler = lambda *a, **kw: (lambda f: f)
+    app_mock.include_router = MagicMock()
+    fastapi_mock.FastAPI = MagicMock(return_value=app_mock)
+    fastapi_mock.HTTPException = Exception
+    fastapi_mock.Request = MagicMock()
+
+    return load_server_module(
+        use_real_pil=False,
+        extra_patches={
+            "fastapi": fastapi_mock,
+            "fastapi.exceptions": MagicMock(),
+            "fastapi.responses": MagicMock(),
+        },
+    )
+
+
+_server_api = _load_api_server()
 
 
 def _make_vision_response(content: str, tokens_total: int = 50) -> dict:
@@ -59,3 +86,50 @@ def test_convert_auto_job_progress_uses_canonical_shape():
     assert first["progress"]["request_id"] == result.meta.request_id
     assert first["progress"]["attempt_mode"] == "default"
     assert first["progress"]["metadata"]["filename"] == "progress.png"
+
+
+def test_api_get_job_normalizes_legacy_progress_payload():
+    created_at = datetime.now(timezone.utc)
+    updated_at = datetime.now(timezone.utc)
+
+    with patch.object(
+        _server_api,
+        "job_get",
+        return_value={
+            "id": "job-legacy",
+            "status": "processing",
+            "created_at": created_at,
+            "updated_at": updated_at,
+            "progress_json": json.dumps({"step": "ocr", "detail": "page 1/5", "percent": 20}),
+        },
+    ):
+        response = run_async(_server_api.api_get_job("job-legacy"))
+
+    assert response.job_id == "job-legacy"
+    assert response.progress is not None
+    assert response.progress.current_stage == "ocr"
+    assert response.progress.message == "page 1/5"
+    assert response.progress.percent == 20
+
+
+def test_api_list_jobs_materializes_null_progress_when_missing():
+    now = datetime.now(timezone.utc)
+
+    with patch.object(
+        _server_api,
+        "job_list",
+        return_value=[
+            {
+                "id": "job-1",
+                "status": "queued",
+                "created_at": now,
+                "updated_at": now,
+                "progress_json": None,
+            }
+        ],
+    ):
+        response = run_async(_server_api.api_list_jobs())
+
+    assert len(response.jobs) == 1
+    assert response.jobs[0].job_id == "job-1"
+    assert response.jobs[0].progress is None

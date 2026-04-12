@@ -33,6 +33,9 @@ from models import (
     TemplateResponse,
     HealthResponse,
     ProgressState,
+    AsyncJobStartResponse,
+    JobStatusResponse,
+    JobListResponse,
     ErrorCode,
     create_error_response,
     create_success_response,
@@ -1015,8 +1018,8 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
             temp_path.unlink(missing_ok=True)
 
 
-@app.post("/v1/convert/async")
-async def api_convert_async(request: ConvertRequest) -> dict:
+@app.post("/v1/convert/async", response_model=AsyncJobStartResponse)
+async def api_convert_async(request: ConvertRequest) -> AsyncJobStartResponse:
     """
     Startet eine asynchrone Konvertierung.
 
@@ -1027,50 +1030,56 @@ async def api_convert_async(request: ConvertRequest) -> dict:
     job_id = str(uuid.uuid4())
     _job_create(job_id)
     asyncio.create_task(_run_async_job(job_id, request))
-    return {"job_id": job_id, "status": "queued"}
+    return AsyncJobStartResponse(job_id=job_id, status="queued")
 
 
-@app.get("/v1/jobs")
-async def api_list_jobs() -> dict:
+@app.get("/v1/jobs", response_model=JobListResponse)
+async def api_list_jobs() -> JobListResponse:
     """Gibt alle Jobs zurück (neueste zuerst)."""
     _job_list = _get("job_list", job_list)
     jobs = _job_list()
     result = []
     for j in jobs:
-        entry = {
-            "job_id": j["id"],
-            "status": j["status"],
-            "created_at": j["created_at"],
-            "updated_at": j["updated_at"],
-        }
+        progress = None
         if j.get("progress_json"):
             try:
-                entry["progress"] = normalize_progress_payload(json.loads(j["progress_json"]))
+                normalized = normalize_progress_payload(json.loads(j["progress_json"]))
+                progress = ProgressState(**normalized) if normalized else None
             except Exception:
-                entry["progress"] = None
-        result.append(entry)
-    return {"jobs": result}
+                progress = None
+        result.append(
+            JobStatusResponse(
+                job_id=j["id"],
+                status=j["status"],
+                created_at=j["created_at"],
+                updated_at=j["updated_at"],
+                progress=progress,
+            )
+        )
+    return JobListResponse(jobs=result)
 
 
-@app.get("/v1/jobs/{job_id}")
-async def api_get_job(job_id: str) -> dict:
+@app.get("/v1/jobs/{job_id}", response_model=JobStatusResponse)
+async def api_get_job(job_id: str) -> JobStatusResponse:
     """Gibt den Status und Fortschritt eines Jobs zurück."""
     _job_get = _get("job_get", job_get)
     job = _job_get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
-    result = {
-        "job_id": job["id"],
-        "status": job["status"],
-        "created_at": job["created_at"],
-        "updated_at": job["updated_at"],
-    }
+    progress = None
     if job.get("progress_json"):
         try:
-            result["progress"] = normalize_progress_payload(json.loads(job["progress_json"]))
+            normalized = normalize_progress_payload(json.loads(job["progress_json"]))
+            progress = ProgressState(**normalized) if normalized else None
         except Exception:
-            result["progress"] = None
-    return result
+            progress = None
+    return JobStatusResponse(
+        job_id=job["id"],
+        status=job["status"],
+        created_at=job["created_at"],
+        updated_at=job["updated_at"],
+        progress=progress,
+    )
 
 
 @app.get("/v1/jobs/{job_id}/result", response_model=ConvertResponse)
