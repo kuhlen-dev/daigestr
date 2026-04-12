@@ -210,6 +210,23 @@ class HealthResponse(BaseModel):
     meta: dict[str, Any] = Field(default_factory=dict, description="Zusätzliche Infos")
 
 
+class ProgressState(BaseModel):
+    """Kanonischer Progress-Status für laufende Jobs und Sync/Async-Pfade."""
+    status: str = Field("processing", description="Jobstatus für den aktuellen Progress-Snapshot")
+    current_stage: str = Field(..., description="Aktueller Verarbeitungsschritt, z. B. 'ocr' oder 'extract'")
+    message: Optional[str] = Field(None, description="Freitext-Detail zum aktuellen Schritt")
+    percent: Optional[int] = Field(None, ge=0, le=100, description="Fortschritt in Prozent sofern bekannt")
+    request_id: Optional[str] = Field(None, description="Stabile ID des Convert-Laufs")
+    job_id: Optional[str] = Field(None, description="Job-ID bei asynchronen Läufen")
+    attempt_number: Optional[int] = Field(None, description="Aktuelle interne Versuchszahl")
+    attempt_count: Optional[int] = Field(None, description="Bekannte Gesamtzahl interner Versuche")
+    attempt_mode: Optional[str] = Field(None, description="Mode des aktuellen Versuchs")
+    page_current: Optional[int] = Field(None, description="Aktuelle Seite innerhalb eines längeren Dokuments")
+    page_total: Optional[int] = Field(None, description="Gesamtseitenzahl sofern bekannt")
+    upstream_attempt: Optional[int] = Field(None, description="Retry-Zähler des aktuellen Upstream-Calls sofern bekannt")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Zusätzlicher Progress-Kontext wie Dateiname oder Quelle")
+
+
 # =============================================================================
 # Request-Schemas
 # =============================================================================

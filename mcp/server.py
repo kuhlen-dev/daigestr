@@ -156,6 +156,7 @@ from debug_snapshots import (  # noqa: F401
     build_debug_snapshot_payload,
     replay_normalization_from_snapshot,
 )
+from progress_tracking import build_progress_payload, normalize_progress_payload  # noqa: F401
 
 # Re-export availability flags and key names from sub-modules so tests can patch
 # via server namespace. Sub-modules read these back via _get() for test-patchability.

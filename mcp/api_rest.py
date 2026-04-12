@@ -32,6 +32,7 @@ from models import (
     ExtractRequest,
     TemplateResponse,
     HealthResponse,
+    ProgressState,
     ErrorCode,
     create_error_response,
     create_success_response,
@@ -58,6 +59,7 @@ from settings import (
     WEBHOOK_TIMEOUT_SECONDS,
     JOB_TIMEOUT_SECONDS,
 )
+from progress_tracking import build_progress_payload, normalize_progress_payload
 from utils import _get, resolve_path, get_file_extension, get_mimetype, detect_mimetype_from_bytes
 from intelligence import (
     classify_document,
@@ -870,7 +872,19 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
     _job_set_result = _get("job_set_result", job_set_result)
     temp_path: Path | None = None
 
-    _job_update(job_id, "processing", json.dumps({"message": "Conversion started"}))
+    _job_update(
+        job_id,
+        "processing",
+        ProgressState(
+            **build_progress_payload(
+                status="processing",
+                current_stage="start",
+                message="Starting conversion",
+                percent=0,
+                job_id=job_id,
+            )
+        ).model_dump_json(),
+    )
     try:
         # Eingabe auflösen
         _resolve_path = _get("resolve_path", resolve_path)
@@ -954,7 +968,19 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
             )
         except asyncio.TimeoutError:
             log.error("async_job_timeout", job_id=job_id, timeout=_job_timeout)
-            _job_update(job_id, "failed", json.dumps({"error": f"Job timed out after {_job_timeout}s"}))
+            _job_update(
+                job_id,
+                "failed",
+                ProgressState(
+                    **build_progress_payload(
+                        status="failed",
+                        current_stage="failed",
+                        message=f"Job timed out after {_job_timeout}s",
+                        percent=100,
+                        job_id=job_id,
+                    )
+                ).model_dump_json(),
+            )
             return
         _job_set_result(job_id, result.model_dump_json())
 
@@ -968,7 +994,19 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
             ErrorCode.INTERNAL_ERROR,
             f"Job fehlgeschlagen: {str(exc)}",
         )
-        _job_update(job_id, "failed", json.dumps({"error": str(exc)}))
+        _job_update(
+            job_id,
+            "failed",
+            ProgressState(
+                **build_progress_payload(
+                    status="failed",
+                    current_stage="failed",
+                    message=str(exc),
+                    percent=100,
+                    job_id=job_id,
+                )
+            ).model_dump_json(),
+        )
         # Webhook auch bei Fehler senden
         if request.webhook_url:
             await _fire_webhook(request.webhook_url, error_result)
@@ -1007,7 +1045,7 @@ async def api_list_jobs() -> dict:
         }
         if j.get("progress_json"):
             try:
-                entry["progress"] = json.loads(j["progress_json"])
+                entry["progress"] = normalize_progress_payload(json.loads(j["progress_json"]))
             except Exception:
                 entry["progress"] = None
         result.append(entry)
@@ -1029,7 +1067,7 @@ async def api_get_job(job_id: str) -> dict:
     }
     if job.get("progress_json"):
         try:
-            result["progress"] = json.loads(job["progress_json"])
+            result["progress"] = normalize_progress_payload(json.loads(job["progress_json"]))
         except Exception:
             result["progress"] = None
     return result

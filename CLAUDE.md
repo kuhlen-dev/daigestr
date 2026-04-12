@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Was ist das?
 
-Daigestr — Document Intelligence Service v13.2.3. Konvertiert Dokumente, Bilder, Audio/Video zu Markdown mit LLM-gestützter Analyse. Zwei Schnittstellen:
+Daigestr — Document Intelligence Service v13.3.1. Konvertiert Dokumente, Bilder, Audio/Video zu Markdown mit LLM-gestützter Analyse. Zwei Schnittstellen:
 - **MCP** (Port 8080, extern 18005): Für Claude und MCP-Clients via SSE oder stdio
 - **REST** (Port 8081, extern 18006): Für n8n und HTTP-Clients (FastAPI mit Swagger unter `/docs`)
 

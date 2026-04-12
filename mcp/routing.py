@@ -28,10 +28,12 @@ from markitdown import MarkItDown as _MarkItDown
 from models import (
     ConvertResponse,
     MetaData,
+    ProgressState,
     ErrorCode,
     create_error_response,
     create_success_response,
 )
+from progress_tracking import build_progress_payload
 from settings import (
     MAX_FILE_SIZE_BYTES,
     MAX_FILE_SIZE_MB,
@@ -760,6 +762,23 @@ async def _convert_auto_impl(
     _job_completed = False  # Guard: no more status updates after job_set_result
 
     def _update_progress(step: str, detail: str, progress: int) -> None:
+        progress_payload = ProgressState(
+            **build_progress_payload(
+                status="processing",
+                current_stage=step,
+                message=detail,
+                percent=progress,
+                request_id=request_id,
+                job_id=_job_id,
+                attempt_number=attempt_number,
+                attempt_count=attempt_count,
+                attempt_mode=mode,
+                metadata={
+                    "source": source,
+                    "filename": filename,
+                },
+            )
+        )
         _attempt_log.info(
             "convert_progress",
             step=step,
@@ -774,11 +793,11 @@ async def _convert_auto_impl(
             try:
                 _fn = _get("job_update", _default_job_update)
                 if _fn:
-                    _fn(_job_id, "processing", _json.dumps({"step": step, "detail": detail, "percent": progress}))
+                    _fn(_job_id, "processing", progress_payload.model_dump_json())
             except Exception:
                 pass
 
-    _update_progress("start", filename, 0)
+    _update_progress("start", "Starting conversion", 0)
 
     # T-DAI-071: Audit request event
     _audit(
