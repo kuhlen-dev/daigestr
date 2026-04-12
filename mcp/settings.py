@@ -32,7 +32,19 @@ MISTRAL_TIMEOUT = int(os.getenv("MISTRAL_TIMEOUT", "120"))
 # Mistral OCR 3
 MISTRAL_OCR_MODEL = os.getenv("MISTRAL_OCR_MODEL", "mistral-ocr-2512")
 MISTRAL_OCR_ENABLED = os.getenv("MISTRAL_OCR_ENABLED", "true").lower() == "true"
-
+_ocr_table_format = os.getenv("MISTRAL_OCR_TABLE_FORMAT", "").strip().lower()
+MISTRAL_OCR_TABLE_FORMAT = _ocr_table_format or None
+if MISTRAL_OCR_TABLE_FORMAT not in {None, "markdown", "html"}:
+    raise ValueError("MISTRAL_OCR_TABLE_FORMAT must be empty, 'markdown', or 'html'")
+MISTRAL_OCR_INCLUDE_IMAGE_BASE64 = os.getenv("MISTRAL_OCR_INCLUDE_IMAGE_BASE64", "false").lower() == "true"
+_ocr_document_annotation_format = os.getenv("MISTRAL_OCR_DOCUMENT_ANNOTATION_FORMAT", "").strip().lower()
+MISTRAL_OCR_DOCUMENT_ANNOTATION_FORMAT = _ocr_document_annotation_format or None
+if MISTRAL_OCR_DOCUMENT_ANNOTATION_FORMAT not in {None, "text"}:
+    raise ValueError("MISTRAL_OCR_DOCUMENT_ANNOTATION_FORMAT must be empty or 'text'")
+_ocr_bbox_annotation_format = os.getenv("MISTRAL_OCR_BBOX_ANNOTATION_FORMAT", "").strip().lower()
+MISTRAL_OCR_BBOX_ANNOTATION_FORMAT = _ocr_bbox_annotation_format or None
+if MISTRAL_OCR_BBOX_ANNOTATION_FORMAT not in {None, "text"}:
+    raise ValueError("MISTRAL_OCR_BBOX_ANNOTATION_FORMAT must be empty or 'text'")
 # =============================================================================
 # Server Ports
 # =============================================================================
@@ -185,7 +197,7 @@ MERMAID_CDN_URL = os.getenv("MERMAID_CDN_URL", "https://cdn.jsdelivr.net/npm/mer
 HIGHLIGHTJS_CDN_URL = os.getenv("HIGHLIGHTJS_CDN_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js")
 HIGHLIGHTJS_CSS_URL = os.getenv("HIGHLIGHTJS_CSS_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css")
 
-VERSION = os.getenv("DAIGESTR_VERSION", "13.5.1")
+VERSION = os.getenv("DAIGESTR_VERSION", "13.5.2")
 START_TIME = time.time()
 
 # =============================================================================

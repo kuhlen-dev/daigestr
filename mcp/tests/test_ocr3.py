@@ -93,6 +93,37 @@ class TestCallMistralOcrApi:
         assert expected_b64 in captured_payload["document"]["document_url"]
         assert "data:application/pdf;base64," in captured_payload["document"]["document_url"]
 
+    def test_call_mistral_ocr_api_sends_configured_options(self, tmp_path):
+        """OCR-Request übernimmt konfigurierbare Table/Image/Annotation-Optionen."""
+        captured_payload = {}
+
+        async def fake_post(url, headers=None, json=None, **kwargs):
+            captured_payload.update(json or {})
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = {"pages": []}
+            mock_resp.raise_for_status = MagicMock()
+            return mock_resp
+
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=fake_post)
+
+        with patch.object(_server, "MISTRAL_API_KEY", "test-key"):
+            with patch.object(_server, "MISTRAL_OCR_MODEL", "mistral-ocr-2512"):
+                with patch.object(_server, "MISTRAL_OCR_TABLE_FORMAT", "html"):
+                    with patch.object(_server, "MISTRAL_OCR_INCLUDE_IMAGE_BASE64", True):
+                        with patch.object(_server, "MISTRAL_OCR_DOCUMENT_ANNOTATION_FORMAT", "text"):
+                            with patch.object(_server, "MISTRAL_OCR_BBOX_ANNOTATION_FORMAT", "text"):
+                                with patch("httpx.AsyncClient", return_value=mock_client):
+                                    run_async(call_mistral_ocr_api(b"PDF binary data", "test.pdf", page_indices=[2, 0, 2]))
+
+        assert captured_payload["table_format"] == "html"
+        assert captured_payload["include_image_base64"] is True
+        assert captured_payload["pages"] == [0, 2]
+        assert captured_payload["document_annotation_format"] == {"type": "text"}
+        assert captured_payload["bbox_annotation_format"] == {"type": "text"}
+
 
 # =============================================================================
 # TestConvertScannedPdfOcr3
@@ -155,6 +186,50 @@ class TestConvertScannedPdfOcr3:
         assert "Inhalt Seite 1" in result["markdown"]
         assert "Inhalt Seite 2" in result["markdown"]
         assert "Inhalt Seite 3" in result["markdown"]
+
+    def test_convert_scanned_pdf_ocr3_surfaces_ocr_metadata(self, tmp_path):
+        """OCR-Metadaten werden aggregiert und für Meta/Quality nutzbar gemacht."""
+        pdf = tmp_path / "multi.pdf"
+        pdf.write_bytes(b"%PDF-1.4 multi page")
+
+        ocr_response = {
+            "pages": [
+                {
+                    "index": 0,
+                    "markdown": "Inhalt Seite 1",
+                    "tables": [{"id": "t1"}],
+                    "headers": ["Kontoauszug 11"],
+                    "footers": ["Seite 1"],
+                    "confidence_scores": {"page": 0.93},
+                },
+                {
+                    "index": 1,
+                    "markdown": "Inhalt Seite 2",
+                    "tables": [{"id": "t2"}, {"id": "t3"}],
+                    "headers": ["Kontoauszug 12"],
+                    "footers": ["Seite 2"],
+                    "confidence_scores": {"page": 0.89},
+                },
+            ]
+        }
+
+        with patch.object(_server, "MISTRAL_API_KEY", "test-key"):
+            with patch.object(_server, "MISTRAL_OCR_TABLE_FORMAT", "html"):
+                with patch.object(
+                    _server, "call_mistral_ocr_api",
+                    new=AsyncMock(return_value=ocr_response)
+                ):
+                    result = run_async(convert_scanned_pdf_ocr3(pdf))
+
+        assert result["success"] is True
+        assert result["ocr_table_format"] == "html"
+        assert result["ocr_table_count"] == 3
+        assert result["ocr_headers"] == ["Kontoauszug 11", "Kontoauszug 12"]
+        assert result["ocr_footers"] == ["Seite 1", "Seite 2"]
+        assert result["ocr_confidence_granularity"] == "page"
+        assert result["ocr_pages_with_confidence"] == 2
+        assert result["ocr_average_page_confidence"] == 0.91
+        assert result["ocr_minimum_page_confidence"] == 0.89
 
     def test_convert_scanned_pdf_ocr3_no_api_key(self, tmp_path):
         """Graceful wenn kein API-Key konfiguriert."""
@@ -472,3 +547,23 @@ class TestOcr3MetaIntegration:
         assert result["success"] is True
         assert result.get("ocr_model") is None
         assert result.get("vision_model") == "mistral-small-2603"
+
+
+class TestOcrQualityScoring:
+    """OCR-Confidence soll in den primären Quality-Score einfließen."""
+
+    def test_quality_score_prefers_ocr_confidence_when_available(self):
+        result = _server.calculate_quality_score(
+            "# Kontoauszug\n\n- Buchung A\n- Buchung B",
+            {
+                "scanned": True,
+                "vision_used": False,
+                "tokens_prompt": 1000,
+                "tokens_completion": 10,
+                "ocr_average_page_confidence": 0.96,
+                "ocr_minimum_page_confidence": 0.92,
+            },
+        )
+
+        assert result["quality_score"] >= 0.6
+        assert result["quality_grade"] in {"good", "excellent"}

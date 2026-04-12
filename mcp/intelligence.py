@@ -1296,26 +1296,41 @@ def calculate_quality_score(markdown: str, meta: dict) -> dict:
     scanned = meta.get("scanned", False)
 
     if vision_used or scanned:
-        tokens_prompt = meta.get("tokens_prompt") or 0
-        tokens_completion = meta.get("tokens_completion") or 0
-
-        if tokens_prompt > 0 and tokens_completion > 0:
-            # Token-Effizienz: mehr Output-Tokens relativ zu Input → guter Inhalt extrahiert
-            efficiency = tokens_completion / tokens_prompt
-            if efficiency >= _vision_eff_high:
+        ocr_average_page_confidence = meta.get("ocr_average_page_confidence")
+        ocr_minimum_page_confidence = meta.get("ocr_minimum_page_confidence")
+        if isinstance(ocr_average_page_confidence, (int, float)):
+            effective_confidence = float(ocr_average_page_confidence)
+            if isinstance(ocr_minimum_page_confidence, (int, float)):
+                effective_confidence = min(effective_confidence, float(ocr_minimum_page_confidence))
+            if effective_confidence >= 0.95:
                 vision_score = _vision_sc_high
-            elif efficiency >= _vision_eff_mid:
+            elif effective_confidence >= 0.85:
                 vision_score = _vision_sc_mid
-            elif efficiency >= _vision_eff_low:
+            elif effective_confidence >= 0.70:
                 vision_score = _vision_sc_low
             else:
                 vision_score = _vision_sc_min
-        elif tokens_completion > 0:
-            # Nur Completion bekannt → Mindest-Score
-            vision_score = _vision_sc_low
         else:
-            # Vision wurde verwendet, aber keine Token-Daten → neutraler Wert
-            vision_score = _vision_sc_low
+            tokens_prompt = meta.get("tokens_prompt") or 0
+            tokens_completion = meta.get("tokens_completion") or 0
+
+            if tokens_prompt > 0 and tokens_completion > 0:
+                # Token-Effizienz: mehr Output-Tokens relativ zu Input → guter Inhalt extrahiert
+                efficiency = tokens_completion / tokens_prompt
+                if efficiency >= _vision_eff_high:
+                    vision_score = _vision_sc_high
+                elif efficiency >= _vision_eff_mid:
+                    vision_score = _vision_sc_mid
+                elif efficiency >= _vision_eff_low:
+                    vision_score = _vision_sc_low
+                else:
+                    vision_score = _vision_sc_min
+            elif tokens_completion > 0:
+                # Nur Completion bekannt → Mindest-Score
+                vision_score = _vision_sc_low
+            else:
+                # Vision wurde verwendet, aber keine Token-Daten → neutraler Wert
+                vision_score = _vision_sc_low
     else:
         # Kein Vision → volle _vision_baseline als Baseline (keine Unsicherheit durch OCR)
         vision_score = _vision_baseline

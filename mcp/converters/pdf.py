@@ -50,19 +50,16 @@ from models import ErrorCode
 from settings import (
     SCAN_THRESHOLD_CHARS,
     MISTRAL_API_KEY,
-    MISTRAL_API_URL,
     MISTRAL_OCR_MODEL,
     MISTRAL_OCR_ENABLED,
     MISTRAL_TIMEOUT,
     MISTRAL_VISION_MODEL,
-    DATA_DIR,
-    TEMP_DIR,
     PDF_RENDER_DPI,
     IMAGE_MAX_WIDTH,
     PDFTOTEXT_TIMEOUT,
     PDFINFO_TIMEOUT,
 )
-from mistral_client import call_mistral_ocr_api, analyze_with_mistral_vision
+from mistral_client import call_mistral_ocr_api, analyze_with_mistral_vision, extract_mistral_ocr_metadata
 
 from utils import _get, _LOADED_BY_SERVER  # noqa: F401
 
@@ -431,6 +428,7 @@ async def convert_scanned_pdf_ocr3(
         result = await _get("call_mistral_ocr_api", call_mistral_ocr_api)(
             file_data,
             file_path.name,
+            page_indices=page_indices,
             request_id=request_id,
             attempt_number=attempt_number,
             pipeline_step="convert_scanned_pdf_ocr3",
@@ -479,16 +477,14 @@ async def convert_scanned_pdf_ocr3(
             "error": "OCR API lieferte keine Seiten zurück",
         }
 
-    # Filter by page_indices if specified (0-based)
-    if page_indices is not None:
-        page_indices_set = set(page_indices)
-        pages = [p for p in pages if p.get("index", 0) in page_indices_set]
-        if not pages:
-            return {
-                "success": False,
-                "error_code": ErrorCode.CONVERSION_FAILED,
-                "error": "Keine Seiten nach Seitenfilterung übrig",
-            }
+    if page_indices is not None and not pages:
+        return {
+            "success": False,
+            "error_code": ErrorCode.CONVERSION_FAILED,
+            "error": "Keine Seiten nach Seitenfilterung übrig",
+        }
+
+    ocr_metadata = _get("extract_mistral_ocr_metadata", extract_mistral_ocr_metadata)(result)
 
     markdown_parts = []
     total_pages = len(pages)
@@ -521,6 +517,7 @@ async def convert_scanned_pdf_ocr3(
         "markdown": combined_markdown,
         "ocr_model": MISTRAL_OCR_MODEL,
         "pages": len(pages),
+        **ocr_metadata,
     }
 
 
@@ -573,6 +570,14 @@ async def convert_scanned_pdf(
                 "scanned": True,
                 "pages_processed": ocr3_result.get("pages", 0),
                 "ocr_model": ocr3_result.get("ocr_model", MISTRAL_OCR_MODEL),
+                "ocr_table_format": ocr3_result.get("ocr_table_format"),
+                "ocr_table_count": ocr3_result.get("ocr_table_count"),
+                "ocr_headers": ocr3_result.get("ocr_headers"),
+                "ocr_footers": ocr3_result.get("ocr_footers"),
+                "ocr_confidence_granularity": ocr3_result.get("ocr_confidence_granularity"),
+                "ocr_pages_with_confidence": ocr3_result.get("ocr_pages_with_confidence"),
+                "ocr_average_page_confidence": ocr3_result.get("ocr_average_page_confidence"),
+                "ocr_minimum_page_confidence": ocr3_result.get("ocr_minimum_page_confidence"),
             }
         else:
             log.warning(

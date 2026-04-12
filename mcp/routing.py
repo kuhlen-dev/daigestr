@@ -1399,6 +1399,17 @@ async def _convert_auto_impl(
                     meta["tokens_total"] = result.get("tokens_total")
                     meta["tokens_per_page"] = result.get("tokens_per_page")
                     meta["pages_processed"] = result.get("pages_processed") or result.get("pages")
+                    for _ocr_meta_field in (
+                        "ocr_table_format",
+                        "ocr_table_count",
+                        "ocr_headers",
+                        "ocr_footers",
+                        "ocr_confidence_granularity",
+                        "ocr_pages_with_confidence",
+                        "ocr_average_page_confidence",
+                        "ocr_minimum_page_confidence",
+                    ):
+                        meta[_ocr_meta_field] = result.get(_ocr_meta_field)
                     if result.get("ocr_model"):
                         # OCR3-Pfad: kein Vision
                         meta["vision_used"] = False

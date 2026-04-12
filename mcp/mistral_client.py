@@ -22,6 +22,10 @@ from settings import (
     MISTRAL_API_URL,
     MISTRAL_VISION_MODEL,
     MISTRAL_OCR_MODEL,
+    MISTRAL_OCR_TABLE_FORMAT,
+    MISTRAL_OCR_INCLUDE_IMAGE_BASE64,
+    MISTRAL_OCR_DOCUMENT_ANNOTATION_FORMAT,
+    MISTRAL_OCR_BBOX_ANNOTATION_FORMAT,
     MISTRAL_TIMEOUT,
     VISION_MAX_TOKENS,
     MAX_RETRIES,
@@ -31,6 +35,131 @@ from settings import (
 from utils import _get, _LOADED_BY_SERVER  # noqa: F401
 
 log = structlog.get_logger()
+
+
+def _build_mistral_ocr_payload(file_data: bytes, *, page_indices: Optional[list[int]] = None) -> dict[str, Any]:
+    b64 = base64.b64encode(file_data).decode("utf-8")
+    payload: dict[str, Any] = {
+        "model": _get("MISTRAL_OCR_MODEL", MISTRAL_OCR_MODEL),
+        "document": {
+            "type": "document_url",
+            "document_url": f"data:application/pdf;base64,{b64}",
+        },
+        "table_format": _get("MISTRAL_OCR_TABLE_FORMAT", MISTRAL_OCR_TABLE_FORMAT),
+        "include_image_base64": _get("MISTRAL_OCR_INCLUDE_IMAGE_BASE64", MISTRAL_OCR_INCLUDE_IMAGE_BASE64),
+    }
+    if page_indices:
+        payload["pages"] = sorted(set(page_indices))
+    document_annotation_format = _get(
+        "MISTRAL_OCR_DOCUMENT_ANNOTATION_FORMAT",
+        MISTRAL_OCR_DOCUMENT_ANNOTATION_FORMAT,
+    )
+    if document_annotation_format:
+        payload["document_annotation_format"] = {"type": document_annotation_format}
+    bbox_annotation_format = _get(
+        "MISTRAL_OCR_BBOX_ANNOTATION_FORMAT",
+        MISTRAL_OCR_BBOX_ANNOTATION_FORMAT,
+    )
+    if bbox_annotation_format:
+        payload["bbox_annotation_format"] = {"type": bbox_annotation_format}
+    return payload
+
+
+def _extract_page_confidence(page: dict[str, Any]) -> Optional[float]:
+    candidates: list[Any] = [
+        page.get("confidence"),
+        page.get("confidence_score"),
+    ]
+    confidence_scores = page.get("confidence_scores")
+    if isinstance(confidence_scores, dict):
+        candidates.extend(
+            [
+                confidence_scores.get("page"),
+                confidence_scores.get("average"),
+                confidence_scores.get("avg"),
+                confidence_scores.get("average_page_confidence_score"),
+                confidence_scores.get("minimum_page_confidence_score"),
+            ]
+        )
+        word_scores = confidence_scores.get("words")
+        if not isinstance(word_scores, list):
+            word_scores = confidence_scores.get("word_confidence_scores")
+        if isinstance(word_scores, list) and word_scores:
+            numeric_scores = [
+                float(score if isinstance(score, (int, float)) else score.get("confidence"))
+                for score in word_scores
+                if isinstance(score, (int, float)) or (
+                    isinstance(score, dict) and isinstance(score.get("confidence"), (int, float))
+                )
+            ]
+            if numeric_scores:
+                candidates.append(sum(numeric_scores) / len(numeric_scores))
+    for candidate in candidates:
+        if isinstance(candidate, (int, float)):
+            value = float(candidate)
+            if 0.0 <= value <= 1.0:
+                return value
+    return None
+
+
+def extract_mistral_ocr_metadata(result: dict[str, Any]) -> dict[str, Any]:
+    pages = result.get("pages")
+    if not isinstance(pages, list):
+        return {}
+
+    headers: list[str] = []
+    footers: list[str] = []
+    table_count = 0
+    confidences: list[float] = []
+    inferred_confidence_granularity: Optional[str] = None
+
+    for page in pages:
+        if not isinstance(page, dict):
+            continue
+        page_headers = page.get("headers")
+        if isinstance(page_headers, list):
+            headers.extend(str(item) for item in page_headers if item not in (None, ""))
+        elif page.get("header") not in (None, ""):
+            headers.append(str(page.get("header")))
+        page_footers = page.get("footers")
+        if isinstance(page_footers, list):
+            footers.extend(str(item) for item in page_footers if item not in (None, ""))
+        elif page.get("footer") not in (None, ""):
+            footers.append(str(page.get("footer")))
+        page_tables = page.get("tables")
+        if isinstance(page_tables, list):
+            table_count += len(page_tables)
+
+        confidence_scores = page.get("confidence_scores")
+        if isinstance(confidence_scores, dict):
+            if isinstance(confidence_scores.get("words"), list) or isinstance(confidence_scores.get("word_confidence_scores"), list):
+                inferred_confidence_granularity = "word"
+            elif any(
+                key in confidence_scores
+                for key in (
+                    "page",
+                    "average",
+                    "avg",
+                    "average_page_confidence_score",
+                    "minimum_page_confidence_score",
+                )
+            ):
+                inferred_confidence_granularity = "page"
+
+        page_confidence = _extract_page_confidence(page)
+        if page_confidence is not None:
+            confidences.append(page_confidence)
+
+    return {
+        "ocr_table_format": _get("MISTRAL_OCR_TABLE_FORMAT", MISTRAL_OCR_TABLE_FORMAT),
+        "ocr_table_count": table_count or None,
+        "ocr_headers": sorted(set(headers)) or None,
+        "ocr_footers": sorted(set(footers)) or None,
+        "ocr_confidence_granularity": inferred_confidence_granularity,
+        "ocr_pages_with_confidence": len(confidences) or None,
+        "ocr_average_page_confidence": round(sum(confidences) / len(confidences), 4) if confidences else None,
+        "ocr_minimum_page_confidence": round(min(confidences), 4) if confidences else None,
+    }
 
 
 def _retry_context(retry_state: RetryCallState) -> dict[str, Any]:
@@ -242,20 +371,14 @@ async def call_mistral_ocr_api(
     file_data: bytes,
     filename: str,
     *,
+    page_indices: Optional[list[int]] = None,
     request_id: Optional[str] = None,
     attempt_number: Optional[int] = None,
     pipeline_step: Optional[str] = None,
     upstream_attempt: Optional[int] = None,
 ) -> dict:
     """Ruft die Mistral OCR API (/v1/ocr) auf."""
-    b64 = base64.b64encode(file_data).decode("utf-8")
-    payload = {
-        "model": MISTRAL_OCR_MODEL,
-        "document": {
-            "type": "document_url",
-            "document_url": f"data:application/pdf;base64,{b64}",
-        },
-    }
+    payload = _build_mistral_ocr_payload(file_data, page_indices=page_indices)
     t0 = time.monotonic()
     async with httpx.AsyncClient(timeout=float(MISTRAL_TIMEOUT)) as client:
         response = await client.post(
@@ -278,7 +401,7 @@ async def call_mistral_ocr_api(
         response.raise_for_status()
         data = response.json()
         duration_ms = int((time.monotonic() - t0) * 1000)
-        usage = data.get("usage", {})
+        usage = data.get("usage_info") or data.get("usage", {})
         upstream_attempts_used = upstream_attempt or 1
         log.info(
             "mistral_api_completed",
@@ -303,6 +426,8 @@ async def call_mistral_ocr_api(
                 "pipeline_step": pipeline_step,
                 "filename": filename,
                 "upstream_attempts_used": upstream_attempts_used,
+                "table_format": payload.get("table_format"),
+                "include_image_base64": payload.get("include_image_base64"),
             },
         )
         return data
