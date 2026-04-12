@@ -30,6 +30,7 @@ import PIL.Image as _real_PIL_Image
 # Exportierte Referenzen für Test-Module die echtes PIL brauchen
 REAL_PIL = _real_PIL
 REAL_PIL_IMAGE = _real_PIL_Image
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 def _make_png_bytes(width: int, height: int, color: tuple = (128, 128, 128)) -> bytes:
@@ -52,6 +53,11 @@ PNG_200x200 = _make_png_bytes(200, 200)
 PNG_200x150 = _make_png_bytes(200, 150)
 PNG_300x200 = _make_png_bytes(300, 200)
 PNG_400x300 = _make_png_bytes(400, 300)
+
+
+def read_text_fixture(name: str) -> str:
+    """Liest eine Textfixture aus mcp/tests/fixtures."""
+    return (FIXTURES_DIR / name).read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------

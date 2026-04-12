@@ -6,6 +6,7 @@ Alle externen Abhängigkeiten werden per unittest.mock gemockt.
 """
 
 import json
+import re
 import os
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -13,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import psycopg2
 import pytest
 
-from conftest import load_server_module, run_async
+from conftest import load_server_module, read_text_fixture, run_async
 
 
 _DB_URL = os.environ.get(
@@ -29,6 +30,7 @@ get_all_template_ids = _server.get_all_template_ids
 
 # DB initialisieren (echte PostgreSQL, tables + seed)
 import templates_db as _tdb
+import intelligence as _intelligence
 _tdb.pool_reset()
 conn = psycopg2.connect(_DB_URL)
 conn.autocommit = True
@@ -494,6 +496,92 @@ Kontostand am 30.09.2024, 20:03 Uhr 12.263,23+
         assert extracted["zeitraum"] == {"von": "2024-08-19", "bis": "2024-09-30"}
         assert len(extracted["kontoauszuege"]) == 2
         assert len(extracted["buchungen"]) == 4
+
+    def test_extract_bank_statement_page_groups_from_realistic_sanitized_fixture(self):
+        """A sanitized 12421-derived fixture must still split into the original statement groups."""
+        markdown = read_text_fixture("bank_statement_bundle_12421_sanitized.md")
+
+        page_groups = _intelligence._extract_bank_statement_page_groups(markdown)
+
+        assert [number for number, _ in page_groups] == ["11", "12", "13", "14", "15", "16", "17", "18"]
+        assert len(page_groups) == 8
+        assert "Kontoauszug 11" in page_groups[0][1]
+        assert "Wert: 19.08.2024" in page_groups[0][1]
+        assert "Kontoauszug 18" in page_groups[-1][1]
+        assert "Wert: 03.03.2025" in page_groups[-1][1]
+
+    def test_extract_recovers_bank_statement_bundle_from_realistic_sanitized_fixture(self):
+        """The sanitized 12421 regression fixture must replay bundle recovery without live OCR/LLM calls."""
+        markdown = read_text_fixture("bank_statement_bundle_12421_sanitized.md")
+        schema = get_template_by_id("bank_statement")["schema"]
+
+        async def fake_extract(statement_markdown, passed_schema, **kwargs):
+            assert passed_schema == schema
+            match = re.search(r"Kontoauszug\s+(\d+)", statement_markdown)
+            assert match is not None
+            statement_number = match.group(1)
+            booking_dates = re.findall(r"Wert:\s*(\d{2}\.\d{2}\.\d{4})", statement_markdown)
+            assert booking_dates, f"fixture segment for statement {statement_number} has no booking dates"
+            first_date = booking_dates[0]
+            last_date = booking_dates[-1]
+            return {
+                "success": True,
+                "tokens": 10,
+                "extracted": {
+                    "bank": "Bankhaus Beispielstadt",
+                    "iban": "DE02100100100000019752",
+                    "bic": "TESTDEFFXXX",
+                    "kontoinhaber": {"name": "Konto Muster"},
+                    "auszugsnummer": statement_number,
+                    "datum": last_date[-4:] + "-" + last_date[3:5] + "-" + last_date[0:2],
+                    "anfangssaldo": "1000.00",
+                    "endsaldo": "1100.00",
+                    "buchungen": [
+                        {
+                            "datum": first_date[-4:] + "-" + first_date[3:5] + "-" + first_date[0:2],
+                            "text": f"Segment {statement_number}",
+                            "betrag": "-10.00",
+                            "saldo": "990.00",
+                            "währung": "EUR",
+                        },
+                        {
+                            "datum": last_date[-4:] + "-" + last_date[3:5] + "-" + last_date[0:2],
+                            "text": f"Abschluss {statement_number}",
+                            "betrag": "+110.00",
+                            "saldo": "1100.00",
+                            "währung": "EUR",
+                        },
+                    ],
+                    "_meta": {
+                        "dokumenten_id": statement_number,
+                        "zusammenfassung": f"Auszug {statement_number}",
+                    },
+                },
+            }
+
+        with patch.object(_intelligence, "extract_structured_data", new=AsyncMock(side_effect=fake_extract)):
+            result = run_async(
+                _intelligence._recover_bank_statement_bundle(
+                    markdown,
+                    schema,
+                    language="de",
+                    field_descriptions=None,
+                    notes=None,
+                    request_id="fixture-12421",
+                    attempt_number=2,
+                )
+            )
+
+        assert result is not None
+        assert result["success"] is True
+        assert result["tokens"] == 80
+        extracted = result["extracted"]
+        assert extracted["auszugsnummer"] == "11,12,13,14,15,16,17,18"
+        assert extracted["zeitraum"] == {"von": "2024-08-19", "bis": "2025-03-17"}
+        assert len(extracted["kontoauszuege"]) == 8
+        assert len(extracted["buchungen"]) == 16
+        assert extracted["_meta"]["dokumenten_id"] == "11,12,13,14,15,16,17,18"
+        assert extracted["summary"].startswith("Sammel-Kontoauszug mit 8 Auszügen")
 
 
 # ---------------------------------------------------------------------------
