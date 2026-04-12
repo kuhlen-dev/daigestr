@@ -42,3 +42,57 @@ def test_convert_auto_persists_debug_snapshot_when_policy_matches():
     assert store_mock.call_args.kwargs["stage"] == "convert_result"
     assert store_mock.call_args.kwargs["request_id"] == result.meta.request_id
     assert payload_mock.call_args.kwargs["markdown"] == "# Snapshot Contract"
+
+
+def test_build_debug_snapshot_payload_supports_extract_stage():
+    payload = _server.build_debug_snapshot_payload(
+        request_id="req-extract",
+        job_id="job-extract",
+        filename="extract.pdf",
+        source_type="base64",
+        stage="extract_result",
+        attempt_number=1,
+        attempt_count=1,
+        attempt_mode="default",
+        meta={"template_used": "invoice"},
+        extracted={"invoice_number": "INV-1"},
+    )
+
+    assert payload["stage"] == "extract_result"
+    assert payload["extracted"]["invoice_number"] == "INV-1"
+
+
+def test_build_debug_snapshot_payload_supports_normalized_stage():
+    payload = _server.build_debug_snapshot_payload(
+        request_id="req-normalized",
+        job_id="job-normalized",
+        filename="normalized.pdf",
+        source_type="base64",
+        stage="normalized_result",
+        attempt_number=2,
+        attempt_count=2,
+        attempt_mode="full",
+        meta={"template_used": "invoice"},
+        normalized={"invoice_number": "INV-1"},
+    )
+
+    assert payload["stage"] == "normalized_result"
+    assert payload["normalized"]["invoice_number"] == "INV-1"
+
+
+def test_build_debug_snapshot_payload_supports_error_stage():
+    payload = _server.build_debug_snapshot_payload(
+        request_id="req-error",
+        job_id="job-error",
+        filename="error.pdf",
+        source_type="base64",
+        stage="error_result",
+        attempt_number=2,
+        attempt_count=2,
+        attempt_mode="full",
+        meta={"template_used": "invoice"},
+        error="boom",
+    )
+
+    assert payload["stage"] == "error_result"
+    assert payload["error"] == "boom"

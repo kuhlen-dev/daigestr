@@ -137,6 +137,31 @@ class TestDebugSnapshotCrud:
         assert rows[0]["request_id"] == "req-a"
         assert rows[0]["stage"] == "markdown"
 
+    def test_list_filters_by_job_stage_and_limit(self):
+        snapshot_db.debug_snapshot_store(
+            request_id="req-1",
+            job_id="job-focus",
+            stage="extract_result",
+            payload={"markdown": "# A"},
+        )
+        snapshot_db.debug_snapshot_store(
+            request_id="req-2",
+            job_id="job-focus",
+            stage="extract_result",
+            payload={"markdown": "# B"},
+        )
+        snapshot_db.debug_snapshot_store(
+            request_id="req-3",
+            job_id="job-other",
+            stage="normalized_result",
+            payload={"markdown": "# C"},
+        )
+
+        rows = snapshot_db.debug_snapshot_list(job_id="job-focus", stage="extract_result", limit=1)
+        assert len(rows) == 1
+        assert rows[0]["job_id"] == "job-focus"
+        assert rows[0]["stage"] == "extract_result"
+
     def test_cleanup_removes_expired_snapshots(self):
         snapshot_db.debug_snapshot_store(
             request_id="req-expired",
@@ -157,3 +182,31 @@ class TestDebugSnapshotCrud:
         assert deleted == 1
         assert len(rows) == 1
         assert rows[0]["request_id"] == "req-fresh"
+
+    def test_cleanup_retention_days_removes_old_rows(self):
+        snapshot_db.debug_snapshot_store(
+            request_id="req-old",
+            stage="extract",
+            payload={"x": 1},
+        )
+        snapshot_db.debug_snapshot_store(
+            request_id="req-new",
+            stage="extract",
+            payload={"x": 2},
+        )
+
+        conn = _pg_conn()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE debug_snapshot SET created_at = now() - interval '10 days' WHERE request_id = %s",
+            ("req-old",),
+        )
+        conn.commit()
+        conn.close()
+
+        deleted = snapshot_db.debug_snapshot_cleanup(retention_days=3)
+        rows = snapshot_db.debug_snapshot_list(limit=10)
+
+        assert deleted == 1
+        assert len(rows) == 1
+        assert rows[0]["request_id"] == "req-new"
