@@ -112,6 +112,7 @@ def init_execution_db() -> None:
                 is_final BOOLEAN NOT NULL DEFAULT false,
                 result_status TEXT NOT NULL,
                 success BOOLEAN,
+                response_json JSONB,
                 meta JSONB,
                 extracted JSONB,
                 normalized JSONB,
@@ -122,6 +123,10 @@ def init_execution_db() -> None:
                 updated_at TIMESTAMPTZ DEFAULT now()
             )
             """
+        )
+        cur.execute(
+            "ALTER TABLE execution_result "
+            "ADD COLUMN IF NOT EXISTS response_json JSONB"
         )
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_execution_result_execution "
@@ -295,6 +300,16 @@ def execution_list(limit: int = 50) -> list[dict[str, Any]]:
         _return_conn(conn)
 
 
+def execution_get_full(execution_id: str) -> Optional[dict[str, Any]]:
+    """Return one execution enriched with attempts and the final result."""
+    execution = execution_get(execution_id)
+    if not execution:
+        return None
+    execution["attempts"] = execution_attempt_list(execution_id)
+    execution["final_result"] = execution_result_get_final(execution_id)
+    return execution
+
+
 def execution_attempt_upsert(
     attempt_id: str,
     execution_id: str,
@@ -381,6 +396,7 @@ def execution_result_upsert(
     is_final: bool = False,
     result_status: str,
     success: Optional[bool] = None,
+    response_json: Optional[dict[str, Any]] = None,
     meta: Optional[dict[str, Any]] = None,
     extracted: Optional[dict[str, Any]] = None,
     normalized: Optional[dict[str, Any]] = None,
@@ -396,15 +412,16 @@ def execution_result_upsert(
             """
             INSERT INTO execution_result (
                 id, execution_id, attempt_id, is_final, result_status,
-                success, meta, extracted, normalized, artifact_refs, warnings, error
+                success, response_json, meta, extracted, normalized, artifact_refs, warnings, error
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO UPDATE SET
                 execution_id = EXCLUDED.execution_id,
                 attempt_id = EXCLUDED.attempt_id,
                 is_final = EXCLUDED.is_final,
                 result_status = EXCLUDED.result_status,
                 success = EXCLUDED.success,
+                response_json = EXCLUDED.response_json,
                 meta = EXCLUDED.meta,
                 extracted = EXCLUDED.extracted,
                 normalized = EXCLUDED.normalized,
@@ -421,6 +438,7 @@ def execution_result_upsert(
                 is_final,
                 result_status,
                 success,
+                psycopg2.extras.Json(response_json) if response_json is not None else None,
                 psycopg2.extras.Json(meta) if meta is not None else None,
                 psycopg2.extras.Json(extracted) if extracted is not None else None,
                 psycopg2.extras.Json(normalized) if normalized is not None else None,

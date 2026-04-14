@@ -218,6 +218,7 @@ from execution_db import (  # noqa: F401
     execution_create,
     execution_update,
     execution_get,
+    execution_get_full,
     execution_get_by_request_id,
     execution_get_by_job_id,
     execution_list,

@@ -259,6 +259,51 @@ class JobListResponse(BaseModel):
     jobs: list[JobStatusResponse] = Field(default_factory=list, description="Neueste Jobs zuerst")
 
 
+class ExecutionAttemptResponse(BaseModel):
+    """Ein persistierter Ausführungsversuch innerhalb einer Execution."""
+    attempt_id: str = Field(..., description="ID des persistierten Ausführungsversuchs")
+    attempt_number: int = Field(..., description="Laufende Nummer des Versuchs")
+    attempt_mode: Optional[str] = Field(None, description="Mode dieses Versuchs")
+    attempt_reason: Optional[str] = Field(None, description="Warum dieser Versuch gestartet wurde")
+    status: str = Field(..., description="Status dieses Versuchs")
+    quality_score: Optional[float] = Field(None, description="Qualitätswert dieses Versuchs")
+    retry_trigger: Optional[str] = Field(None, description="Retry-Auslöser dieses Versuchs")
+    error: Optional[dict[str, Any]] = Field(None, description="Fehlerdaten dieses Versuchs")
+    created_at: Any = Field(..., description="Erstellungszeitpunkt des Versuchs")
+    updated_at: Any = Field(..., description="Letzte Aktualisierung des Versuchs")
+    started_at: Any = Field(None, description="Startzeit des Versuchs")
+    finished_at: Any = Field(None, description="Endzeit des Versuchs")
+
+
+class ExecutionStatusResponse(BaseModel):
+    """Kanonische Statussicht für Direct-, Async- und spätere Batch-Executions."""
+    execution_id: str = Field(..., description="Kanonische ID des Ausführungslaufs")
+    request_id: str = Field(..., description="Stabile Request-ID des Ausführungslaufs")
+    execution_kind: str = Field(..., description="Art des Laufs: direct, async, batch_item, replay, system")
+    source_type: Optional[str] = Field(None, description="Art der Quelle")
+    source_ref: Optional[str] = Field(None, description="Referenz auf die Quelle")
+    job_id: Optional[str] = Field(None, description="Job-ID bei Async-Läufen")
+    batch_id: Optional[str] = Field(None, description="Batch-ID bei Batch-Items")
+    batch_item_id: Optional[str] = Field(None, description="Batch-Item-ID bei Batch-Items")
+    status: str = Field(..., description="Aktueller Status des Laufs")
+    current_stage: Optional[str] = Field(None, description="Aktueller Verarbeitungsschritt")
+    document_identity: Optional[dict[str, Any]] = Field(None, description="Persistierte Identität des Eingangsdokuments")
+    policy_context: Optional[dict[str, Any]] = Field(None, description="Persistierter Policy-Kontext des Laufs")
+    warning_summary: Optional[dict[str, Any]] = Field(None, description="Aggregierte Warnungen")
+    error_summary: Optional[dict[str, Any]] = Field(None, description="Aggregierte Fehlerdaten")
+    created_at: Any = Field(..., description="Erstellungszeitpunkt")
+    updated_at: Any = Field(..., description="Letzte Aktualisierung")
+    started_at: Any = Field(None, description="Startzeit")
+    finished_at: Any = Field(None, description="Endzeit")
+    attempts: list[ExecutionAttemptResponse] = Field(default_factory=list, description="Persistierte Versuche dieses Laufs")
+    final_result_available: bool = Field(False, description="Ob ein finales Ergebnis persistiert vorliegt")
+
+
+class ExecutionListResponse(BaseModel):
+    """Liste kanonischer Executions, neueste zuerst."""
+    executions: list[ExecutionStatusResponse] = Field(default_factory=list, description="Neueste Ausführungsläufe zuerst")
+
+
 # =============================================================================
 # Request-Schemas
 # =============================================================================

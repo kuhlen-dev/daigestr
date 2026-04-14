@@ -194,6 +194,7 @@ def test_execution_result_upsert_and_fetch_final(execution_record):
         is_final=True,
         result_status="completed",
         success=True,
+        response_json={"success": True, "markdown": "# ok"},
         meta={"document_type": "invoice", "quality_score": 0.91},
         extracted={"invoice_number": "INV-1"},
         normalized={"invoice_number": "INV-1"},
@@ -208,6 +209,7 @@ def test_execution_result_upsert_and_fetch_final(execution_record):
     final_row = execution_result_get_final(execution_record["id"])
     assert final_row is not None
     assert final_row["id"] == result["id"]
+    assert final_row["response_json"]["markdown"] == "# ok"
     assert final_row["meta"]["document_type"] == "invoice"
     assert final_row["artifact_refs"]["markdown_path"] == "/tmp/x.md"
 

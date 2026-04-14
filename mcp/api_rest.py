@@ -36,6 +36,9 @@ from models import (
     AsyncJobStartResponse,
     JobStatusResponse,
     JobListResponse,
+    ExecutionAttemptResponse,
+    ExecutionStatusResponse,
+    ExecutionListResponse,
     ErrorCode,
     create_error_response,
     create_success_response,
@@ -80,10 +83,14 @@ from templates_db import (
 )
 from execution_db import (
     execution_create,
+    execution_get,
+    execution_get_full,
     execution_get_by_request_id,
     execution_get_by_job_id,
+    execution_list,
     execution_update,
     execution_result_upsert,
+    execution_result_get_final,
 )
 from debug_snapshot_db import debug_snapshot_list, debug_snapshot_get
 from debug_snapshots import replay_normalization_from_snapshot
@@ -154,6 +161,85 @@ def _ensure_execution_for_request(
 
 def _execution_result_id(execution_id: str, *, kind: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{execution_id}:result:{kind}"))
+
+
+def _build_execution_status_response(row: dict[str, Any]) -> ExecutionStatusResponse:
+    attempts = [
+        ExecutionAttemptResponse(
+            attempt_id=attempt["id"],
+            attempt_number=attempt["attempt_number"],
+            attempt_mode=attempt.get("attempt_mode"),
+            attempt_reason=attempt.get("attempt_reason"),
+            status=attempt["status"],
+            quality_score=attempt.get("quality_score"),
+            retry_trigger=attempt.get("retry_trigger"),
+            error=attempt.get("error"),
+            created_at=attempt["created_at"],
+            updated_at=attempt["updated_at"],
+            started_at=attempt.get("started_at"),
+            finished_at=attempt.get("finished_at"),
+        )
+        for attempt in row.get("attempts", [])
+    ]
+    return ExecutionStatusResponse(
+        execution_id=row["id"],
+        request_id=row["request_id"],
+        execution_kind=row["execution_kind"],
+        source_type=row.get("source_type"),
+        source_ref=row.get("source_ref"),
+        job_id=row.get("job_id"),
+        batch_id=row.get("batch_id"),
+        batch_item_id=row.get("batch_item_id"),
+        status=row["status"],
+        current_stage=row.get("current_stage"),
+        document_identity=row.get("document_identity"),
+        policy_context=row.get("policy_context"),
+        warning_summary=row.get("warning_summary"),
+        error_summary=row.get("error_summary"),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        started_at=row.get("started_at"),
+        finished_at=row.get("finished_at"),
+        attempts=attempts,
+        final_result_available=bool(row.get("final_result")),
+    )
+
+
+def _get_execution_status_payload(execution_id: str) -> ExecutionStatusResponse:
+    row = _get("execution_get_full", execution_get_full)(execution_id)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
+    return _build_execution_status_response(row)
+
+
+def _get_execution_result_payload(execution_id: str) -> ConvertResponse:
+    execution = _get("execution_get", execution_get)(execution_id)
+    if not execution:
+        raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
+    final_result = _get("execution_result_get_final", execution_result_get_final)(execution_id)
+    if not final_result or not final_result.get("response_json"):
+        raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' has no final result")
+    return ConvertResponse.model_validate(final_result["response_json"])
+
+
+def _get_job_result_payload(job_id: str) -> ConvertResponse:
+    _job_get = _get("job_get", job_get)
+    job = _job_get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+    if job["status"] != "completed":
+        raise HTTPException(
+            status_code=202,
+            detail=f"Job '{job_id}' is not completed yet (status: {job['status']})"
+        )
+    if job.get("result_json"):
+        return ConvertResponse.model_validate_json(job["result_json"])
+    execution = _get("execution_get_by_job_id", execution_get_by_job_id)(job_id)
+    if execution:
+        final_result = _get("execution_result_get_final", execution_result_get_final)(execution["id"])
+        if final_result and final_result.get("response_json"):
+            return ConvertResponse.model_validate(final_result["response_json"])
+    raise HTTPException(status_code=500, detail=f"Job '{job_id}' has no result data")
 
 # FastAPI Instanz
 app = FastAPI(
@@ -1062,6 +1148,7 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
                     is_final=True,
                     result_status="failed",
                     success=False,
+                    response_json=timeout_result.model_dump(),
                     meta=timeout_result.meta.model_dump(),
                     extracted=timeout_result.extracted,
                     normalized=timeout_result.normalized,
@@ -1121,6 +1208,7 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
                 is_final=True,
                 result_status="failed",
                 success=False,
+                response_json=error_result.model_dump(),
                 meta={
                     "request_id": request.meta.get("_request_id"),
                     "execution_id": execution_id,
@@ -1218,18 +1306,7 @@ async def api_get_job(job_id: str) -> JobStatusResponse:
 @app.get("/v1/jobs/{job_id}/result", response_model=ConvertResponse)
 async def api_get_job_result(job_id: str) -> ConvertResponse:
     """Gibt das volle ConvertResponse Ergebnis zurück (nur wenn status=completed)."""
-    _job_get = _get("job_get", job_get)
-    job = _job_get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
-    if job["status"] != "completed":
-        raise HTTPException(
-            status_code=202,
-            detail=f"Job '{job_id}' is not completed yet (status: {job['status']})"
-        )
-    if not job.get("result_json"):
-        raise HTTPException(status_code=500, detail=f"Job '{job_id}' has no result data")
-    return ConvertResponse.model_validate_json(job["result_json"])
+    return _get_job_result_payload(job_id)
 
 
 @app.delete("/v1/jobs/{job_id}")
@@ -1240,6 +1317,29 @@ async def api_delete_job(job_id: str) -> dict:
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
     return {"success": True, "job_id": job_id}
+
+
+@app.get("/v1/executions", response_model=ExecutionListResponse)
+async def api_list_executions(limit: int = 50) -> ExecutionListResponse:
+    """Gibt die kanonische History aller Ausführungsläufe zurück."""
+    rows = _get("execution_list", execution_list)(limit=limit)
+    executions = []
+    for row in rows:
+        full_row = _get("execution_get_full", execution_get_full)(row["id"]) or row
+        executions.append(_build_execution_status_response(full_row))
+    return ExecutionListResponse(executions=executions)
+
+
+@app.get("/v1/executions/{execution_id}", response_model=ExecutionStatusResponse)
+async def api_get_execution(execution_id: str) -> ExecutionStatusResponse:
+    """Gibt die kanonische Detailansicht eines Ausführungslaufs zurück."""
+    return _get_execution_status_payload(execution_id)
+
+
+@app.get("/v1/executions/{execution_id}/result", response_model=ConvertResponse)
+async def api_get_execution_result(execution_id: str) -> ConvertResponse:
+    """Gibt das persistierte finale Ergebnis eines Ausführungslaufs zurück."""
+    return _get_execution_result_payload(execution_id)
 
 
 @app.get("/v1/debug/snapshots")
