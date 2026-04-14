@@ -61,6 +61,12 @@ def test_convert_auto_persists_execution_attempts_and_final_result(monkeypatch):
     execution_row = execution_get(response.meta.execution_id)
     assert execution_row["request_id"] == request_id
     assert execution_row["status"] == "completed"
+    assert execution_row["document_identity"]["filename"] == "hello.txt"
+    assert execution_row["document_identity"]["source"] == "/tmp/hello.txt"
+    assert execution_row["document_identity"]["source_type"] == "file"
+    assert execution_row["document_identity"]["size_bytes"] == 5
+    assert execution_row["document_identity"]["extension"] == "txt"
+    assert execution_row["document_identity"]["sha256"]
 
     attempts = execution_attempt_list(response.meta.execution_id)
     assert len(attempts) == 1

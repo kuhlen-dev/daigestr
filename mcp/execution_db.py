@@ -214,6 +214,7 @@ def execution_update(
     status: Optional[str] = None,
     current_stage: Optional[str] = None,
     progress_json: Optional[dict[str, Any]] = None,
+    document_identity: Optional[dict[str, Any]] = None,
     warning_summary: Optional[dict[str, Any]] = None,
     error_summary: Optional[dict[str, Any]] = None,
     policy_context: Optional[dict[str, Any]] = None,
@@ -233,6 +234,9 @@ def execution_update(
     if progress_json is not None:
         assignments.append("progress_json = %s")
         params.append(psycopg2.extras.Json(progress_json))
+    if document_identity is not None:
+        assignments.append("document_identity = %s")
+        params.append(psycopg2.extras.Json(document_identity))
     if warning_summary is not None:
         assignments.append("warning_summary = %s")
         params.append(psycopg2.extras.Json(warning_summary))

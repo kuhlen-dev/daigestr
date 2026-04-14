@@ -272,6 +272,28 @@ def _execution_result_id(execution_id: str, *, attempt_number: Optional[int] = N
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{execution_id}:result:{suffix}"))
 
 
+def _build_document_identity(
+    *,
+    file_data: bytes,
+    filename: str,
+    source: str,
+    source_type: str,
+) -> dict[str, Any]:
+    content_type = detect_mimetype_from_bytes(file_data) if file_data is not None else None
+    if not isinstance(content_type, str):
+        content_type = None
+    return {
+        "filename": filename,
+        "source": source,
+        "source_type": source_type,
+        "size_bytes": len(file_data) if file_data is not None else None,
+        "sha256": hashlib.sha256(file_data).hexdigest() if file_data is not None else None,
+        "md5": hashlib.md5(file_data).hexdigest() if file_data is not None else None,
+        "extension": get_file_extension(filename).lstrip(".") or None,
+        "content_type": content_type,
+    }
+
+
 def _ensure_execution_context(
     *,
     request_id: str,
@@ -280,6 +302,7 @@ def _ensure_execution_context(
     source_type: str,
     source_ref: str,
     job_id: Optional[str],
+    document_identity: Optional[dict[str, Any]] = None,
     policy_context: Optional[dict[str, Any]] = None,
 ) -> str:
     start_progress = build_progress_payload(
@@ -297,6 +320,7 @@ def _ensure_execution_context(
             status="processing",
             current_stage="start",
             progress_json=start_progress,
+            document_identity=document_identity,
             started_at_now=True,
         )
         return execution_id
@@ -310,6 +334,7 @@ def _ensure_execution_context(
             status=existing.get("status") or "processing",
             current_stage=existing.get("current_stage") or "start",
             progress_json=existing.get("progress_json") or start_progress,
+            document_identity=document_identity or existing.get("document_identity"),
             started_at_now=True,
         )
         return existing["id"]
@@ -325,6 +350,7 @@ def _ensure_execution_context(
         status="processing",
         current_stage="start",
         progress_json=start_progress,
+        document_identity=document_identity,
         policy_context=policy_context or {},
     )
     return created["id"]
@@ -1264,6 +1290,12 @@ async def convert_auto(
     job_id = input_meta.get("_job_id")
     execution_id = input_meta.get("execution_id")
     execution_kind = input_meta.get("_execution_kind") or ("async" if job_id else "direct")
+    document_identity = _build_document_identity(
+        file_data=file_data,
+        filename=filename,
+        source=source,
+        source_type=source_type,
+    )
     execution_id = _ensure_execution_context(
         request_id=request_id,
         execution_id=execution_id,
@@ -1271,6 +1303,7 @@ async def convert_auto(
         source_type=source_type,
         source_ref=source,
         job_id=job_id,
+        document_identity=document_identity,
         policy_context={
             "mode_policy": {**mode_policy, "classify": classify},
             "retry_policy": retry_policy,
