@@ -326,8 +326,6 @@ async def _api_convert_impl(request: ConvertRequest) -> ConvertResponse:
     _temp_dir = _get("TEMP_DIR", TEMP_DIR)
     _mistral_timeout = _get("MISTRAL_TIMEOUT", MISTRAL_TIMEOUT)
 
-    _ensure_execution_for_request(request, execution_kind="direct")
-
     inputs = [request.path, request.base64, request.url]
     if sum(1 for x in inputs if x) != 1:
         return create_error_response(
@@ -335,6 +333,7 @@ async def _api_convert_impl(request: ConvertRequest) -> ConvertResponse:
             "Genau einer von 'path', 'base64' oder 'url' muss angegeben werden",
             meta=request.meta
         )
+    _ensure_execution_for_request(request, execution_kind="direct")
 
     # Template → Schema Auflösung (AC-014-4)
     effective_schema = request.extract_schema

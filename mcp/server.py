@@ -191,6 +191,7 @@ from audit_db import (  # noqa: F401
     init_audit_db,
     audit_log_event,
     audit_get_by_request,
+    audit_get_by_execution,
     audit_get_by_job,
     audit_list,
     audit_cleanup,

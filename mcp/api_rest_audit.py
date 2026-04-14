@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from audit_db import (
     audit_get_by_request,
+    audit_get_by_execution,
     audit_get_by_job,
     audit_list,
     audit_cleanup,
@@ -77,6 +78,18 @@ async def api_audit_get_by_job(job_id: str) -> dict:
         log.error("audit_api_get_by_job_failed", job_id=job_id, error=str(exc))
         raise HTTPException(status_code=500, detail=f"Failed to query audit log: {exc}") from exc
     return {"job_id": job_id, "count": len(events), "events": events}
+
+
+@audit_router.get("/execution/{execution_id}", summary="Get audit events by execution ID")
+async def api_audit_get_by_execution(execution_id: str) -> dict:
+    """Return all audit log events for a canonical execution_id, in chronological order."""
+    _check_enabled()
+    try:
+        events = audit_get_by_execution(execution_id)
+    except Exception as exc:
+        log.error("audit_api_get_by_execution_failed", execution_id=execution_id, error=str(exc))
+        raise HTTPException(status_code=500, detail=f"Failed to query audit log: {exc}") from exc
+    return {"execution_id": execution_id, "count": len(events), "events": events}
 
 
 @audit_router.get("", summary="List audit events (filtered)")

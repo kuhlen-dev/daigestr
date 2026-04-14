@@ -94,7 +94,7 @@ class TestInitAuditDb:
         conn.close()
 
         required = {
-            "id", "request_id", "job_id", "event_type", "step", "detail",
+            "id", "request_id", "execution_id", "job_id", "event_type", "step", "detail",
             "progress", "level", "error", "duration_ms", "metadata",
             "source_ip", "user_agent", "created_at",
         }
@@ -114,6 +114,7 @@ class TestInitAuditDb:
 
         expected = {
             "idx_audit_log_request_id",
+            "idx_audit_log_execution_id",
             "idx_audit_log_job_id",
             "idx_audit_log_created_at",
             "idx_audit_log_event_type",
@@ -144,6 +145,7 @@ class TestAuditLogEvent:
         audit_db.audit_log_event(
             "req-002",
             "step",
+            execution_id="exec-001",
             job_id="job-001",
             step="convert_pdf",
             detail="Seite 1 von 3",
@@ -163,6 +165,7 @@ class TestAuditLogEvent:
         conn.close()
 
         assert row is not None
+        assert row["execution_id"] == "exec-001"
         assert row["job_id"] == "job-001"
         assert row["event_type"] == "step"
         assert row["step"] == "convert_pdf"
@@ -306,6 +309,16 @@ class TestAuditGetByJob:
 
         result = audit_db.audit_get_by_job("job-DDD")
         assert len(result) == 1
+
+    def test_events_can_be_loaded_by_execution_id(self):
+        """Events können über execution_id abgefragt werden."""
+        audit_db.audit_log_event("req-exec", "request", execution_id="exec-123")
+        audit_db.audit_log_event("req-exec", "step", execution_id="exec-123", step="convert")
+        audit_db.audit_log_event("req-other", "request", execution_id="exec-999")
+
+        result = audit_db.audit_get_by_execution("exec-123")
+        assert len(result) == 2
+        assert all(row["execution_id"] == "exec-123" for row in result)
 
 
 # ---------------------------------------------------------------------------

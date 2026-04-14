@@ -235,3 +235,25 @@ def test_api_get_job_result_falls_back_to_execution_result():
     assert restored.success is True
     assert restored.markdown == "# from execution result"
     assert restored.meta.execution_id == execution_id
+
+
+def test_invalid_convert_input_does_not_create_execution():
+    from execution_db import execution_list, init_execution_db
+    from models import ConvertRequest
+
+    api_rest = _load_api_rest_module()
+    init_execution_db()
+    before = execution_list(limit=500)
+
+    request = ConvertRequest(
+        path="/data/a.pdf",
+        url="https://example.com/a.pdf",
+        meta={},
+    )
+
+    response = run_async(api_rest._api_convert_impl(request))
+    after = execution_list(limit=500)
+
+    assert response.success is False
+    assert response.error.code == "INVALID_INPUT"
+    assert len(after) == len(before)

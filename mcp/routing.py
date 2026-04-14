@@ -347,6 +347,7 @@ def _persist_execution_attempt_result(
         is_final=is_final,
         result_status=result_status or attempt_status,
         success=response.success,
+        response_json=response.model_dump(),
         meta=meta_payload,
         extracted=response.extracted,
         normalized=response.normalized,
@@ -1238,7 +1239,12 @@ async def _convert_auto_impl(
         if not _audit_enabled:
             return
         try:
-            _audit_log_event(request_id=request_id, event_type=event_type, **kwargs)
+            _audit_log_event(
+                request_id=request_id,
+                execution_id=input_meta.get("execution_id"),
+                event_type=event_type,
+                **kwargs,
+            )
         except Exception:
             pass
 

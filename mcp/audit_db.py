@@ -40,6 +40,7 @@ def init_audit_db() -> None:
             CREATE TABLE IF NOT EXISTS audit_log (
                 id SERIAL PRIMARY KEY,
                 request_id TEXT NOT NULL,
+                execution_id TEXT,
                 job_id TEXT,
                 event_type TEXT NOT NULL CHECK (event_type IN (
                     'request', 'step', 'mistral_call', 'warning', 'response'
@@ -56,10 +57,18 @@ def init_audit_db() -> None:
                 created_at TIMESTAMPTZ DEFAULT now()
             )
         """)
+        cur.execute(
+            "ALTER TABLE audit_log "
+            "ADD COLUMN IF NOT EXISTS execution_id TEXT"
+        )
 
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_audit_log_request_id "
             "ON audit_log (request_id)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_audit_log_execution_id "
+            "ON audit_log (execution_id)"
         )
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_audit_log_job_id "
@@ -84,6 +93,7 @@ def audit_log_event(
     request_id: str,
     event_type: str,
     *,
+    execution_id: Optional[str] = None,
     job_id: Optional[str] = None,
     step: Optional[str] = None,
     detail: Optional[str] = None,
@@ -122,17 +132,17 @@ def audit_log_event(
         cur.execute(
             """
             INSERT INTO audit_log (
-                request_id, job_id, event_type, step, detail,
+                request_id, execution_id, job_id, event_type, step, detail,
                 progress, level, error, duration_ms, metadata,
                 source_ip, user_agent
             ) VALUES (
-                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s::jsonb,
                 %s, %s
             )
             """,
             (
-                request_id, job_id, event_type, step, detail,
+                request_id, execution_id, job_id, event_type, step, detail,
                 progress, level, error, duration_ms, metadata_json,
                 source_ip, user_agent,
             ),
@@ -156,6 +166,21 @@ def audit_get_by_request(request_id: str) -> list[dict]:
         cur.execute(
             "SELECT * FROM audit_log WHERE request_id = %s ORDER BY created_at ASC, id ASC",
             (request_id,),
+        )
+        rows = cur.fetchall()
+        return [_row_to_dict(r) for r in rows]
+    finally:
+        _return_conn(conn)
+
+
+def audit_get_by_execution(execution_id: str) -> list[dict]:
+    """Gibt alle Audit-Events für eine execution_id zurück, chronologisch."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM audit_log WHERE execution_id = %s ORDER BY created_at ASC, id ASC",
+            (execution_id,),
         )
         rows = cur.fetchall()
         return [_row_to_dict(r) for r in rows]
