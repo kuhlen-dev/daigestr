@@ -97,6 +97,7 @@ CANONICAL_EXECUTION_FIELDS: dict[str, str] = {
     "status": "Canonical execution status.",
     "current_stage": "Current or final stage of the execution pipeline.",
     "progress": "Canonical persisted progress snapshot shared by direct and async status views.",
+    "result_meta_summary": "Condensed final result metadata for history and reporting.",
     "document_identity": "Persisted identity and fingerprint of the input document when known.",
     "policy_context": "Persisted policy resolution used for the run.",
     "warning_summary": "Aggregated warning information for the execution.",
@@ -354,6 +355,7 @@ class ExecutionStatusResponse(BaseModel):
     status: str = Field(..., description="Aktueller Status des Laufs")
     current_stage: Optional[str] = Field(None, description="Aktueller Verarbeitungsschritt")
     progress: Optional[ProgressState] = Field(None, description="Kanonischer persistierter Progress-Snapshot dieses Laufs")
+    result_meta_summary: Optional[dict[str, Any]] = Field(None, description="Verdichtete finale Result-Metadaten für History und Reporting")
     document_identity: Optional[dict[str, Any]] = Field(None, description="Persistierte Identität des Eingangsdokuments")
     policy_context: Optional[dict[str, Any]] = Field(None, description="Persistierter Policy-Kontext des Laufs")
     warning_summary: Optional[dict[str, Any]] = Field(None, description="Aggregierte Warnungen")

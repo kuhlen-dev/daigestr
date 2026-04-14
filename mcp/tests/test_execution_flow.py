@@ -176,12 +176,104 @@ def test_api_get_execution_and_result(monkeypatch):
     assert execution_status.execution_id == response.meta.execution_id
     assert execution_status.request_id == request_id
     assert execution_status.final_result_available is True
+    assert execution_status.result_meta_summary is not None
+    assert execution_status.result_meta_summary["template_used"] == "invoice"
+    assert execution_status.result_meta_summary["quality_score"] == 0.91
     assert len(execution_status.attempts) == 1
 
     execution_result = api_rest._get_execution_result_payload(response.meta.execution_id)
     assert execution_result.success is True
     assert execution_result.markdown == "# execution result"
     assert execution_result.meta.execution_id == response.meta.execution_id
+
+
+def test_build_audit_result_meta_summary_contains_canonical_fields():
+    import routing
+    from models import create_success_response
+
+    response = create_success_response(
+        "# audited",
+        meta={
+            "document_type": "invoice",
+            "document_type_confidence": 0.94,
+            "template_used": "invoice",
+            "template_version": 1,
+            "quality_score": 0.89,
+            "quality_grade": "good",
+            "retry_applied": True,
+            "retry_reason": "low_quality",
+            "initial_mode": "default",
+            "final_mode": "full",
+            "initial_quality_score": 0.41,
+            "final_quality_score": 0.89,
+        },
+    )
+    metadata = routing._build_audit_result_meta_summary(response)
+    assert metadata["document_type"] == "invoice"
+    assert metadata["template_used"] == "invoice"
+    assert metadata["quality_score"] == 0.89
+    assert metadata["retry_applied"] is True
+    assert metadata["initial_mode"] == "default"
+    assert metadata["final_mode"] == "full"
+
+
+def test_convert_auto_emits_final_audit_response_metadata_after_retry(monkeypatch):
+    import routing
+    from execution_db import init_execution_db
+    from models import create_success_response
+
+    init_execution_db()
+    request_id = f"req-{uuid.uuid4()}"
+    audit_events = []
+
+    async def fake_impl(**kwargs):
+        current_mode = kwargs["mode"]
+        quality_score = 0.42 if current_mode == "default" else 0.87
+        response = create_success_response(
+            "# audited retry",
+            meta={
+                "quality_score": quality_score,
+                "template_used": "invoice",
+                "template_version": 1,
+            },
+        )
+        response.extracted = {"invoice_number": "INV-1"}
+        return response
+
+    def fake_audit_log_event(*args, **kwargs):
+        audit_events.append(kwargs)
+
+    monkeypatch.setattr(routing, "_convert_auto_impl", fake_impl)
+    monkeypatch.setattr(routing, "_audit_log_event", fake_audit_log_event)
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "_convert_auto_impl", fake_impl)
+
+    response = run_async(
+        routing.convert_auto(
+            file_data=b"hello",
+            filename="hello.txt",
+            source="/tmp/hello.txt",
+            source_type="file",
+            input_meta={"_request_id": request_id},
+            mode="default",
+            template="invoice",
+            retry_on_low_quality=True,
+            quality_retry_threshold=0.75,
+            quality_retry_mode="full",
+            no_cache=True,
+        )
+    )
+
+    assert response.success is True
+    response_events = [event for event in audit_events if event.get("event_type") == "response"]
+    assert len(response_events) == 1
+    metadata = response_events[0]["metadata"]
+    assert metadata["retry_applied"] is True
+    assert metadata["initial_mode"] == "default"
+    assert metadata["final_mode"] == "full"
+    assert metadata["initial_quality_score"] == 0.42
+    assert metadata["final_quality_score"] == 0.87
 
 
 def test_direct_execution_status_includes_canonical_progress(monkeypatch):

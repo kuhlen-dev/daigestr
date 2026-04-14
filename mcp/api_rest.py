@@ -171,6 +171,24 @@ def _build_execution_status_response(row: dict[str, Any]) -> ExecutionStatusResp
             progress = ProgressState(**normalized) if normalized else None
         except Exception:
             progress = None
+    result_meta_summary = None
+    final_result = row.get("final_result")
+    final_meta = final_result.get("meta") if isinstance(final_result, dict) else None
+    if isinstance(final_meta, dict):
+        result_meta_summary = {
+            "document_type": final_meta.get("document_type"),
+            "document_type_confidence": final_meta.get("document_type_confidence"),
+            "template_used": final_meta.get("template_used"),
+            "template_version": final_meta.get("template_version"),
+            "quality_score": final_meta.get("quality_score"),
+            "quality_grade": final_meta.get("quality_grade"),
+            "retry_applied": final_meta.get("retry_applied"),
+            "retry_reason": final_meta.get("retry_reason"),
+            "initial_mode": final_meta.get("initial_mode"),
+            "final_mode": final_meta.get("final_mode"),
+            "initial_quality_score": final_meta.get("initial_quality_score"),
+            "final_quality_score": final_meta.get("final_quality_score"),
+        }
     attempts = [
         ExecutionAttemptResponse(
             attempt_id=attempt["id"],
@@ -200,6 +218,7 @@ def _build_execution_status_response(row: dict[str, Any]) -> ExecutionStatusResp
         status=row["status"],
         current_stage=row.get("current_stage"),
         progress=progress,
+        result_meta_summary=result_meta_summary,
         document_identity=row.get("document_identity"),
         policy_context=row.get("policy_context"),
         warning_summary=row.get("warning_summary"),

@@ -431,6 +431,28 @@ def _apply_explicit_template_meta(meta: dict[str, Any], template: Optional[str])
         meta["template_version"] = tmpl.get("version", 1)
 
 
+def _build_audit_result_meta_summary(response: ConvertResponse) -> dict[str, Any]:
+    """Materialize the compact canonical result metadata persisted into audit response events."""
+    meta = response.meta.model_dump() if response.meta else {}
+    return {
+        "success": response.success,
+        "markdown_length": len(response.markdown or ""),
+        "cached": getattr(response.meta, "cached", None),
+        "document_type": meta.get("document_type"),
+        "document_type_confidence": meta.get("document_type_confidence"),
+        "template_used": meta.get("template_used"),
+        "template_version": meta.get("template_version"),
+        "quality_score": meta.get("quality_score"),
+        "quality_grade": meta.get("quality_grade"),
+        "retry_applied": meta.get("retry_applied"),
+        "retry_reason": meta.get("retry_reason"),
+        "initial_mode": meta.get("initial_mode"),
+        "final_mode": meta.get("final_mode"),
+        "initial_quality_score": meta.get("initial_quality_score"),
+        "final_quality_score": meta.get("final_quality_score"),
+    }
+
+
 def _merge_execution_policy_context(
     execution_id: Optional[str],
     **sections: dict[str, Any],
@@ -1211,6 +1233,7 @@ async def convert_auto(
     Intelligente Konvertierung basierend auf Dateityp.
     Kein interner Timeout — externe Limits (REST-Client, Brix-Pipeline) steuern.
     """
+    start_time = time.time()
     mode_policy = _resolve_mode_policy(
         mode=mode,
         describe_images=describe_images,
@@ -1279,6 +1302,24 @@ async def convert_auto(
         _server_impl = getattr(_server_module, "__dict__", {}).get("_convert_auto_impl")
     _convert_auto_impl_fn = _server_impl or _convert_auto_impl
     _convert_timeout_seconds = _get("CONVERT_TIMEOUT_SECONDS", CONVERT_TIMEOUT_SECONDS)
+    _audit_enabled = _get("AUDIT_ENABLED", AUDIT_ENABLED)
+
+    def _audit_final_response(resp: ConvertResponse) -> None:
+        if not _audit_enabled:
+            return
+        try:
+            _audit_log_event(
+                request_id=request_id,
+                execution_id=execution_id,
+                job_id=job_id,
+                event_type="response",
+                detail=filename,
+                duration_ms=int((time.time() - start_time) * 1000),
+                metadata=_build_audit_result_meta_summary(resp),
+            )
+        except Exception:
+            pass
+
     def _ensure_correlation_meta(resp: ConvertResponse, *, current_mode: str, current_attempt: int, current_attempt_count: int) -> ConvertResponse:
         meta = resp.meta.model_dump()
         meta["request_id"] = request_id
@@ -1500,6 +1541,7 @@ async def convert_auto(
                 ),
             ),
         )
+        _audit_final_response(response)
         return response
 
     if not initial_contract_complete:
@@ -1616,6 +1658,7 @@ async def convert_auto(
             ),
         ),
     )
+    _audit_final_response(selected_response)
     return selected_response
 
 
@@ -1884,12 +1927,6 @@ async def _convert_auto_impl(
                 _cm["attempt_count"] = attempt_count
                 _cm["attempt_mode"] = mode
                 _cr.meta = MetaData(**_cm)
-                _audit(
-                    "response",
-                    detail=filename,
-                    duration_ms=int((time.time() - start_time) * 1000),
-                    metadata={"success": _cr.success, "markdown_length": len(_cr.markdown or ""), "cached": True},
-                )
                 return _cr
             except Exception as _cache_err:
                 log.warning("cache_deserialize_error", error=str(_cache_err))
@@ -1957,16 +1994,6 @@ async def _convert_auto_impl(
                 resp.meta = MetaData(**_resp_meta)
         except Exception as _snapshot_err:
             log.warning("debug_snapshot_capture_failed", request_id=request_id, error=str(_snapshot_err))
-        _audit(
-            "response",
-            detail=filename,
-            duration_ms=int((time.time() - start_time) * 1000),
-            metadata={
-                "success": resp.success,
-                "markdown_length": len(resp.markdown or ""),
-                "cached": getattr(resp.meta, "cached", None),
-            },
-        )
         return resp
 
     # All patchable symbols read via _get() for test-patchability
