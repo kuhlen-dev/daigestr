@@ -116,6 +116,7 @@ from debug_snapshot_db import debug_snapshot_store
 from execution_db import (
     execution_create,
     execution_get,
+    execution_get_by_idempotency_key,
     execution_get_by_request_id,
     execution_update,
     execution_attempt_upsert,
@@ -302,6 +303,7 @@ def _ensure_execution_context(
     source_type: str,
     source_ref: str,
     job_id: Optional[str],
+    idempotency_key: Optional[str] = None,
     document_identity: Optional[dict[str, Any]] = None,
     policy_context: Optional[dict[str, Any]] = None,
 ) -> str:
@@ -320,13 +322,17 @@ def _ensure_execution_context(
             status="processing",
             current_stage="start",
             progress_json=start_progress,
+            idempotency_key=idempotency_key,
             document_identity=document_identity,
             started_at_now=True,
         )
         return execution_id
 
     _exec_get_by_request = _get("execution_get_by_request_id", execution_get_by_request_id)
+    _exec_get_by_idempotency = _get("execution_get_by_idempotency_key", execution_get_by_idempotency_key)
     existing = _exec_get_by_request(request_id)
+    if not existing and idempotency_key:
+        existing = _exec_get_by_idempotency(idempotency_key)
     if existing:
         _exec_update = _get("execution_update", execution_update)
         _exec_update(
@@ -334,6 +340,7 @@ def _ensure_execution_context(
             status=existing.get("status") or "processing",
             current_stage=existing.get("current_stage") or "start",
             progress_json=existing.get("progress_json") or start_progress,
+            idempotency_key=idempotency_key or existing.get("idempotency_key"),
             document_identity=document_identity or existing.get("document_identity"),
             started_at_now=True,
         )
@@ -343,6 +350,7 @@ def _ensure_execution_context(
     created = _exec_create(
         execution_id=str(uuid.uuid4()),
         request_id=request_id,
+        idempotency_key=idempotency_key,
         execution_kind=execution_kind,
         source_type=source_type,
         source_ref=source_ref,
@@ -1290,6 +1298,7 @@ async def convert_auto(
     job_id = input_meta.get("_job_id")
     execution_id = input_meta.get("execution_id")
     execution_kind = input_meta.get("_execution_kind") or ("async" if job_id else "direct")
+    idempotency_key = input_meta.get("idempotency_key")
     document_identity = _build_document_identity(
         file_data=file_data,
         filename=filename,
@@ -1303,6 +1312,7 @@ async def convert_auto(
         source_type=source_type,
         source_ref=source,
         job_id=job_id,
+        idempotency_key=idempotency_key,
         document_identity=document_identity,
         policy_context={
             "mode_policy": {**mode_policy, "classify": classify},
@@ -3154,6 +3164,11 @@ def _build_tips_dict() -> dict:
                 "status": "GET /v1/executions/{id} returns the canonical execution status including attempts and canonical progress.",
                 "result": "GET /v1/executions/{id}/result returns the persisted final ConvertResponse for the execution.",
                 "audit": "GET /v1/audit/execution/{id} returns audit events correlated by execution_id.",
+            },
+            "idempotency": {
+                "request_meta_key": "meta.idempotency_key optionally pins repeated requests to the same canonical execution instead of creating a duplicate logical run.",
+                "status_field": "execution_status.idempotency_key exposes the persisted deduplication key when one was resolved.",
+                "scope_note": "Idempotency currently applies to canonical execution reuse for direct and async requests; later batch-item reuse builds on the same field.",
             },
             "diagnostics_endpoints": {
                 "executions": "GET /v1/diagnostics/executions returns active executions, stuck executions, and normalization drift diagnostics for operators.",

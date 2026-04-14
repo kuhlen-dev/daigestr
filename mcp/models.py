@@ -88,6 +88,7 @@ CANONICAL_ERROR_SEMANTICS: dict[str, str] = {
 CANONICAL_EXECUTION_FIELDS: dict[str, str] = {
     "execution_id": "Canonical id of the persisted execution.",
     "request_id": "Stable request correlation id for the logical run.",
+    "idempotency_key": "Optional stable deduplication key used to reuse an existing execution instead of creating a duplicate logical run.",
     "execution_kind": "How the execution is consumed: direct, async, batch_item, replay, or system.",
     "source_type": "Normalized source type for this execution.",
     "source_ref": "Persisted reference to the logical source.",
@@ -355,6 +356,7 @@ class ExecutionStatusResponse(BaseModel):
     """Kanonische Statussicht für Direct-, Async- und spätere Batch-Executions."""
     execution_id: str = Field(..., description="Kanonische ID des Ausführungslaufs")
     request_id: str = Field(..., description="Stabile Request-ID des Ausführungslaufs")
+    idempotency_key: Optional[str] = Field(None, description="Optionale stabile Deduplizierungs-ID für denselben logischen Auftrag")
     execution_kind: str = Field(..., description="Art des Laufs: direct, async, batch_item, replay, system")
     source_type: Optional[str] = Field(None, description="Art der Quelle")
     source_ref: Optional[str] = Field(None, description="Referenz auf die Quelle")

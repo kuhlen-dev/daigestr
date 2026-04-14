@@ -413,6 +413,42 @@ def test_api_execution_diagnostics_returns_active_stuck_and_drift(monkeypatch):
     assert result.normalizer_drift["missing_template_ids"] == ["telecom_bill"]
 
 
+def test_ensure_execution_for_request_reuses_explicit_idempotency_key_for_direct():
+    from execution_db import init_execution_db
+    from models import ConvertRequest
+
+    api_rest = _load_api_rest_module()
+    init_execution_db()
+
+    request_a = ConvertRequest(path="/data/sample.txt", meta={"idempotency_key": "same-doc"})
+    request_b = ConvertRequest(path="/data/sample.txt", meta={"idempotency_key": "same-doc"})
+
+    _, execution_a = api_rest._ensure_execution_for_request(request_a, execution_kind="direct")
+    _, execution_b = api_rest._ensure_execution_for_request(request_b, execution_kind="direct")
+
+    assert execution_a == execution_b
+    assert request_a.meta["idempotency_key"] == "same-doc"
+    assert request_b.meta["idempotency_key"] == "same-doc"
+
+
+def test_ensure_execution_for_request_reuses_explicit_idempotency_key_for_async():
+    from execution_db import init_execution_db
+    from models import ConvertRequest
+
+    api_rest = _load_api_rest_module()
+    init_execution_db()
+
+    request_a = ConvertRequest(base64="aGVsbG8=", filename="hello.txt", meta={"idempotency_key": "async-doc"})
+    request_b = ConvertRequest(base64="aGVsbG8=", filename="hello.txt", meta={"idempotency_key": "async-doc"})
+
+    _, execution_a = api_rest._ensure_execution_for_request(request_a, execution_kind="async", job_id="job-a")
+    _, execution_b = api_rest._ensure_execution_for_request(request_b, execution_kind="async", job_id="job-b")
+
+    assert execution_a == execution_b
+    assert request_a.meta["idempotency_key"] == "async-doc"
+    assert request_b.meta["idempotency_key"] == "async-doc"
+
+
 def test_async_execution_status_matches_job_progress(monkeypatch):
     import routing
     from execution_db import init_execution_db

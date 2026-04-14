@@ -90,6 +90,7 @@ from execution_db import (
     execution_get,
     execution_get_full,
     execution_get_by_request_id,
+    execution_get_by_idempotency_key,
     execution_get_by_job_id,
     execution_list,
     execution_list_active,
@@ -124,6 +125,49 @@ def _infer_execution_source(request: ConvertRequest) -> tuple[str, Optional[str]
     return "unknown", None
 
 
+def _build_request_idempotency_key(request: ConvertRequest, execution_kind: str, job_id: Optional[str] = None) -> Optional[str]:
+    explicit = request.meta.get("idempotency_key")
+    if explicit:
+        return str(explicit)
+    if request.path:
+        basis = {
+            "execution_kind": execution_kind,
+            "source_type": "file",
+            "source_ref": request.path,
+            "template": request.template,
+            "mode": request.mode,
+            "auto_extract": request.auto_extract,
+            "has_extract_schema": bool(request.extract_schema),
+        }
+    elif request.base64 and request.filename:
+        basis = {
+            "execution_kind": execution_kind,
+            "source_type": "base64",
+            "filename": request.filename,
+            "content_sha256": hashlib.sha256(request.base64.encode("utf-8")).hexdigest(),
+            "template": request.template,
+            "mode": request.mode,
+            "auto_extract": request.auto_extract,
+            "has_extract_schema": bool(request.extract_schema),
+        }
+    elif request.url:
+        basis = {
+            "execution_kind": execution_kind,
+            "source_type": "url",
+            "source_ref": request.url,
+            "template": request.template,
+            "mode": request.mode,
+            "auto_extract": request.auto_extract,
+            "has_extract_schema": bool(request.extract_schema),
+        }
+    else:
+        return None
+    if job_id:
+        basis["job_id"] = job_id
+    payload = json.dumps(basis, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def _ensure_execution_for_request(
     request: ConvertRequest,
     *,
@@ -131,6 +175,7 @@ def _ensure_execution_for_request(
     job_id: Optional[str] = None,
 ) -> tuple[str, str]:
     request_id = request.meta.get("_request_id") or str(uuid.uuid4())
+    idempotency_key = _build_request_idempotency_key(request, execution_kind, job_id=job_id)
     existing = _get("execution_get_by_request_id", execution_get_by_request_id)(request_id)
     if existing:
         execution_id = existing["id"]
@@ -139,11 +184,21 @@ def _ensure_execution_for_request(
             status=existing.get("status") or "queued",
             current_stage=existing.get("current_stage") or "queued",
         )
+    elif idempotency_key and _get("execution_get_by_idempotency_key", execution_get_by_idempotency_key)(idempotency_key):
+        existing = _get("execution_get_by_idempotency_key", execution_get_by_idempotency_key)(idempotency_key)
+        execution_id = existing["id"]
+        _get("execution_update", execution_update)(
+            execution_id,
+            status=existing.get("status") or "queued",
+            current_stage=existing.get("current_stage") or "queued",
+            idempotency_key=idempotency_key,
+        )
     else:
         source_type, source_ref = _infer_execution_source(request)
         created = _get("execution_create", execution_create)(
             execution_id=str(uuid.uuid4()),
             request_id=request_id,
+            idempotency_key=idempotency_key,
             execution_kind=execution_kind,
             source_type=source_type,
             source_ref=source_ref,
@@ -161,6 +216,8 @@ def _ensure_execution_for_request(
         execution_id = created["id"]
     request.meta["_request_id"] = request_id
     request.meta["execution_id"] = execution_id
+    if idempotency_key:
+        request.meta["idempotency_key"] = idempotency_key
     if job_id:
         request.meta["_job_id"] = job_id
     return request_id, execution_id
@@ -216,6 +273,7 @@ def _build_execution_status_response(row: dict[str, Any]) -> ExecutionStatusResp
     return ExecutionStatusResponse(
         execution_id=row["id"],
         request_id=row["request_id"],
+        idempotency_key=row.get("idempotency_key"),
         execution_kind=row["execution_kind"],
         source_type=row.get("source_type"),
         source_ref=row.get("source_ref"),

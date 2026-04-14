@@ -37,6 +37,7 @@ def init_execution_db() -> None:
             CREATE TABLE IF NOT EXISTS execution (
                 id TEXT PRIMARY KEY,
                 request_id TEXT NOT NULL UNIQUE,
+                idempotency_key TEXT UNIQUE,
                 execution_kind TEXT NOT NULL
                     CHECK (execution_kind IN ('direct', 'async', 'batch_item', 'replay', 'system')),
                 source_type TEXT,
@@ -57,6 +58,14 @@ def init_execution_db() -> None:
                 finished_at TIMESTAMPTZ
             )
             """
+        )
+        cur.execute(
+            "ALTER TABLE execution "
+            "ADD COLUMN IF NOT EXISTS idempotency_key TEXT"
+        )
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_execution_idempotency_key "
+            "ON execution(idempotency_key) WHERE idempotency_key IS NOT NULL"
         )
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_execution_status_created_at "
@@ -157,6 +166,7 @@ def execution_create(
     request_id: str,
     execution_kind: str,
     *,
+    idempotency_key: Optional[str] = None,
     source_type: Optional[str] = None,
     source_ref: Optional[str] = None,
     job_id: Optional[str] = None,
@@ -178,16 +188,17 @@ def execution_create(
         cur.execute(
             """
             INSERT INTO execution (
-                id, request_id, execution_kind, source_type, source_ref,
+                id, request_id, idempotency_key, execution_kind, source_type, source_ref,
                 job_id, batch_id, batch_item_id, status, current_stage,
                 progress_json, document_identity, policy_context
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
             (
                 execution_id,
                 request_id,
+                idempotency_key,
                 execution_kind,
                 source_type,
                 source_ref,
@@ -214,6 +225,7 @@ def execution_update(
     status: Optional[str] = None,
     current_stage: Optional[str] = None,
     progress_json: Optional[dict[str, Any]] = None,
+    idempotency_key: Optional[str] = None,
     document_identity: Optional[dict[str, Any]] = None,
     warning_summary: Optional[dict[str, Any]] = None,
     error_summary: Optional[dict[str, Any]] = None,
@@ -234,6 +246,9 @@ def execution_update(
     if progress_json is not None:
         assignments.append("progress_json = %s")
         params.append(psycopg2.extras.Json(progress_json))
+    if idempotency_key is not None:
+        assignments.append("idempotency_key = %s")
+        params.append(idempotency_key)
     if document_identity is not None:
         assignments.append("document_identity = %s")
         params.append(psycopg2.extras.Json(document_identity))
@@ -284,6 +299,18 @@ def execution_get_by_request_id(request_id: str) -> Optional[dict[str, Any]]:
     try:
         cur = conn.cursor()
         cur.execute("SELECT * FROM execution WHERE request_id = %s", (request_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        _return_conn(conn)
+
+
+def execution_get_by_idempotency_key(idempotency_key: str) -> Optional[dict[str, Any]]:
+    """Fetch a canonical execution row by idempotency_key."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM execution WHERE idempotency_key = %s", (idempotency_key,))
         row = cur.fetchone()
         return dict(row) if row else None
     finally:

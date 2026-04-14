@@ -73,6 +73,7 @@ def execution_record():
     created = execution_create(
         execution_id=execution_id,
         request_id=request_id,
+        idempotency_key=f"idem-{execution_id}",
         execution_kind="direct",
         source_type="file",
         source_ref="/data/test.pdf",
@@ -97,7 +98,7 @@ def execution_record():
 
 
 def test_execution_create_and_get(execution_record):
-    from execution_db import execution_get, execution_get_by_request_id
+    from execution_db import execution_get, execution_get_by_request_id, execution_get_by_idempotency_key
 
     row = execution_get(execution_record["id"])
     assert row is not None
@@ -110,6 +111,10 @@ def test_execution_create_and_get(execution_record):
     by_request = execution_get_by_request_id(execution_record["request_id"])
     assert by_request is not None
     assert by_request["id"] == execution_record["id"]
+
+    by_idempotency = execution_get_by_idempotency_key(execution_record["idempotency_key"])
+    assert by_idempotency is not None
+    assert by_idempotency["id"] == execution_record["id"]
 
 
 def test_execution_update(execution_record):
