@@ -19,6 +19,7 @@ import re
 import sys
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Any
 
@@ -104,6 +105,13 @@ from templates_db import get_all_template_ids, get_template_by_id, cache_get, ca
 from audit_db import audit_log_event as _audit_log_event
 from debug_snapshots import should_capture_debug_snapshot, build_debug_snapshot_payload
 from debug_snapshot_db import debug_snapshot_store
+from execution_db import (
+    execution_create,
+    execution_get_by_request_id,
+    execution_update,
+    execution_attempt_upsert,
+    execution_result_upsert,
+)
 
 log = structlog.get_logger()
 
@@ -238,6 +246,128 @@ def _bind_request_log_context(
         source_type=source_type,
         job_id=job_id,
     )
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _execution_attempt_id(execution_id: str, attempt_number: int) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{execution_id}:attempt:{attempt_number}"))
+
+
+def _execution_result_id(execution_id: str, *, attempt_number: Optional[int] = None, is_final: bool = False) -> str:
+    if is_final:
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{execution_id}:result:final"))
+    suffix = f"attempt:{attempt_number}" if attempt_number is not None else "attempt:none"
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{execution_id}:result:{suffix}"))
+
+
+def _ensure_execution_context(
+    *,
+    request_id: str,
+    execution_id: Optional[str],
+    execution_kind: str,
+    source_type: str,
+    source_ref: str,
+    job_id: Optional[str],
+    policy_context: Optional[dict[str, Any]] = None,
+) -> str:
+    if execution_id:
+        _exec_update = _get("execution_update", execution_update)
+        _exec_update(
+            execution_id,
+            status="processing",
+            current_stage="start",
+            started_at_now=True,
+        )
+        return execution_id
+
+    _exec_get_by_request = _get("execution_get_by_request_id", execution_get_by_request_id)
+    existing = _exec_get_by_request(request_id)
+    if existing:
+        _exec_update = _get("execution_update", execution_update)
+        _exec_update(
+            existing["id"],
+            status=existing.get("status") or "processing",
+            current_stage=existing.get("current_stage") or "start",
+            started_at_now=True,
+        )
+        return existing["id"]
+
+    _exec_create = _get("execution_create", execution_create)
+    created = _exec_create(
+        execution_id=str(uuid.uuid4()),
+        request_id=request_id,
+        execution_kind=execution_kind,
+        source_type=source_type,
+        source_ref=source_ref,
+        job_id=job_id,
+        status="processing",
+        current_stage="start",
+        policy_context=policy_context or {},
+    )
+    return created["id"]
+
+
+def _persist_execution_attempt_result(
+    *,
+    execution_id: Optional[str],
+    attempt_number: int,
+    attempt_mode: str,
+    attempt_reason: str,
+    response: ConvertResponse,
+    is_final: bool,
+    result_status: Optional[str] = None,
+) -> None:
+    if not execution_id:
+        return
+    _attempt_upsert = _get("execution_attempt_upsert", execution_attempt_upsert)
+    _result_upsert = _get("execution_result_upsert", execution_result_upsert)
+    _exec_update = _get("execution_update", execution_update)
+
+    attempt_status = "completed" if response.success else "failed"
+    meta_payload = response.meta.model_dump() if response.meta else {}
+    attempt = _attempt_upsert(
+        attempt_id=_execution_attempt_id(execution_id, attempt_number),
+        execution_id=execution_id,
+        attempt_number=attempt_number,
+        attempt_mode=attempt_mode,
+        attempt_reason=attempt_reason,
+        status=attempt_status,
+        quality_score=meta_payload.get("quality_score"),
+        retry_trigger=meta_payload.get("retry_reason"),
+        error=response.error.model_dump() if response.error else None,
+        finished_at_now=True,
+    )
+    _result_upsert(
+        result_id=_execution_result_id(execution_id, attempt_number=attempt_number, is_final=is_final),
+        execution_id=execution_id,
+        attempt_id=attempt["id"],
+        is_final=is_final,
+        result_status=result_status or attempt_status,
+        success=response.success,
+        meta=meta_payload,
+        extracted=response.extracted,
+        normalized=response.normalized,
+        artifact_refs={
+            "has_markdown": bool(response.markdown),
+            "has_html": bool(response.html),
+            "has_chunks": bool(response.chunks),
+            "has_enriched_pdf": bool(response.enriched_pdf),
+        },
+        warnings=response.normalized_warnings,
+        error=response.error.model_dump() if response.error else None,
+    )
+    if is_final:
+        _exec_update(
+            execution_id,
+            status="completed" if response.success else "failed",
+            current_stage="completed" if response.success else "failed",
+            warning_summary={"warnings": response.normalized_warnings} if response.normalized_warnings else None,
+            error_summary=response.error.model_dump() if response.error else None,
+            finished_at_now=True,
+        )
 
 
 def _apply_explicit_template_meta(meta: dict[str, Any], template: Optional[str]) -> None:
@@ -377,6 +507,33 @@ async def finalize_url_markdown_response(
     _chunk_md = _get("chunk_markdown", chunk_markdown)
 
     request_id = request_id or meta.get("request_id") or str(uuid.uuid4())
+    execution_id = meta.get("execution_id")
+    execution_kind = "async" if job_id else "direct"
+    execution_id = _ensure_execution_context(
+        request_id=request_id,
+        execution_id=execution_id,
+        execution_kind=execution_kind,
+        source_type="url",
+        source_ref=source,
+        job_id=job_id,
+        policy_context={
+            "mode": mode,
+            "classify": classify,
+            "auto_extract": auto_extract,
+            "template": template,
+            "has_extract_schema": bool(extract_schema),
+            "source_type": "url",
+        },
+    )
+    _attempt_upsert = _get("execution_attempt_upsert", execution_attempt_upsert)
+    _attempt_upsert(
+        execution_id=execution_id,
+        attempt_number=attempt_number,
+        attempt_mode=mode,
+        attempt_reason="initial" if attempt_number == 1 else "retry",
+        status="running",
+        finished_at_now=False,
+    )
     _attempt_log = _bind_request_log_context(
         request_id=request_id,
         attempt_number=attempt_number,
@@ -390,6 +547,7 @@ async def finalize_url_markdown_response(
     effective_meta.setdefault("source", source)
     effective_meta.setdefault("source_type", "url")
     effective_meta["request_id"] = request_id
+    effective_meta["execution_id"] = execution_id
     effective_meta["job_id"] = job_id
     effective_meta["attempt_number"] = attempt_number
     effective_meta["attempt_mode"] = mode
@@ -463,6 +621,14 @@ async def finalize_url_markdown_response(
             attempt_number=effective_meta.get("attempt_number"),
         )
         if not response.success:
+            _persist_execution_attempt_result(
+                execution_id=execution_id,
+                attempt_number=attempt_number,
+                attempt_mode=mode,
+                attempt_reason="initial" if attempt_number == 1 else "retry",
+                response=response,
+                is_final=True,
+            )
             return response
     elif extract_schema:
         extraction = await _extract_struct(
@@ -480,7 +646,7 @@ async def finalize_url_markdown_response(
             effective_meta["pipeline_steps"] = updated_steps
             response.meta = MetaData(**{k: v for k, v in effective_meta.items()})
         else:
-            return _create_extraction_error_response(
+            response = _create_extraction_error_response(
                 markdown=markdown_text,
                 meta=effective_meta,
                 message="Schema-basierte Extraktion fehlgeschlagen",
@@ -489,6 +655,15 @@ async def finalize_url_markdown_response(
                     "extraction_error": extraction.get("error"),
                 },
             )
+            _persist_execution_attempt_result(
+                execution_id=execution_id,
+                attempt_number=attempt_number,
+                attempt_mode=mode,
+                attempt_reason="initial" if attempt_number == 1 else "retry",
+                response=response,
+                is_final=True,
+            )
+            return response
 
     norm_template = effective_meta.get("template_used") or template or effective_meta.get("document_type")
     response = await _apply_normalizer(response, effective_meta, norm_template, compact)
@@ -594,7 +769,7 @@ async def finalize_url_markdown_response(
             )
             final_mode = quality_retry_mode
             final_score = getattr(retried_response.meta, "quality_score", None)
-        return _apply_retry_meta(
+        final_response = _apply_retry_meta(
             final_response,
             retry_applied=True,
             retry_reason=retry_reason,
@@ -604,8 +779,33 @@ async def finalize_url_markdown_response(
             final_quality_score=final_score,
             retry_threshold_used=float(quality_retry_threshold),
         )
+        _persist_execution_attempt_result(
+            execution_id=execution_id,
+            attempt_number=attempt_number,
+            attempt_mode=mode,
+            attempt_reason="initial",
+            response=response,
+            is_final=False,
+        )
+        _persist_execution_attempt_result(
+            execution_id=execution_id,
+            attempt_number=attempt_number + 1,
+            attempt_mode=quality_retry_mode,
+            attempt_reason=retry_reason,
+            response=retried_response,
+            is_final=False,
+        )
+        _persist_execution_attempt_result(
+            execution_id=execution_id,
+            attempt_number=getattr(final_response.meta, "attempt_number", attempt_number + 1),
+            attempt_mode=getattr(final_response.meta, "attempt_mode", final_mode),
+            attempt_reason=retry_reason,
+            response=final_response,
+            is_final=True,
+        )
+        return final_response
 
-    return _apply_retry_meta(
+    response = _apply_retry_meta(
         response,
         retry_applied=False,
         retry_reason=None,
@@ -615,6 +815,15 @@ async def finalize_url_markdown_response(
         final_quality_score=score,
         retry_threshold_used=float(quality_retry_threshold) if retry_on_low_quality else None,
     )
+    _persist_execution_attempt_result(
+        execution_id=execution_id,
+        attempt_number=attempt_number,
+        attempt_mode=mode,
+        attempt_reason="initial" if attempt_number == 1 else "retry",
+        response=response,
+        is_final=True,
+    )
+    return response
 
 
 async def convert_auto(
@@ -653,7 +862,31 @@ async def convert_auto(
     Kein interner Timeout — externe Limits (REST-Client, Brix-Pipeline) steuern.
     """
     request_id = input_meta.get("_request_id") or str(uuid.uuid4())
-    effective_input_meta = {**input_meta, "_request_id": request_id}
+    job_id = input_meta.get("_job_id")
+    execution_id = input_meta.get("execution_id")
+    execution_kind = input_meta.get("_execution_kind") or ("async" if job_id else "direct")
+    execution_id = _ensure_execution_context(
+        request_id=request_id,
+        execution_id=execution_id,
+        execution_kind=execution_kind,
+        source_type=source_type,
+        source_ref=source,
+        job_id=job_id,
+        policy_context={
+            "mode": mode,
+            "classify": classify,
+            "auto_extract": auto_extract,
+            "template": template,
+            "has_extract_schema": bool(extract_schema),
+            "source_type": source_type,
+        },
+    )
+    effective_input_meta = {
+        **input_meta,
+        "_request_id": request_id,
+        "execution_id": execution_id,
+        "_execution_kind": execution_kind,
+    }
 
     effective_retry_enabled = _get("QUALITY_RETRY_ENABLED", QUALITY_RETRY_ENABLED)
     if retry_on_low_quality is not None:
@@ -673,11 +906,10 @@ async def convert_auto(
         _server_impl = getattr(_server_module, "__dict__", {}).get("_convert_auto_impl")
     _convert_auto_impl_fn = _server_impl or _convert_auto_impl
     _convert_timeout_seconds = _get("CONVERT_TIMEOUT_SECONDS", CONVERT_TIMEOUT_SECONDS)
-    job_id = effective_input_meta.get("_job_id")
-
     def _ensure_correlation_meta(resp: ConvertResponse, *, current_mode: str, current_attempt: int, current_attempt_count: int) -> ConvertResponse:
         meta = resp.meta.model_dump()
         meta["request_id"] = request_id
+        meta["execution_id"] = execution_id
         meta["job_id"] = job_id
         meta["attempt_number"] = current_attempt
         meta["attempt_count"] = current_attempt_count
@@ -694,6 +926,7 @@ async def convert_auto(
             "duration_ms": 0,
             "accuracy_mode": accuracy,
             "request_id": request_id,
+            "execution_id": execution_id,
             "job_id": job_id,
             "attempt_number": current_attempt,
             "attempt_count": current_attempt_count,
@@ -701,6 +934,22 @@ async def convert_auto(
         }
 
     async def _run_impl_with_timeout(*, current_mode: str, current_attempt: int, current_attempt_count: int, retry_flag: Optional[bool]) -> ConvertResponse:
+        _attempt_upsert = _get("execution_attempt_upsert", execution_attempt_upsert)
+        _attempt_upsert(
+            attempt_id=_execution_attempt_id(execution_id, current_attempt),
+            execution_id=execution_id,
+            attempt_number=current_attempt,
+            attempt_mode=current_mode,
+            attempt_reason="initial" if current_attempt == 1 else "retry",
+            status="running",
+        )
+        _exec_update = _get("execution_update", execution_update)
+        _exec_update(
+            execution_id,
+            status="processing",
+            current_stage="attempt_running",
+            started_at_now=True,
+        )
         kwargs = dict(
             file_data=file_data,
             filename=filename,
@@ -744,7 +993,7 @@ async def convert_auto(
             else:
                 resp = await _convert_auto_impl_fn(**kwargs)
         except asyncio.TimeoutError:
-            return create_error_response(
+            response = create_error_response(
                 ErrorCode.TIMEOUT,
                 f"Timeout nach {_convert_timeout_seconds} Sekunden bei convert_auto",
                 meta=_timeout_meta(
@@ -753,8 +1002,17 @@ async def convert_auto(
                     current_attempt_count=current_attempt_count,
                 ),
             )
+            _persist_execution_attempt_result(
+                execution_id=execution_id,
+                attempt_number=current_attempt,
+                attempt_mode=current_mode,
+                attempt_reason="initial" if current_attempt == 1 else "retry",
+                response=response,
+                is_final=False,
+            )
+            return response
         if resp is None:
-            return create_error_response(
+            response = create_error_response(
                 ErrorCode.INTERNAL_ERROR,
                 "_convert_auto_impl returned no response",
                 meta=_timeout_meta(
@@ -763,12 +1021,30 @@ async def convert_auto(
                     current_attempt_count=current_attempt_count,
                 ),
             )
-        return _ensure_correlation_meta(
+            _persist_execution_attempt_result(
+                execution_id=execution_id,
+                attempt_number=current_attempt,
+                attempt_mode=current_mode,
+                attempt_reason="initial" if current_attempt == 1 else "retry",
+                response=response,
+                is_final=False,
+            )
+            return response
+        response = _ensure_correlation_meta(
             resp,
             current_mode=current_mode,
             current_attempt=current_attempt,
             current_attempt_count=current_attempt_count,
         )
+        _persist_execution_attempt_result(
+            execution_id=execution_id,
+            attempt_number=current_attempt,
+            attempt_mode=current_mode,
+            attempt_reason="initial" if current_attempt == 1 else "retry",
+            response=response,
+            is_final=False,
+        )
+        return response
 
     response = await _run_impl_with_timeout(
         current_mode=mode,
@@ -797,7 +1073,7 @@ async def convert_auto(
     )
 
     if not should_retry:
-        return _apply_retry_meta(
+        response = _apply_retry_meta(
             response,
             retry_applied=False,
             retry_reason=None,
@@ -807,6 +1083,15 @@ async def convert_auto(
             final_quality_score=initial_score,
             retry_threshold_used=float(effective_retry_threshold) if effective_retry_enabled else None,
         )
+        _persist_execution_attempt_result(
+            execution_id=execution_id,
+            attempt_number=getattr(response.meta, "attempt_number", 1),
+            attempt_mode=getattr(response.meta, "attempt_mode", mode),
+            attempt_reason="initial",
+            response=response,
+            is_final=True,
+        )
+        return response
 
     if not initial_contract_complete:
         retry_reason = "incomplete_extraction_contract"
@@ -864,7 +1149,7 @@ async def convert_auto(
         selected_mode = effective_retry_mode
         selected_score = retried_score
 
-    return _apply_retry_meta(
+    selected_response = _apply_retry_meta(
         selected_response,
         retry_applied=True,
         retry_reason=retry_reason,
@@ -874,6 +1159,15 @@ async def convert_auto(
         final_quality_score=selected_score,
         retry_threshold_used=float(effective_retry_threshold),
     )
+    _persist_execution_attempt_result(
+        execution_id=execution_id,
+        attempt_number=getattr(selected_response.meta, "attempt_number", 2),
+        attempt_mode=getattr(selected_response.meta, "attempt_mode", selected_mode),
+        attempt_reason=retry_reason,
+        response=selected_response,
+        is_final=True,
+    )
+    return selected_response
 
 
 async def _convert_auto_impl(

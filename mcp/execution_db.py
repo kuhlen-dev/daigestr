@@ -266,6 +266,21 @@ def execution_get_by_request_id(request_id: str) -> Optional[dict[str, Any]]:
         _return_conn(conn)
 
 
+def execution_get_by_job_id(job_id: str) -> Optional[dict[str, Any]]:
+    """Fetch the newest canonical execution row by async job id."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM execution WHERE job_id = %s ORDER BY created_at DESC LIMIT 1",
+            (job_id,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        _return_conn(conn)
+
+
 def execution_list(limit: int = 50) -> list[dict[str, Any]]:
     """Return the newest executions, newest first."""
     conn = get_db_connection()

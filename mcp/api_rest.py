@@ -78,6 +78,13 @@ from templates_db import (
     get_all_template_ids, search_templates, cache_clear, check_persistence_health,
     job_create, job_update, job_set_result, job_get, job_delete, job_list,
 )
+from execution_db import (
+    execution_create,
+    execution_get_by_request_id,
+    execution_get_by_job_id,
+    execution_update,
+    execution_result_upsert,
+)
 from debug_snapshot_db import debug_snapshot_list, debug_snapshot_get
 from debug_snapshots import replay_normalization_from_snapshot
 from routing import (
@@ -91,6 +98,62 @@ from api_rest_audit import audit_router
 from api_rest_normalize import normalize_router, corrections_router, batch_router
 
 log = structlog.get_logger()
+
+
+def _infer_execution_source(request: ConvertRequest) -> tuple[str, Optional[str]]:
+    if request.path:
+        return "file", request.path
+    if request.base64:
+        return "base64", request.filename or "upload"
+    if request.url:
+        return "url", request.url
+    return "unknown", None
+
+
+def _ensure_execution_for_request(
+    request: ConvertRequest,
+    *,
+    execution_kind: str,
+    job_id: Optional[str] = None,
+) -> tuple[str, str]:
+    request_id = request.meta.get("_request_id") or str(uuid.uuid4())
+    existing = _get("execution_get_by_request_id", execution_get_by_request_id)(request_id)
+    if existing:
+        execution_id = existing["id"]
+        _get("execution_update", execution_update)(
+            execution_id,
+            status=existing.get("status") or "queued",
+            current_stage=existing.get("current_stage") or "queued",
+        )
+    else:
+        source_type, source_ref = _infer_execution_source(request)
+        created = _get("execution_create", execution_create)(
+            execution_id=str(uuid.uuid4()),
+            request_id=request_id,
+            execution_kind=execution_kind,
+            source_type=source_type,
+            source_ref=source_ref,
+            job_id=job_id,
+            status="queued",
+            current_stage="queued",
+            policy_context={
+                "mode": request.mode,
+                "classify": request.classify,
+                "auto_extract": request.auto_extract,
+                "template": request.template,
+                "has_extract_schema": bool(request.extract_schema),
+            },
+        )
+        execution_id = created["id"]
+    request.meta["_request_id"] = request_id
+    request.meta["execution_id"] = execution_id
+    if job_id:
+        request.meta["_job_id"] = job_id
+    return request_id, execution_id
+
+
+def _execution_result_id(execution_id: str, *, kind: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{execution_id}:result:{kind}"))
 
 # FastAPI Instanz
 app = FastAPI(
@@ -176,6 +239,8 @@ async def _api_convert_impl(request: ConvertRequest) -> ConvertResponse:
     _get_template = _get("get_template_by_id", get_template_by_id)
     _temp_dir = _get("TEMP_DIR", TEMP_DIR)
     _mistral_timeout = _get("MISTRAL_TIMEOUT", MISTRAL_TIMEOUT)
+
+    _ensure_execution_for_request(request, execution_kind="direct")
 
     inputs = [request.path, request.base64, request.url]
     if sum(1 for x in inputs if x) != 1:
@@ -873,7 +938,10 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
     _convert_auto = _get("convert_auto", convert_auto)
     _job_update = _get("job_update", job_update)
     _job_set_result = _get("job_set_result", job_set_result)
+    _execution_update = _get("execution_update", execution_update)
+    _execution_result_upsert = _get("execution_result_upsert", execution_result_upsert)
     temp_path: Path | None = None
+    execution_id = request.meta.get("execution_id")
 
     _job_update(
         job_id,
@@ -888,6 +956,13 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
             )
         ).model_dump_json(),
     )
+    if execution_id:
+        _execution_update(
+            execution_id,
+            status="processing",
+            current_stage="start",
+            started_at_now=True,
+        )
     try:
         # Eingabe auflösen
         _resolve_path = _get("resolve_path", resolve_path)
@@ -971,6 +1046,35 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
             )
         except asyncio.TimeoutError:
             log.error("async_job_timeout", job_id=job_id, timeout=_job_timeout)
+            timeout_result = create_error_response(
+                ErrorCode.TIMEOUT,
+                f"Job timed out after {_job_timeout}s",
+                meta={
+                    "request_id": request.meta.get("_request_id"),
+                    "execution_id": execution_id,
+                    "job_id": job_id,
+                },
+            )
+            if execution_id:
+                _execution_result_upsert(
+                    result_id=_execution_result_id(execution_id, kind="job-timeout"),
+                    execution_id=execution_id,
+                    is_final=True,
+                    result_status="failed",
+                    success=False,
+                    meta=timeout_result.meta.model_dump(),
+                    extracted=timeout_result.extracted,
+                    normalized=timeout_result.normalized,
+                    warnings=timeout_result.normalized_warnings,
+                    error=timeout_result.error.model_dump() if timeout_result.error else None,
+                )
+                _execution_update(
+                    execution_id,
+                    status="failed",
+                    current_stage="failed",
+                    error_summary=timeout_result.error.model_dump() if timeout_result.error else None,
+                    finished_at_now=True,
+                )
             _job_update(
                 job_id,
                 "failed",
@@ -1010,6 +1114,30 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
                 )
             ).model_dump_json(),
         )
+        if execution_id:
+            _execution_result_upsert(
+                result_id=_execution_result_id(execution_id, kind="job-exception"),
+                execution_id=execution_id,
+                is_final=True,
+                result_status="failed",
+                success=False,
+                meta={
+                    "request_id": request.meta.get("_request_id"),
+                    "execution_id": execution_id,
+                    "job_id": job_id,
+                },
+                extracted=None,
+                normalized=None,
+                warnings=None,
+                error=error_result.error.model_dump() if error_result.error else None,
+            )
+            _execution_update(
+                execution_id,
+                status="failed",
+                current_stage="failed",
+                error_summary=error_result.error.model_dump() if error_result.error else None,
+                finished_at_now=True,
+            )
         # Webhook auch bei Fehler senden
         if request.webhook_url:
             await _fire_webhook(request.webhook_url, error_result)
@@ -1028,9 +1156,10 @@ async def api_convert_async(request: ConvertRequest) -> AsyncJobStartResponse:
     """
     _job_create = _get("job_create", job_create)
     job_id = str(uuid.uuid4())
+    _, execution_id = _ensure_execution_for_request(request, execution_kind="async", job_id=job_id)
     _job_create(job_id)
     asyncio.create_task(_run_async_job(job_id, request))
-    return AsyncJobStartResponse(job_id=job_id, status="queued")
+    return AsyncJobStartResponse(job_id=job_id, execution_id=execution_id, status="queued")
 
 
 @app.get("/v1/jobs", response_model=JobListResponse)
@@ -1040,6 +1169,7 @@ async def api_list_jobs() -> JobListResponse:
     jobs = _job_list()
     result = []
     for j in jobs:
+        execution = _get("execution_get_by_job_id", execution_get_by_job_id)(j["id"])
         progress = None
         if j.get("progress_json"):
             try:
@@ -1050,6 +1180,7 @@ async def api_list_jobs() -> JobListResponse:
         result.append(
             JobStatusResponse(
                 job_id=j["id"],
+                execution_id=execution["id"] if execution else None,
                 status=j["status"],
                 created_at=j["created_at"],
                 updated_at=j["updated_at"],
@@ -1066,6 +1197,7 @@ async def api_get_job(job_id: str) -> JobStatusResponse:
     job = _job_get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+    execution = _get("execution_get_by_job_id", execution_get_by_job_id)(job_id)
     progress = None
     if job.get("progress_json"):
         try:
@@ -1075,6 +1207,7 @@ async def api_get_job(job_id: str) -> JobStatusResponse:
             progress = None
     return JobStatusResponse(
         job_id=job["id"],
+        execution_id=execution["id"] if execution else None,
         status=job["status"],
         created_at=job["created_at"],
         updated_at=job["updated_at"],

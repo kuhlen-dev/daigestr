@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 MINIMUM_META_FIELDS: dict[str, Any] = {
     "request_id": None,
+    "execution_id": None,
     "job_id": None,
     "attempt_number": None,
     "attempt_count": None,
@@ -67,6 +68,7 @@ class MetaData(BaseModel):
     processed_at: Optional[str] = Field(None, description="Verarbeitungszeitpunkt (ISO 8601)")
     duration_ms: Optional[int] = Field(None, description="Verarbeitungsdauer in Millisekunden")
     request_id: Optional[str] = Field(None, description="Stabile ID für den gesamten Convert-Lauf über alle internen Versuche hinweg")
+    execution_id: Optional[str] = Field(None, description="Kanonische ID des persistierten Ausführungslaufs")
     job_id: Optional[str] = Field(None, description="Job-ID bei asynchronen Läufen")
     attempt_number: Optional[int] = Field(None, description="Nummer des internen Verarbeitungsversuchs innerhalb desselben request_id")
     attempt_count: Optional[int] = Field(None, description="Gesamtzahl der internen Versuche, die für die finale Antwort verwendet wurden")
@@ -238,12 +240,14 @@ class ProgressState(BaseModel):
 class AsyncJobStartResponse(BaseModel):
     """Antwort nach dem Start eines asynchronen Convert-Jobs."""
     job_id: str = Field(..., description="ID des gestarteten Jobs")
+    execution_id: Optional[str] = Field(None, description="Kanonische ID des gestarteten Ausführungslaufs")
     status: str = Field(..., description="Initialer Jobstatus, typischerweise 'queued'")
 
 
 class JobStatusResponse(BaseModel):
     """Pollbarer Status für asynchrone Convert-Jobs."""
     job_id: str = Field(..., description="ID des Jobs")
+    execution_id: Optional[str] = Field(None, description="Kanonische ID des zugehörigen Ausführungslaufs")
     status: str = Field(..., description="Aktueller Jobstatus")
     created_at: Any = Field(..., description="Erstellungszeitpunkt des Jobs")
     updated_at: Any = Field(..., description="Letzte Statusänderung des Jobs")

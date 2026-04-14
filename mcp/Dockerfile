@@ -21,14 +21,14 @@ COPY server.py models.py seed.sql seed_normalization.sql mcp_stdio.py ./
 COPY settings.py logging_setup.py utils.py mistral_client.py intelligence.py ./
 COPY templates_db.py routing.py api_rest.py api_mcp.py audit_db.py api_rest_audit.py ./
 COPY debug_snapshot_db.py debug_snapshots.py progress_tracking.py ./
-COPY normalizer.py normalizer_db.py normalizer_cache.py api_rest_normalize.py ./
+COPY normalizer.py normalizer_db.py normalizer_cache.py api_rest_normalize.py execution_db.py ./
 COPY converters/ ./converters/
 COPY renderers/ ./renderers/
 COPY scripts/ ./scripts/
 
 RUN mkdir -p /data /tmp/markitdown
 
-ARG DAIGESTR_VERSION=16.1.1
+ARG DAIGESTR_VERSION=16.1.2
 ENV DAIGESTR_VERSION=${DAIGESTR_VERSION}
 
 EXPOSE 8080 8081
