@@ -23,7 +23,7 @@ services:
     build:
       context: ./mcp
       args:
-        DAIGESTR_VERSION: ${DAIGESTR_VERSION:-14.3.2}
+        DAIGESTR_VERSION: ${DAIGESTR_VERSION:-16.1.1}
     container_name: daigestr
     restart: unless-stopped
     env_file: .env
@@ -31,7 +31,7 @@ services:
       - "${MCP_HOST_BIND:-0.0.0.0}:${MCP_HOST_PORT:-18005}:8080"
       - "${REST_HOST_BIND:-0.0.0.0}:${REST_HOST_PORT:-18006}:8081"
     environment:
-      - DAIGESTR_VERSION=${DAIGESTR_VERSION:-14.3.2}
+      - DAIGESTR_VERSION=${DAIGESTR_VERSION:-16.1.1}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-daigestr}:${POSTGRES_PASSWORD:-daigestr}@daigestr-postgres:5432/${POSTGRES_DB:-daigestr}
     depends_on:
       daigestr-postgres:

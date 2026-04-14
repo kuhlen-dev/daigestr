@@ -213,6 +213,19 @@ from debug_snapshot_db import (  # noqa: F401
 from api_rest_normalize import normalize_router, corrections_router, batch_router  # noqa: F401
 from normalizer import normalize  # noqa: F401
 from normalizer_cache import cache_reset as normalizer_cache_reset  # noqa: F401
+from execution_db import (  # noqa: F401
+    init_execution_db,
+    execution_create,
+    execution_update,
+    execution_get,
+    execution_get_by_request_id,
+    execution_list,
+    execution_attempt_upsert,
+    execution_attempt_list,
+    execution_result_upsert,
+    execution_result_get_final,
+    execution_result_list,
+)
 
 # Re-export templates_db functions for backwards-compatibility
 from templates_db import (  # noqa: F401
@@ -311,6 +324,7 @@ def initialize_persistence() -> None:
     """
     init_steps = [
         ("template_registry", init_templates_db),
+        ("execution_db", init_execution_db),
         ("audit_db", init_audit_db),
         ("debug_snapshot_db", init_debug_snapshot_db),
         ("normalization_db", init_normalization_db),
