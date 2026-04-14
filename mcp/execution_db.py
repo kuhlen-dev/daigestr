@@ -315,6 +315,45 @@ def execution_list(limit: int = 50) -> list[dict[str, Any]]:
         _return_conn(conn)
 
 
+def execution_list_active(limit: int = 50) -> list[dict[str, Any]]:
+    """Return active executions ordered by most recently updated first."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT * FROM execution
+            WHERE status IN ('queued', 'processing')
+            ORDER BY updated_at DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        return [dict(row) for row in cur.fetchall()]
+    finally:
+        _return_conn(conn)
+
+
+def execution_list_stuck(stuck_after_seconds: int, limit: int = 50) -> list[dict[str, Any]]:
+    """Return executions that look stale based on updated_at age."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT * FROM execution
+            WHERE status IN ('queued', 'processing')
+              AND updated_at < now() - make_interval(secs => %s)
+            ORDER BY updated_at ASC
+            LIMIT %s
+            """,
+            (int(stuck_after_seconds), limit),
+        )
+        return [dict(row) for row in cur.fetchall()]
+    finally:
+        _return_conn(conn)
+
+
 def execution_get_full(execution_id: str) -> Optional[dict[str, Any]]:
     """Return one execution enriched with attempts and the final result."""
     execution = execution_get(execution_id)

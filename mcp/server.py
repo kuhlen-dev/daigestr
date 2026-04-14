@@ -189,6 +189,7 @@ except ImportError:
 # Re-export normalizer_db for backwards-compatibility (T-DAI-050)
 from normalizer_db import (  # noqa: F401
     init_normalization_db,
+    get_normalization_drift_summary,
 )
 
 # Re-export audit_db functions and settings for backwards-compatibility (T-DAI-070)
@@ -228,6 +229,8 @@ from execution_db import (  # noqa: F401
     execution_get_by_request_id,
     execution_get_by_job_id,
     execution_list,
+    execution_list_active,
+    execution_list_stuck,
     execution_attempt_upsert,
     execution_attempt_list,
     execution_result_upsert,

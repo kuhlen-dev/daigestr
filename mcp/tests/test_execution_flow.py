@@ -323,6 +323,90 @@ def test_direct_execution_status_includes_canonical_progress(monkeypatch):
     assert execution_status.progress.attempt_mode == "default"
 
 
+def test_api_execution_diagnostics_returns_active_stuck_and_drift(monkeypatch):
+    api_rest = _load_api_rest_module()
+    server_module = sys.modules.get("server")
+
+    active_row = {
+        "id": "exec-active",
+        "request_id": "req-active",
+        "execution_kind": "direct",
+        "source_type": "file",
+        "source_ref": "/data/a.txt",
+        "job_id": None,
+        "batch_id": None,
+        "batch_item_id": None,
+        "status": "processing",
+        "current_stage": "extract",
+        "progress_json": {"status": "processing", "current_stage": "extract", "percent": 80},
+        "document_identity": None,
+        "policy_context": None,
+        "warning_summary": None,
+        "error_summary": None,
+        "created_at": "2026-04-14T00:00:00Z",
+        "updated_at": "2026-04-14T00:01:00Z",
+        "started_at": "2026-04-14T00:00:01Z",
+        "finished_at": None,
+        "attempts": [],
+        "final_result": None,
+    }
+    stuck_row = {
+        **active_row,
+        "id": "exec-stuck",
+        "request_id": "req-stuck",
+        "status": "processing",
+        "current_stage": "ocr",
+    }
+
+    monkeypatch.setattr(api_rest, "execution_list_active", lambda limit=25: [{"id": "exec-active"}])
+    monkeypatch.setattr(api_rest, "execution_list_stuck", lambda stuck_after_seconds, limit=25: [{"id": "exec-stuck"}])
+    monkeypatch.setattr(
+        api_rest,
+        "execution_get_full",
+        lambda execution_id: active_row if execution_id == "exec-active" else stuck_row,
+    )
+    monkeypatch.setattr(
+        api_rest,
+        "get_normalization_drift_summary",
+        lambda limit=20: {
+            "total_enabled_templates": 10,
+            "mapped_templates": 9,
+            "unmapped_templates": 1,
+            "missing_template_ids": ["telecom_bill"],
+            "mapping_drift_detected": True,
+        },
+    )
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "execution_list_active", lambda limit=25: [{"id": "exec-active"}])
+        monkeypatch.setitem(server_module.__dict__, "execution_list_stuck", lambda stuck_after_seconds, limit=25: [{"id": "exec-stuck"}])
+        monkeypatch.setitem(
+            server_module.__dict__,
+            "execution_get_full",
+            lambda execution_id: active_row if execution_id == "exec-active" else stuck_row,
+        )
+        monkeypatch.setitem(
+            server_module.__dict__,
+            "get_normalization_drift_summary",
+            lambda limit=20: {
+                "total_enabled_templates": 10,
+                "mapped_templates": 9,
+                "unmapped_templates": 1,
+                "missing_template_ids": ["telecom_bill"],
+                "mapping_drift_detected": True,
+            },
+        )
+
+    result = api_rest._get_execution_diagnostics_payload(limit=5, stuck_after_seconds=600, drift_sample_limit=3)
+
+    assert result.active_count == 1
+    assert result.stuck_count == 1
+    assert result.stuck_threshold_seconds == 600
+    assert result.active_executions[0].execution_id == "exec-active"
+    assert result.stuck_executions[0].execution_id == "exec-stuck"
+    assert result.normalizer_drift["mapping_drift_detected"] is True
+    assert result.normalizer_drift["missing_template_ids"] == ["telecom_bill"]
+
+
 def test_async_execution_status_matches_job_progress(monkeypatch):
     import routing
     from execution_db import init_execution_db

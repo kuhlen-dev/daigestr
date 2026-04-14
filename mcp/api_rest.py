@@ -39,6 +39,7 @@ from models import (
     ExecutionAttemptResponse,
     ExecutionStatusResponse,
     ExecutionListResponse,
+    ExecutionDiagnosticsResponse,
     ErrorCode,
     create_error_response,
     create_success_response,
@@ -64,6 +65,9 @@ from settings import (
     MISTRAL_TIMEOUT,
     WEBHOOK_TIMEOUT_SECONDS,
     JOB_TIMEOUT_SECONDS,
+    EXECUTION_DIAGNOSTICS_LIMIT,
+    EXECUTION_STUCK_THRESHOLD_SECONDS,
+    NORMALIZATION_DRIFT_SAMPLE_LIMIT,
 )
 from progress_tracking import build_progress_payload, normalize_progress_payload
 from utils import _get, resolve_path, get_file_extension, get_mimetype, detect_mimetype_from_bytes
@@ -88,10 +92,13 @@ from execution_db import (
     execution_get_by_request_id,
     execution_get_by_job_id,
     execution_list,
+    execution_list_active,
+    execution_list_stuck,
     execution_update,
     execution_result_upsert,
     execution_result_get_final,
 )
+from normalizer_db import get_normalization_drift_summary
 from debug_snapshot_db import debug_snapshot_list, debug_snapshot_get
 from debug_snapshots import replay_normalization_from_snapshot
 from routing import (
@@ -266,9 +273,34 @@ def _get_job_result_payload(job_id: str) -> ConvertResponse:
     execution = _get("execution_get_by_job_id", execution_get_by_job_id)(job_id)
     if execution:
         final_result = _get("execution_result_get_final", execution_result_get_final)(execution["id"])
-        if final_result and final_result.get("response_json"):
-            return ConvertResponse.model_validate(final_result["response_json"])
+    if final_result and final_result.get("response_json"):
+        return ConvertResponse.model_validate(final_result["response_json"])
     raise HTTPException(status_code=500, detail=f"Job '{job_id}' has no result data")
+
+
+def _get_execution_diagnostics_payload(
+    *,
+    limit: int = EXECUTION_DIAGNOSTICS_LIMIT,
+    stuck_after_seconds: int = EXECUTION_STUCK_THRESHOLD_SECONDS,
+    drift_sample_limit: int = NORMALIZATION_DRIFT_SAMPLE_LIMIT,
+) -> ExecutionDiagnosticsResponse:
+    _active_rows = _get("execution_list_active", execution_list_active)(limit=limit)
+    _stuck_rows = _get("execution_list_stuck", execution_list_stuck)(
+        stuck_after_seconds=stuck_after_seconds,
+        limit=limit,
+    )
+    _full_row = _get("execution_get_full", execution_get_full)
+    active = [_build_execution_status_response(_full_row(row["id"]) or row) for row in _active_rows]
+    stuck = [_build_execution_status_response(_full_row(row["id"]) or row) for row in _stuck_rows]
+    drift = _get("get_normalization_drift_summary", get_normalization_drift_summary)(limit=drift_sample_limit)
+    return ExecutionDiagnosticsResponse(
+        active_count=len(active),
+        stuck_count=len(stuck),
+        stuck_threshold_seconds=stuck_after_seconds,
+        active_executions=active,
+        stuck_executions=stuck,
+        normalizer_drift=drift,
+    )
 
 # FastAPI Instanz
 app = FastAPI(
@@ -1409,6 +1441,20 @@ async def api_get_execution(execution_id: str) -> ExecutionStatusResponse:
 async def api_get_execution_result(execution_id: str) -> ConvertResponse:
     """Gibt das persistierte finale Ergebnis eines Ausführungslaufs zurück."""
     return _get_execution_result_payload(execution_id)
+
+
+@app.get("/v1/diagnostics/executions", response_model=ExecutionDiagnosticsResponse)
+async def api_get_execution_diagnostics(
+    limit: int = EXECUTION_DIAGNOSTICS_LIMIT,
+    stuck_after_seconds: int = EXECUTION_STUCK_THRESHOLD_SECONDS,
+    drift_sample_limit: int = NORMALIZATION_DRIFT_SAMPLE_LIMIT,
+) -> ExecutionDiagnosticsResponse:
+    """Operator-Diagnose für aktive/stuck Executions und normalize-mapping drift."""
+    return _get_execution_diagnostics_payload(
+        limit=limit,
+        stuck_after_seconds=stuck_after_seconds,
+        drift_sample_limit=drift_sample_limit,
+    )
 
 
 @app.get("/v1/debug/snapshots")

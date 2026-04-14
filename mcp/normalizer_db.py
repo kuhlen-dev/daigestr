@@ -213,6 +213,49 @@ def init_normalization_db() -> None:
         _return_conn(conn)
 
 
+def get_normalization_drift_summary(limit: int = 20) -> dict:
+    """Return a compact summary of template-to-normalizer coverage drift."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT COUNT(*) AS total_enabled_templates,
+                   COUNT(*) FILTER (WHERE normalize_mapping IS NOT NULL) AS mapped_templates,
+                   COUNT(*) FILTER (WHERE normalize_mapping IS NULL) AS unmapped_templates
+            FROM template
+            WHERE enabled = 1
+            """
+        )
+        counts = dict(cur.fetchone() or {})
+
+        cur.execute(
+            """
+            SELECT id
+            FROM template
+            WHERE enabled = 1
+              AND normalize_mapping IS NULL
+            ORDER BY category, display_name, id
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        missing_template_ids = [row["id"] for row in cur.fetchall()]
+
+        cur.execute("SELECT COUNT(*) AS normalized_field_count FROM normalized_fields WHERE active = true")
+        field_counts = dict(cur.fetchone() or {})
+
+        return {
+            **counts,
+            **field_counts,
+            "missing_template_ids": missing_template_ids,
+            "missing_template_sample_count": len(missing_template_ids),
+            "mapping_drift_detected": bool(counts.get("unmapped_templates")),
+        }
+    finally:
+        _return_conn(conn)
+
+
 # =============================================================================
 # Categories
 # =============================================================================

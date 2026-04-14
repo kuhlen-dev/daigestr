@@ -89,6 +89,11 @@ def test_tips_document_execution_status_fields(monkeypatch):
     assert "result_meta_summary" in execution_fields
     assert "attempts" in execution_fields
     assert result["response_contract"]["execution_endpoints"]["status"] == "GET /v1/executions/{id} returns the canonical execution status including attempts and canonical progress."
+    assert result["response_contract"]["diagnostics_endpoints"]["executions"] == "GET /v1/diagnostics/executions returns active executions, stuck executions, and normalization drift diagnostics for operators."
+    diagnostics_fields = result["response_contract"]["diagnostics_fields"]
+    assert "active_count" in diagnostics_fields
+    assert "stuck_executions" in diagnostics_fields
+    assert "normalizer_drift" in diagnostics_fields
 
 
 def test_tips_document_policy_resolution(monkeypatch):

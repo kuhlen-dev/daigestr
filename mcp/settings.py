@@ -132,6 +132,9 @@ _CLASSIFY_CACHE_TTL = CLASSIFY_CACHE_TTL  # backward-compat alias
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info").upper()
 LOG_FORMAT = os.getenv("LOG_FORMAT", "json")
 CONTRACT_VERSION = os.getenv("CONTRACT_VERSION", "1.0")
+EXECUTION_DIAGNOSTICS_LIMIT = int(os.getenv("EXECUTION_DIAGNOSTICS_LIMIT", "25"))
+EXECUTION_STUCK_THRESHOLD_SECONDS = int(os.getenv("EXECUTION_STUCK_THRESHOLD_SECONDS", "1800"))
+NORMALIZATION_DRIFT_SAMPLE_LIMIT = int(os.getenv("NORMALIZATION_DRIFT_SAMPLE_LIMIT", "20"))
 
 # =============================================================================
 # Dateitypen
@@ -218,7 +221,7 @@ MERMAID_CDN_URL = os.getenv("MERMAID_CDN_URL", "https://cdn.jsdelivr.net/npm/mer
 HIGHLIGHTJS_CDN_URL = os.getenv("HIGHLIGHTJS_CDN_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js")
 HIGHLIGHTJS_CSS_URL = os.getenv("HIGHLIGHTJS_CSS_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css")
 
-VERSION = os.getenv("DAIGESTR_VERSION", "16.3.3")
+VERSION = os.getenv("DAIGESTR_VERSION", "16.3.4")
 START_TIME = time.time()
 
 # =============================================================================

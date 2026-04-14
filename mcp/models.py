@@ -110,6 +110,15 @@ CANONICAL_EXECUTION_FIELDS: dict[str, str] = {
     "final_result_available": "Whether a final result payload is persisted for the execution.",
 }
 
+CANONICAL_DIAGNOSTICS_FIELDS: dict[str, str] = {
+    "active_count": "Number of currently queued or processing executions.",
+    "stuck_count": "Number of executions currently classified as stale.",
+    "stuck_threshold_seconds": "Configured age threshold used to classify stuck executions.",
+    "active_executions": "Recent active executions for operator diagnostics.",
+    "stuck_executions": "Executions currently classified as stuck.",
+    "normalizer_drift": "Normalization coverage and drift summary across enabled templates.",
+}
+
 
 # =============================================================================
 # Basis-Schemas
@@ -371,6 +380,16 @@ class ExecutionStatusResponse(BaseModel):
 class ExecutionListResponse(BaseModel):
     """Liste kanonischer Executions, neueste zuerst."""
     executions: list[ExecutionStatusResponse] = Field(default_factory=list, description="Neueste Ausführungsläufe zuerst")
+
+
+class ExecutionDiagnosticsResponse(BaseModel):
+    """Operator-oriented diagnostics for active/stuck executions and normalization drift."""
+    active_count: int = Field(..., description="Anzahl aktuell aktiver Executions")
+    stuck_count: int = Field(..., description="Anzahl aktuell als stuck eingestufter Executions")
+    stuck_threshold_seconds: int = Field(..., description="Schwellwert in Sekunden für stuck execution detection")
+    active_executions: list[ExecutionStatusResponse] = Field(default_factory=list, description="Aktive Executions, neueste zuerst")
+    stuck_executions: list[ExecutionStatusResponse] = Field(default_factory=list, description="Als stuck klassifizierte Executions")
+    normalizer_drift: dict[str, Any] = Field(default_factory=dict, description="Kompakte Drift-/Coverage-Sicht für normalize mappings")
 
 
 # =============================================================================

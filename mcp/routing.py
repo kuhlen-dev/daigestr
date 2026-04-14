@@ -30,6 +30,7 @@ from markitdown import MarkItDown as _MarkItDown
 from models import (
     CANONICAL_ERROR_SEMANTICS,
     CANONICAL_EXECUTION_FIELDS,
+    CANONICAL_DIAGNOSTICS_FIELDS,
     CANONICAL_META_FIELDS,
     CANONICAL_NULL_SEMANTICS,
     CANONICAL_RESULT_FIELDS,
@@ -3121,6 +3122,9 @@ def _build_tips_dict() -> dict:
                 "result": "GET /v1/executions/{id}/result returns the persisted final ConvertResponse for the execution.",
                 "audit": "GET /v1/audit/execution/{id} returns audit events correlated by execution_id.",
             },
+            "diagnostics_endpoints": {
+                "executions": "GET /v1/diagnostics/executions returns active executions, stuck executions, and normalization drift diagnostics for operators.",
+            },
             "job_progress_fields": {
                 "progress.status": "Job status snapshot, e.g. queued, processing, failed.",
                 "progress.current_stage": "Current pipeline stage such as start, markitdown, describe_page, classify, extract, chunk, render, done, failed.",
@@ -3137,6 +3141,7 @@ def _build_tips_dict() -> dict:
                 "progress.metadata": "Additional context such as filename or source.",
             },
             "execution_status_fields": CANONICAL_EXECUTION_FIELDS,
+            "diagnostics_fields": CANONICAL_DIAGNOSTICS_FIELDS,
         },
         "canonical_meta_fields": {f"meta.{name}": description for name, description in CANONICAL_META_FIELDS.items()},
         "brix_integration_contract": {
