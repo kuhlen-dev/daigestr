@@ -164,6 +164,13 @@ def _execution_result_id(execution_id: str, *, kind: str) -> str:
 
 
 def _build_execution_status_response(row: dict[str, Any]) -> ExecutionStatusResponse:
+    progress = None
+    if row.get("progress_json"):
+        try:
+            normalized = normalize_progress_payload(row["progress_json"])
+            progress = ProgressState(**normalized) if normalized else None
+        except Exception:
+            progress = None
     attempts = [
         ExecutionAttemptResponse(
             attempt_id=attempt["id"],
@@ -192,6 +199,7 @@ def _build_execution_status_response(row: dict[str, Any]) -> ExecutionStatusResp
         batch_item_id=row.get("batch_item_id"),
         status=row["status"],
         current_stage=row.get("current_stage"),
+        progress=progress,
         document_identity=row.get("document_identity"),
         policy_context=row.get("policy_context"),
         warning_summary=row.get("warning_summary"),
@@ -1042,10 +1050,19 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
         ).model_dump_json(),
     )
     if execution_id:
+        start_progress = build_progress_payload(
+            status="processing",
+            current_stage="start",
+            message="Starting conversion",
+            percent=0,
+            request_id=request.meta.get("_request_id"),
+            job_id=job_id,
+        )
         _execution_update(
             execution_id,
             status="processing",
             current_stage="start",
+            progress_json=start_progress,
             started_at_now=True,
         )
     try:
@@ -1158,6 +1175,14 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
                     execution_id,
                     status="failed",
                     current_stage="failed",
+                    progress_json=build_progress_payload(
+                        status="failed",
+                        current_stage="failed",
+                        message=f"Job timed out after {_job_timeout}s",
+                        percent=100,
+                        request_id=request.meta.get("_request_id"),
+                        job_id=job_id,
+                    ),
                     error_summary=timeout_result.error.model_dump() if timeout_result.error else None,
                     finished_at_now=True,
                 )
@@ -1222,6 +1247,14 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
                 execution_id,
                 status="failed",
                 current_stage="failed",
+                progress_json=build_progress_payload(
+                    status="failed",
+                    current_stage="failed",
+                    message=str(exc),
+                    percent=100,
+                    request_id=request.meta.get("_request_id"),
+                    job_id=job_id,
+                ),
                 error_summary=error_result.error.model_dump() if error_result.error else None,
                 finished_at_now=True,
             )
@@ -1258,7 +1291,13 @@ async def api_list_jobs() -> JobListResponse:
     for j in jobs:
         execution = _get("execution_get_by_job_id", execution_get_by_job_id)(j["id"])
         progress = None
-        if j.get("progress_json"):
+        if execution and execution.get("progress_json"):
+            try:
+                normalized = normalize_progress_payload(execution["progress_json"])
+                progress = ProgressState(**normalized) if normalized else None
+            except Exception:
+                progress = None
+        elif j.get("progress_json"):
             try:
                 normalized = normalize_progress_payload(json.loads(j["progress_json"]))
                 progress = ProgressState(**normalized) if normalized else None
@@ -1286,7 +1325,13 @@ async def api_get_job(job_id: str) -> JobStatusResponse:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
     execution = _get("execution_get_by_job_id", execution_get_by_job_id)(job_id)
     progress = None
-    if job.get("progress_json"):
+    if execution and execution.get("progress_json"):
+        try:
+            normalized = normalize_progress_payload(execution["progress_json"])
+            progress = ProgressState(**normalized) if normalized else None
+        except Exception:
+            progress = None
+    elif job.get("progress_json"):
         try:
             normalized = normalize_progress_payload(json.loads(job["progress_json"]))
             progress = ProgressState(**normalized) if normalized else None

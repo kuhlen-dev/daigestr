@@ -96,6 +96,7 @@ CANONICAL_EXECUTION_FIELDS: dict[str, str] = {
     "batch_item_id": "Parent batch item id when the execution belongs to a batch.",
     "status": "Canonical execution status.",
     "current_stage": "Current or final stage of the execution pipeline.",
+    "progress": "Canonical persisted progress snapshot shared by direct and async status views.",
     "document_identity": "Persisted identity and fingerprint of the input document when known.",
     "policy_context": "Persisted policy resolution used for the run.",
     "warning_summary": "Aggregated warning information for the execution.",
@@ -352,6 +353,7 @@ class ExecutionStatusResponse(BaseModel):
     batch_item_id: Optional[str] = Field(None, description="Batch-Item-ID bei Batch-Items")
     status: str = Field(..., description="Aktueller Status des Laufs")
     current_stage: Optional[str] = Field(None, description="Aktueller Verarbeitungsschritt")
+    progress: Optional[ProgressState] = Field(None, description="Kanonischer persistierter Progress-Snapshot dieses Laufs")
     document_identity: Optional[dict[str, Any]] = Field(None, description="Persistierte Identität des Eingangsdokuments")
     policy_context: Optional[dict[str, Any]] = Field(None, description="Persistierter Policy-Kontext des Laufs")
     warning_summary: Optional[dict[str, Any]] = Field(None, description="Aggregierte Warnungen")

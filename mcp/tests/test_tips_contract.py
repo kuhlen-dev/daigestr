@@ -85,8 +85,9 @@ def test_tips_document_execution_status_fields(monkeypatch):
     execution_fields = result["response_contract"]["execution_status_fields"]
     assert "execution_id" in execution_fields
     assert "status" in execution_fields
+    assert "progress" in execution_fields
     assert "attempts" in execution_fields
-    assert result["response_contract"]["execution_endpoints"]["status"] == "GET /v1/executions/{id} returns the canonical execution status including attempts."
+    assert result["response_contract"]["execution_endpoints"]["status"] == "GET /v1/executions/{id} returns the canonical execution status including attempts and canonical progress."
 
 
 def test_tips_document_policy_resolution(monkeypatch):

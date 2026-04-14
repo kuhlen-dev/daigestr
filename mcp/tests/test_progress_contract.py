@@ -112,6 +112,44 @@ def test_api_get_job_normalizes_legacy_progress_payload():
     assert response.progress.percent == 20
 
 
+def test_api_get_job_prefers_canonical_execution_progress_over_job_progress():
+    created_at = datetime.now(timezone.utc)
+    updated_at = datetime.now(timezone.utc)
+
+    with patch.object(
+        _server_api,
+        "job_get",
+        return_value={
+            "id": "job-exec",
+            "status": "completed",
+            "created_at": created_at,
+            "updated_at": updated_at,
+            "progress_json": json.dumps({"step": "ocr", "detail": "legacy", "percent": 20}),
+        },
+    ), patch.object(
+        _server_api,
+        "execution_get_by_job_id",
+        return_value={
+            "id": "exec-1",
+            "progress_json": {
+                "status": "completed",
+                "current_stage": "done",
+                "message": "canonical",
+                "percent": 100,
+                "job_id": "job-exec",
+            },
+        },
+    ):
+        response = run_async(_server_api.api_get_job("job-exec"))
+
+    assert response.execution_id == "exec-1"
+    assert response.progress is not None
+    assert response.progress.status == "completed"
+    assert response.progress.current_stage == "done"
+    assert response.progress.message == "canonical"
+    assert response.progress.percent == 100
+
+
 def test_api_list_jobs_materializes_null_progress_when_missing():
     now = datetime.now(timezone.utc)
 

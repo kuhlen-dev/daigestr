@@ -40,7 +40,7 @@ from models import (
     create_error_response,
     create_success_response,
 )
-from progress_tracking import build_progress_payload
+from progress_tracking import build_progress_payload, normalize_progress_payload
 from settings import (
     MAX_FILE_SIZE_BYTES,
     MAX_FILE_SIZE_MB,
@@ -281,12 +281,21 @@ def _ensure_execution_context(
     job_id: Optional[str],
     policy_context: Optional[dict[str, Any]] = None,
 ) -> str:
+    start_progress = build_progress_payload(
+        status="processing",
+        current_stage="start",
+        message="Starting conversion",
+        percent=0,
+        request_id=request_id,
+        job_id=job_id,
+    )
     if execution_id:
         _exec_update = _get("execution_update", execution_update)
         _exec_update(
             execution_id,
             status="processing",
             current_stage="start",
+            progress_json=start_progress,
             started_at_now=True,
         )
         return execution_id
@@ -299,6 +308,7 @@ def _ensure_execution_context(
             existing["id"],
             status=existing.get("status") or "processing",
             current_stage=existing.get("current_stage") or "start",
+            progress_json=existing.get("progress_json") or start_progress,
             started_at_now=True,
         )
         return existing["id"]
@@ -313,6 +323,7 @@ def _ensure_execution_context(
         job_id=job_id,
         status="processing",
         current_stage="start",
+        progress_json=start_progress,
         policy_context=policy_context or {},
     )
     return created["id"]
@@ -369,10 +380,34 @@ def _persist_execution_attempt_result(
         error=response.error.model_dump() if response.error else None,
     )
     if is_final:
+        _exec_get = _get("execution_get", execution_get)
+        existing_execution = _exec_get(execution_id)
+        existing_progress = normalize_progress_payload(existing_execution.get("progress_json")) if existing_execution else None
+        terminal_stage = (
+            existing_progress.get("current_stage")
+            if existing_progress and existing_progress.get("current_stage") not in {"start", "attempt_running"}
+            else ("done" if response.success else "failed")
+        )
+        terminal_progress = build_progress_payload(
+            status="completed" if response.success else "failed",
+            current_stage=terminal_stage,
+            message=existing_progress.get("message") if existing_progress else None,
+            percent=100,
+            request_id=meta_payload.get("request_id"),
+            job_id=meta_payload.get("job_id"),
+            attempt_number=meta_payload.get("attempt_number"),
+            attempt_count=meta_payload.get("attempt_count"),
+            attempt_mode=meta_payload.get("attempt_mode"),
+            page_current=existing_progress.get("page_current") if existing_progress else None,
+            page_total=existing_progress.get("page_total") if existing_progress else None,
+            upstream_attempt=existing_progress.get("upstream_attempt") if existing_progress else None,
+            metadata=existing_progress.get("metadata") if existing_progress else None,
+        )
         _exec_update(
             execution_id,
             status="completed" if response.success else "failed",
-            current_stage="completed" if response.success else "failed",
+            current_stage=terminal_stage,
+            progress_json=terminal_progress,
             warning_summary={"warnings": response.warnings or response.normalized_warnings} if (response.warnings or response.normalized_warnings) else None,
             error_summary=response.error.model_dump() if response.error else None,
             finished_at_now=True,
@@ -1644,6 +1679,7 @@ async def _convert_auto_impl(
     """
     start_time = time.time()
     request_id = request_id or input_meta.get("_request_id") or str(uuid.uuid4())
+    execution_id = input_meta.get("execution_id")
 
     # T-DAI-071: Audit-Logging — fire-and-forget
     _audit_enabled = _get("AUDIT_ENABLED", AUDIT_ENABLED)
@@ -1735,6 +1771,17 @@ async def _convert_auto_impl(
                 _fn = _get("job_update", _default_job_update)
                 if _fn:
                     _fn(_job_id, "processing", progress_payload.model_dump_json())
+            except Exception:
+                pass
+        if execution_id:
+            try:
+                _exec_update = _get("execution_update", execution_update)
+                _exec_update(
+                    execution_id,
+                    status="processing",
+                    current_stage=step,
+                    progress_json=progress_payload.model_dump(),
+                )
             except Exception:
                 pass
 
@@ -3043,7 +3090,7 @@ def _build_tips_dict() -> dict:
             },
             "execution_endpoints": {
                 "list": "GET /v1/executions returns the canonical history view for direct, async, and later batch-item executions.",
-                "status": "GET /v1/executions/{id} returns the canonical execution status including attempts.",
+                "status": "GET /v1/executions/{id} returns the canonical execution status including attempts and canonical progress.",
                 "result": "GET /v1/executions/{id}/result returns the persisted final ConvertResponse for the execution.",
                 "audit": "GET /v1/audit/execution/{id} returns audit events correlated by execution_id.",
             },

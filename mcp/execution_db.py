@@ -46,6 +46,7 @@ def init_execution_db() -> None:
                 batch_item_id TEXT,
                 status TEXT NOT NULL DEFAULT 'queued',
                 current_stage TEXT,
+                progress_json JSONB,
                 document_identity JSONB,
                 policy_context JSONB,
                 warning_summary JSONB,
@@ -74,6 +75,10 @@ def init_execution_db() -> None:
             "ON execution(batch_item_id)"
         )
 
+        cur.execute(
+            "ALTER TABLE execution "
+            "ADD COLUMN IF NOT EXISTS progress_json JSONB"
+        )
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS execution_attempt (
@@ -161,6 +166,7 @@ def execution_create(
     policy_context: Optional[dict[str, Any]] = None,
     status: str = "queued",
     current_stage: Optional[str] = None,
+    progress_json: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """Create a new canonical execution row and return it."""
     if execution_kind not in _EXECUTION_KINDS:
@@ -174,9 +180,9 @@ def execution_create(
             INSERT INTO execution (
                 id, request_id, execution_kind, source_type, source_ref,
                 job_id, batch_id, batch_item_id, status, current_stage,
-                document_identity, policy_context
+                progress_json, document_identity, policy_context
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
             (
@@ -190,6 +196,7 @@ def execution_create(
                 batch_item_id,
                 status,
                 current_stage,
+                psycopg2.extras.Json(progress_json) if progress_json is not None else None,
                 psycopg2.extras.Json(document_identity) if document_identity is not None else None,
                 psycopg2.extras.Json(policy_context) if policy_context is not None else None,
             ),
@@ -206,6 +213,7 @@ def execution_update(
     *,
     status: Optional[str] = None,
     current_stage: Optional[str] = None,
+    progress_json: Optional[dict[str, Any]] = None,
     warning_summary: Optional[dict[str, Any]] = None,
     error_summary: Optional[dict[str, Any]] = None,
     policy_context: Optional[dict[str, Any]] = None,
@@ -222,6 +230,9 @@ def execution_update(
     if current_stage is not None:
         assignments.append("current_stage = %s")
         params.append(current_stage)
+    if progress_json is not None:
+        assignments.append("progress_json = %s")
+        params.append(psycopg2.extras.Json(progress_json))
     if warning_summary is not None:
         assignments.append("warning_summary = %s")
         params.append(psycopg2.extras.Json(warning_summary))
