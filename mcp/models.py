@@ -5,6 +5,7 @@ Daigestr — Datenmodelle und Schemas
 from datetime import datetime, timezone
 from typing import Any, Optional
 from pydantic import BaseModel, Field, ConfigDict, field_validator
+from settings import CONTRACT_VERSION
 
 
 CANONICAL_META_FIELDS: dict[str, str] = {
@@ -14,6 +15,7 @@ CANONICAL_META_FIELDS: dict[str, str] = {
     "attempt_number": "Ordinal number of the attempt that produced the returned payload.",
     "attempt_count": "Total number of attempts materialized for the returned payload.",
     "attempt_mode": "Mode of the attempt that produced the returned payload.",
+    "contract_version": "Version of the canonical Daigestr response contract.",
     "document_type": "Canonical document classification output.",
     "document_type_confidence": "Confidence for meta.document_type.",
     "template_used": "Canonical template identifier used or selected for extraction.",
@@ -127,6 +129,7 @@ class MetaData(BaseModel):
     format: Optional[str] = Field(None, description="Dateiformat (pdf, jpg, docx, ...)")
     size_bytes: Optional[int] = Field(None, description="Dateigröße in Bytes")
     processed_at: Optional[str] = Field(None, description="Verarbeitungszeitpunkt (ISO 8601)")
+    contract_version: Optional[str] = Field(None, description="Version des kanonischen Daigestr-Response-Contracts")
     duration_ms: Optional[int] = Field(None, description="Verarbeitungsdauer in Millisekunden")
     request_id: Optional[str] = Field(None, description="Stabile ID für den gesamten Convert-Lauf über alle internen Versuche hinweg")
     execution_id: Optional[str] = Field(None, description="Kanonische ID des persistierten Ausführungslaufs")
@@ -677,10 +680,14 @@ def create_error_response(
     details: Optional[dict[str, Any]] = None
 ) -> ConvertResponse:
     """Erstellt eine einheitliche Fehlerantwort."""
+    enriched_meta = {**MINIMUM_META_FIELDS, **(meta or {})}
+    enriched_meta["processed_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    enriched_meta["contract_version"] = enriched_meta.get("contract_version") or CONTRACT_VERSION
     return ConvertResponse(
         success=False,
         error=ErrorDetail(code=code, message=message, details=details),
-        meta=MetaData(**(meta or {}))
+        meta=MetaData(**enriched_meta),
+        **SUCCESS_RESPONSE_DEFAULTS,
     )
 
 
@@ -691,6 +698,7 @@ def create_success_response(
     """Erstellt eine einheitliche Erfolgsantwort."""
     enriched_meta = {**MINIMUM_META_FIELDS, **(meta or {})}
     enriched_meta["processed_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    enriched_meta["contract_version"] = enriched_meta.get("contract_version") or CONTRACT_VERSION
 
     return ConvertResponse(
         success=True,

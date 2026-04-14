@@ -131,6 +131,7 @@ _CLASSIFY_CACHE_TTL = CLASSIFY_CACHE_TTL  # backward-compat alias
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info").upper()
 LOG_FORMAT = os.getenv("LOG_FORMAT", "json")
+CONTRACT_VERSION = os.getenv("CONTRACT_VERSION", "1.0")
 
 # =============================================================================
 # Dateitypen

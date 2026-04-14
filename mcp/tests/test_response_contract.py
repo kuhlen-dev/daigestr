@@ -40,7 +40,10 @@ def test_create_success_response_materializes_canonical_meta_fields():
 
     for field_name, expected in MINIMUM_META_FIELDS.items():
         assert field_name in meta, f"Missing canonical meta field: {field_name}"
-        assert meta[field_name] == expected
+        if field_name == "contract_version":
+            assert meta[field_name] == "1.0"
+        else:
+            assert meta[field_name] == expected
 
 
 def test_create_success_response_preserves_explicit_canonical_meta_values():
@@ -68,6 +71,17 @@ def test_create_success_response_preserves_explicit_canonical_meta_values():
     assert meta["quality_grade"] == "good"
     assert meta["accuracy_mode"] == "standard"
     assert meta["pipeline_steps"] == ["convert", "classify"]
+
+
+def test_create_error_response_materializes_contract_version_and_stable_shape():
+    from models import create_error_response
+
+    response = create_error_response("ERROR", "broken")
+    payload = response.model_dump()
+
+    assert payload["success"] is False
+    assert payload["warnings"] is None
+    assert payload["meta"]["contract_version"] == "1.0"
 
 
 def test_success_response_json_contains_nulls_instead_of_missing_fields():

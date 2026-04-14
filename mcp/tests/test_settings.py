@@ -144,3 +144,6 @@ class TestSettingsDefaults:
     def test_long_document_threshold_default(self, settings):
         assert settings.LONG_DOCUMENT_PAGE_THRESHOLD == 25
         assert isinstance(settings.LONG_DOCUMENT_PAGE_THRESHOLD, int)
+
+    def test_contract_version_default(self, settings):
+        assert settings.CONTRACT_VERSION == "1.0"

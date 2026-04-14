@@ -49,6 +49,7 @@ def test_tips_document_response_contract_and_null_semantics(monkeypatch):
     assert "normalized" in contract["success_response_fields"]
     assert "error" in contract["required_top_level_fields"]
     assert "execution_id" in contract["required_meta_fields"]
+    assert "contract_version" in contract["required_meta_fields"]
     assert contract["null_semantics"]["null"]
     assert contract["error_semantics"]["success_false"]
     assert contract["job_progress_endpoints"]["status"] == "GET /v1/jobs/{id} returns canonical progress under progress."
@@ -96,6 +97,7 @@ def test_tips_document_policy_resolution(monkeypatch):
     monkeypatch.setattr(_server, "QUALITY_RETRY_MODE", "full")
     monkeypatch.setattr(_server, "LONG_DOCUMENT_PAGE_THRESHOLD", 25)
     monkeypatch.setattr(_server, "PAGE_DESCRIBE_MAX_PAGES", 50)
+    monkeypatch.setattr(_server, "CONTRACT_VERSION", "1.0")
 
     result = _server._build_tips_dict()
 
@@ -106,6 +108,7 @@ def test_tips_document_policy_resolution(monkeypatch):
     assert policy["long_document_policy"]["page_threshold"] == 25
     assert policy["normalization_policy"]["resolved_template_order"][0] == "meta.template_used"
     assert "warnings" in result["response_fields"]
+    assert "meta.contract_version" in result["canonical_meta_fields"]
 
 
 def test_tips_document_brix_integration_contract(monkeypatch):
