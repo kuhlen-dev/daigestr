@@ -60,6 +60,7 @@ from settings import (
     CONVERT_TIMEOUT_SECONDS,
     BRIX_URL,
     PAGE_DESCRIBE_MAX_PAGES,
+    LONG_DOCUMENT_PAGE_THRESHOLD,
     AUDIT_ENABLED,
     DEFAULT_CLASSIFY,
     QUALITY_RETRY_ENABLED,
@@ -113,6 +114,7 @@ from debug_snapshots import should_capture_debug_snapshot, build_debug_snapshot_
 from debug_snapshot_db import debug_snapshot_store
 from execution_db import (
     execution_create,
+    execution_get,
     execution_get_by_request_id,
     execution_update,
     execution_attempt_upsert,
@@ -394,6 +396,148 @@ def _apply_explicit_template_meta(meta: dict[str, Any], template: Optional[str])
         meta["template_version"] = tmpl.get("version", 1)
 
 
+def _merge_execution_policy_context(
+    execution_id: Optional[str],
+    **sections: dict[str, Any],
+) -> None:
+    """Merge resolved policy sections into the canonical execution policy context."""
+    if not execution_id:
+        return
+    _exec_get = _get("execution_get", execution_get)
+    _exec_update = _get("execution_update", execution_update)
+    existing = _exec_get(execution_id)
+    policy_context = dict(existing.get("policy_context") or {}) if existing else {}
+    for key, value in sections.items():
+        if value is not None:
+            policy_context[key] = value
+    _exec_update(execution_id, policy_context=policy_context)
+
+
+def _resolve_mode_policy(
+    *,
+    mode: str,
+    describe_images: bool,
+    describe_pages: bool,
+    accuracy: str,
+    ocr_correct: bool,
+    auto_extract: bool,
+    chunk: bool,
+) -> dict[str, Any]:
+    """Resolve effective mode-driven processing flags without scattering side effects."""
+    resolved = {
+        "mode": mode,
+        "describe_images": describe_images,
+        "describe_pages": describe_pages,
+        "accuracy": accuracy,
+        "ocr_correct": ocr_correct,
+        "auto_extract": auto_extract,
+        "chunk": chunk,
+        "forced_features": [],
+    }
+    if mode == "full":
+        resolved.update(
+            describe_pages=True,
+            accuracy="high",
+            ocr_correct=True,
+            auto_extract=True,
+            chunk=True,
+        )
+        resolved["forced_features"] = [
+            "describe_pages",
+            "accuracy_high",
+            "ocr_correct",
+            "auto_extract",
+            "chunk",
+        ]
+    elif mode == "deep":
+        resolved.update(
+            describe_pages=True,
+            describe_images=True,
+            accuracy="high",
+            ocr_correct=True,
+            auto_extract=True,
+            chunk=True,
+        )
+        resolved["forced_features"] = [
+            "describe_pages",
+            "describe_images",
+            "accuracy_high",
+            "ocr_correct",
+            "auto_extract",
+            "chunk",
+        ]
+    return resolved
+
+
+def _resolve_retry_policy(
+    *,
+    retry_on_low_quality: Optional[bool],
+    quality_retry_threshold: Optional[float],
+    quality_retry_mode: Optional[str],
+    mode: str,
+    extraction_requested: bool,
+) -> dict[str, Any]:
+    """Resolve low-quality retry policy from request overrides and env defaults."""
+    enabled = retry_on_low_quality
+    if enabled is None:
+        enabled = bool(_get("QUALITY_RETRY_ENABLED", QUALITY_RETRY_ENABLED))
+    threshold = quality_retry_threshold
+    if threshold is None:
+        threshold = float(_get("QUALITY_RETRY_THRESHOLD", QUALITY_RETRY_THRESHOLD))
+    retry_mode = quality_retry_mode
+    if retry_mode is None:
+        retry_mode = _get("QUALITY_RETRY_MODE", QUALITY_RETRY_MODE)
+    return {
+        "enabled": bool(enabled),
+        "threshold": float(threshold),
+        "retry_mode": retry_mode,
+        "eligible": bool(enabled) and mode == "default" and extraction_requested and retry_mode == "full",
+    }
+
+
+def _resolve_normalization_policy(
+    *,
+    compact: bool,
+    requested_template: Optional[str],
+    meta: dict[str, Any],
+    auto_extract: bool,
+    extract_schema: Optional[dict[str, Any]],
+) -> dict[str, Any]:
+    """Resolve normalization intent and template selection from canonical meta."""
+    resolved_template = meta.get("template_used") or requested_template or meta.get("document_type")
+    return {
+        "requested": bool(auto_extract or extract_schema or requested_template),
+        "apply_normalizer": bool(resolved_template),
+        "compact": compact,
+        "requested_template": requested_template,
+        "resolved_template": resolved_template,
+        "document_type": meta.get("document_type"),
+    }
+
+
+def _resolve_long_document_policy(
+    *,
+    filename: str,
+    source_type: str,
+    describe_pages: bool,
+    page_count: Optional[int],
+) -> dict[str, Any]:
+    """Resolve long-document classification and page-render policy from input/output facts."""
+    threshold = int(_get("LONG_DOCUMENT_PAGE_THRESHOLD", LONG_DOCUMENT_PAGE_THRESHOLD))
+    max_describe_pages = int(_get("PAGE_DESCRIBE_MAX_PAGES", PAGE_DESCRIBE_MAX_PAGES))
+    ext = get_file_extension(filename).lower()
+    normalized_page_count = int(page_count) if isinstance(page_count, int) or (isinstance(page_count, str) and page_count.isdigit()) else None
+    return {
+        "source_type": source_type,
+        "extension": ext,
+        "page_count": normalized_page_count,
+        "threshold": threshold,
+        "is_long_document": bool(normalized_page_count is not None and normalized_page_count >= threshold),
+        "describe_pages_requested": bool(describe_pages),
+        "page_describe_max_pages": max_describe_pages,
+    }
+
+
 def _is_brix_available() -> bool:
     """Lazy Brix health-check mit 5-Minuten-Cache."""
     _brix_url = _get("BRIX_URL", BRIX_URL)
@@ -527,13 +671,28 @@ async def finalize_url_markdown_response(
     _apply_auto = _get("_apply_auto_extract", _apply_auto_extract)
     _chunk_md = _get("chunk_markdown", chunk_markdown)
 
-    if mode == "full":
-        accuracy = "high"
-        ocr_correct = True
-        auto_extract = True
-        chunk = True
+    mode_policy = _resolve_mode_policy(
+        mode=mode,
+        describe_images=False,
+        describe_pages=False,
+        accuracy=accuracy,
+        ocr_correct=ocr_correct,
+        auto_extract=auto_extract,
+        chunk=chunk,
+    )
+    accuracy = mode_policy["accuracy"]
+    ocr_correct = mode_policy["ocr_correct"]
+    auto_extract = mode_policy["auto_extract"]
+    chunk = mode_policy["chunk"]
 
     classify = _resolve_classify_policy(classify, auto_extract=auto_extract, mode=mode)
+    retry_policy = _resolve_retry_policy(
+        retry_on_low_quality=retry_on_low_quality,
+        quality_retry_threshold=quality_retry_threshold,
+        quality_retry_mode=quality_retry_mode,
+        mode=mode,
+        extraction_requested=bool(auto_extract or extract_schema or template),
+    )
     request_id = request_id or meta.get("request_id") or str(uuid.uuid4())
     execution_id = meta.get("execution_id")
     execution_kind = "async" if job_id else "direct"
@@ -545,11 +704,8 @@ async def finalize_url_markdown_response(
         source_ref=source,
         job_id=job_id,
         policy_context={
-            "mode": mode,
-            "classify": classify,
-            "auto_extract": auto_extract,
-            "template": template,
-            "has_extract_schema": bool(extract_schema),
+            "mode_policy": {**mode_policy, "classify": classify},
+            "retry_policy": retry_policy,
             "source_type": "url",
         },
     )
@@ -567,11 +723,8 @@ async def finalize_url_markdown_response(
     _exec_update(
         execution_id,
         policy_context={
-            "mode": mode,
-            "classify": classify,
-            "auto_extract": auto_extract,
-            "template": template,
-            "has_extract_schema": bool(extract_schema),
+            "mode_policy": {**mode_policy, "classify": classify},
+            "retry_policy": retry_policy,
             "source_type": "url",
         },
     )
@@ -594,9 +747,9 @@ async def finalize_url_markdown_response(
     effective_meta["attempt_mode"] = mode
     _apply_explicit_template_meta(effective_meta, template)
 
-    retry_on_low_quality = QUALITY_RETRY_ENABLED if retry_on_low_quality is None else retry_on_low_quality
-    quality_retry_threshold = QUALITY_RETRY_THRESHOLD if quality_retry_threshold is None else quality_retry_threshold
-    quality_retry_mode = QUALITY_RETRY_MODE if quality_retry_mode is None else quality_retry_mode
+    retry_on_low_quality = retry_policy["enabled"]
+    quality_retry_threshold = retry_policy["threshold"]
+    quality_retry_mode = retry_policy["retry_mode"]
 
     effective_meta["accuracy_mode"] = accuracy
 
@@ -699,11 +852,39 @@ async def finalize_url_markdown_response(
             )
             return response
 
-    norm_template = effective_meta.get("template_used") or template or effective_meta.get("document_type")
-    response = await _apply_normalizer(response, effective_meta, norm_template, compact)
+    normalization_policy = _resolve_normalization_policy(
+        compact=compact,
+        requested_template=template,
+        meta=effective_meta,
+        auto_extract=auto_extract,
+        extract_schema=extract_schema,
+    )
+    response = await _apply_normalizer(
+        response,
+        effective_meta,
+        normalization_policy["resolved_template"],
+        normalization_policy["compact"],
+    )
     if chunk:
         response.chunks = _chunk_md(markdown_text, chunk_size=chunk_size, source=source)
     response = _apply_output_format(response, output_format)
+
+    long_document_policy = _resolve_long_document_policy(
+        filename=source,
+        source_type="url",
+        describe_pages=False,
+        page_count=(
+            getattr(response.meta, "pages_processed", None)
+            or getattr(response.meta, "page_count", None)
+        ),
+    )
+    _merge_execution_policy_context(
+        execution_id,
+        mode_policy={**mode_policy, "classify": classify},
+        retry_policy=retry_policy,
+        normalization_policy=normalization_policy,
+        long_document_policy=long_document_policy,
+    )
 
     score = response.meta.quality_score
     response_contract_complete = _response_has_complete_extraction_contract(
@@ -895,21 +1076,30 @@ async def convert_auto(
     Intelligente Konvertierung basierend auf Dateityp.
     Kein interner Timeout — externe Limits (REST-Client, Brix-Pipeline) steuern.
     """
-    if mode == "full":
-        describe_pages = True
-        accuracy = "high"
-        ocr_correct = True
-        auto_extract = True
-        chunk = True
-    elif mode == "deep":
-        describe_pages = True
-        describe_images = True
-        accuracy = "high"
-        ocr_correct = True
-        auto_extract = True
-        chunk = True
+    mode_policy = _resolve_mode_policy(
+        mode=mode,
+        describe_images=describe_images,
+        describe_pages=describe_pages,
+        accuracy=accuracy,
+        ocr_correct=ocr_correct,
+        auto_extract=auto_extract,
+        chunk=chunk,
+    )
+    describe_images = mode_policy["describe_images"]
+    describe_pages = mode_policy["describe_pages"]
+    accuracy = mode_policy["accuracy"]
+    ocr_correct = mode_policy["ocr_correct"]
+    auto_extract = mode_policy["auto_extract"]
+    chunk = mode_policy["chunk"]
 
     classify = _resolve_classify_policy(classify, auto_extract=auto_extract, mode=mode)
+    retry_policy = _resolve_retry_policy(
+        retry_on_low_quality=retry_on_low_quality,
+        quality_retry_threshold=quality_retry_threshold,
+        quality_retry_mode=quality_retry_mode,
+        mode=mode,
+        extraction_requested=bool(auto_extract or extract_schema or template),
+    )
 
     request_id = input_meta.get("_request_id") or str(uuid.uuid4())
     job_id = input_meta.get("_job_id")
@@ -923,11 +1113,8 @@ async def convert_auto(
         source_ref=source,
         job_id=job_id,
         policy_context={
-            "mode": mode,
-            "classify": classify,
-            "auto_extract": auto_extract,
-            "template": template,
-            "has_extract_schema": bool(extract_schema),
+            "mode_policy": {**mode_policy, "classify": classify},
+            "retry_policy": retry_policy,
             "source_type": source_type,
         },
     )
@@ -942,26 +1129,14 @@ async def convert_auto(
     _exec_update(
         execution_id,
         policy_context={
-            "mode": mode,
-            "classify": classify,
-            "auto_extract": auto_extract,
-            "template": template,
-            "has_extract_schema": bool(extract_schema),
+            "mode_policy": {**mode_policy, "classify": classify},
+            "retry_policy": retry_policy,
             "source_type": source_type,
         },
     )
-
-    effective_retry_enabled = _get("QUALITY_RETRY_ENABLED", QUALITY_RETRY_ENABLED)
-    if retry_on_low_quality is not None:
-        effective_retry_enabled = retry_on_low_quality
-
-    effective_retry_threshold = quality_retry_threshold
-    if effective_retry_threshold is None:
-        effective_retry_threshold = _get("QUALITY_RETRY_THRESHOLD", QUALITY_RETRY_THRESHOLD)
-
-    effective_retry_mode = quality_retry_mode
-    if effective_retry_mode is None:
-        effective_retry_mode = _get("QUALITY_RETRY_MODE", QUALITY_RETRY_MODE)
+    effective_retry_enabled = retry_policy["enabled"]
+    effective_retry_threshold = retry_policy["threshold"]
+    effective_retry_mode = retry_policy["retry_mode"]
 
     _server_module = sys.modules.get("server")
     _server_impl = None
@@ -1124,10 +1299,7 @@ async def convert_auto(
         template=template,
     )
     should_retry = (
-        bool(effective_retry_enabled)
-        and mode == "default"
-        and extraction_requested
-        and effective_retry_mode == "full"
+        retry_policy["eligible"]
         and (
             not initial_contract_complete
             or (response.success and (initial_score is None or initial_score < float(effective_retry_threshold)))
@@ -1152,6 +1324,27 @@ async def convert_auto(
             attempt_reason="initial",
             response=response,
             is_final=True,
+        )
+        _merge_execution_policy_context(
+            execution_id,
+            mode_policy={**mode_policy, "classify": classify},
+            retry_policy=retry_policy,
+            normalization_policy=_resolve_normalization_policy(
+                compact=compact,
+                requested_template=template,
+                meta=response.meta.model_dump(),
+                auto_extract=auto_extract,
+                extract_schema=extract_schema,
+            ),
+            long_document_policy=_resolve_long_document_policy(
+                filename=filename,
+                source_type=source_type,
+                describe_pages=describe_pages,
+                page_count=(
+                    getattr(response.meta, "pages_processed", None)
+                    or getattr(response.meta, "page_count", None)
+                ),
+            ),
         )
         return response
 
@@ -1228,6 +1421,27 @@ async def convert_auto(
         attempt_reason=retry_reason,
         response=selected_response,
         is_final=True,
+    )
+    _merge_execution_policy_context(
+        execution_id,
+        mode_policy={**mode_policy, "classify": classify},
+        retry_policy=retry_policy,
+        normalization_policy=_resolve_normalization_policy(
+            compact=compact,
+            requested_template=template,
+            meta=selected_response.meta.model_dump(),
+            auto_extract=auto_extract,
+            extract_schema=extract_schema,
+        ),
+        long_document_policy=_resolve_long_document_policy(
+            filename=filename,
+            source_type=source_type,
+            describe_pages=describe_pages,
+            page_count=(
+                getattr(selected_response.meta, "pages_processed", None)
+                or getattr(selected_response.meta, "page_count", None)
+            ),
+        ),
     )
     return selected_response
 
@@ -1410,26 +1624,32 @@ async def _convert_auto_impl(
         },
     )
 
-    retry_on_low_quality = QUALITY_RETRY_ENABLED if retry_on_low_quality is None else retry_on_low_quality
-    quality_retry_threshold = QUALITY_RETRY_THRESHOLD if quality_retry_threshold is None else quality_retry_threshold
-    quality_retry_mode = QUALITY_RETRY_MODE if quality_retry_mode is None else quality_retry_mode
-
-    # T-DAI-030: Mode-Resolution — 'full' = page-rendering, 'deep' = full + Einzelbilder
-    if mode == "full":
-        describe_pages = True
-        accuracy = "high"
-        classify = True
-        ocr_correct = True
-        auto_extract = True
-        chunk = True
-    elif mode == "deep":
-        describe_pages = True
-        describe_images = True
-        accuracy = "high"
-        classify = True
-        ocr_correct = True
-        auto_extract = True
-        chunk = True
+    mode_policy = _resolve_mode_policy(
+        mode=mode,
+        describe_images=describe_images,
+        describe_pages=describe_pages,
+        accuracy=accuracy,
+        ocr_correct=ocr_correct,
+        auto_extract=auto_extract,
+        chunk=chunk,
+    )
+    describe_images = mode_policy["describe_images"]
+    describe_pages = mode_policy["describe_pages"]
+    accuracy = mode_policy["accuracy"]
+    ocr_correct = mode_policy["ocr_correct"]
+    auto_extract = mode_policy["auto_extract"]
+    chunk = mode_policy["chunk"]
+    classify = _resolve_classify_policy(classify, auto_extract=auto_extract, mode=mode)
+    retry_policy = _resolve_retry_policy(
+        retry_on_low_quality=retry_on_low_quality,
+        quality_retry_threshold=quality_retry_threshold,
+        quality_retry_mode=quality_retry_mode,
+        mode=mode,
+        extraction_requested=bool(auto_extract or extract_schema or template),
+    )
+    retry_on_low_quality = retry_policy["enabled"]
+    quality_retry_threshold = retry_policy["threshold"]
+    quality_retry_mode = retry_policy["retry_mode"]
 
     # T-DAI-019: Request-Level-Cache — Cache-Key aus file_data + relevanten Parametern
     _cache_enabled = _get("CACHE_ENABLED", CACHE_ENABLED)
@@ -2635,6 +2855,29 @@ def _build_tips_dict() -> dict:
             "pages": {"type": "str", "default": None, "description": "PDF page selection. Syntax: '1-3', '7,14,22', '10-20,!15'. Null = all pages."},
             "webhook_url": {"type": "str", "default": None, "description": "URL to POST the result to when conversion completes. Errors logged silently."},
             "no_cache": {"type": "bool", "default": False, "description": "Bypass cache and force fresh conversion. Result is still cached for future requests."},
+        },
+        "policy_resolution": {
+            "classify_policy": {
+                "default_classify": _get("DEFAULT_CLASSIFY", DEFAULT_CLASSIFY),
+                "forced_by": ["auto_extract", "mode=full", "mode=deep"],
+                "request_override": "classify=true|false overrides the env default unless auto_extract or mode escalation requires classification.",
+            },
+            "retry_policy": {
+                "enabled": _get("QUALITY_RETRY_ENABLED", QUALITY_RETRY_ENABLED),
+                "threshold": float(_get("QUALITY_RETRY_THRESHOLD", QUALITY_RETRY_THRESHOLD)),
+                "mode": _get("QUALITY_RETRY_MODE", QUALITY_RETRY_MODE),
+                "eligibility": "Low-quality retry is only considered for default-mode extraction requests that need structured data.",
+            },
+            "long_document_policy": {
+                "page_threshold": int(_get("LONG_DOCUMENT_PAGE_THRESHOLD", LONG_DOCUMENT_PAGE_THRESHOLD)),
+                "page_describe_max_pages": int(_get("PAGE_DESCRIBE_MAX_PAGES", PAGE_DESCRIBE_MAX_PAGES)),
+                "note": "Long-document classification is policy metadata used for progress, snapshots, and later execution routing. It does not by itself force a retry or batch path.",
+            },
+            "normalization_policy": {
+                "compact_default": False,
+                "resolved_template_order": ["meta.template_used", "request.template", "meta.document_type"],
+                "apply_when": "Normalization is attempted only when a resolved template/document type exists and extracted data is present.",
+            },
         },
         "response_fields": {
             "markdown": "Always present — the converted document as Markdown",

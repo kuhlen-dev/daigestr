@@ -87,6 +87,9 @@ MAX_DESCRIBE_IMAGES = int(os.getenv("MAX_DESCRIBE_IMAGES", "50"))
 # Max. Seiten die bei describe_pages gerendert werden (T-DAI-030)
 PAGE_DESCRIBE_MAX_PAGES = int(os.getenv("PAGE_DESCRIBE_MAX_PAGES", "50"))
 
+# Schwellwert, ab dem ein Dokument policy-seitig als Langdokument gilt.
+LONG_DOCUMENT_PAGE_THRESHOLD = int(os.getenv("LONG_DOCUMENT_PAGE_THRESHOLD", "25"))
+
 # Timeout für einzelne convert_auto Aufrufe in Sekunden.
 # Standard: deaktiviert; nur per expliziter ENV-Angabe aktiv.
 CONVERT_TIMEOUT_SECONDS = _optional_positive_float_env("CONVERT_TIMEOUT_SECONDS")

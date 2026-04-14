@@ -264,6 +264,10 @@ from templates_db import (  # noqa: F401
 from routing import (  # noqa: F401
     convert_auto,
     _convert_auto_impl,
+    _resolve_mode_policy,
+    _resolve_retry_policy,
+    _resolve_normalization_policy,
+    _resolve_long_document_policy,
     convert_folder_contents,
     convert_url,
     _build_tips_dict,

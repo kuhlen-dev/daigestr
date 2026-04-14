@@ -140,3 +140,7 @@ class TestSettingsDefaults:
         assert settings.QUALITY_RETRY_ENABLED is False
         assert settings.QUALITY_RETRY_THRESHOLD == 0.75
         assert settings.QUALITY_RETRY_MODE == "full"
+
+    def test_long_document_threshold_default(self, settings):
+        assert settings.LONG_DOCUMENT_PAGE_THRESHOLD == 25
+        assert isinstance(settings.LONG_DOCUMENT_PAGE_THRESHOLD, int)

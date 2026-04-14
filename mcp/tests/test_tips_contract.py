@@ -87,6 +87,25 @@ def test_tips_document_execution_status_fields(monkeypatch):
     assert result["response_contract"]["execution_endpoints"]["status"] == "GET /v1/executions/{id} returns the canonical execution status including attempts."
 
 
+def test_tips_document_policy_resolution(monkeypatch):
+    monkeypatch.setattr(_routing, "get_all_template_ids", lambda: ["invoice"])
+    monkeypatch.setattr(_server, "DEFAULT_CLASSIFY", True)
+    monkeypatch.setattr(_server, "QUALITY_RETRY_ENABLED", True)
+    monkeypatch.setattr(_server, "QUALITY_RETRY_THRESHOLD", 0.75)
+    monkeypatch.setattr(_server, "QUALITY_RETRY_MODE", "full")
+    monkeypatch.setattr(_server, "LONG_DOCUMENT_PAGE_THRESHOLD", 25)
+    monkeypatch.setattr(_server, "PAGE_DESCRIBE_MAX_PAGES", 50)
+
+    result = _server._build_tips_dict()
+
+    policy = result["policy_resolution"]
+    assert policy["classify_policy"]["default_classify"] is True
+    assert policy["retry_policy"]["enabled"] is True
+    assert policy["retry_policy"]["threshold"] == 0.75
+    assert policy["long_document_policy"]["page_threshold"] == 25
+    assert policy["normalization_policy"]["resolved_template_order"][0] == "meta.template_used"
+
+
 def test_tips_document_brix_integration_contract(monkeypatch):
     monkeypatch.setattr(_routing, "get_all_template_ids", lambda: ["invoice"])
 
