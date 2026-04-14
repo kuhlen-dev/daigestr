@@ -191,16 +191,15 @@ def init_normalization_db() -> None:
 
         conn.commit()
 
-        # Seed normalization tables if empty
-        cur.execute("SELECT COUNT(*) AS cnt FROM normalized_categories")
-        row = cur.fetchone()
-        if row["cnt"] == 0:
-            seed_path = Path(__file__).parent / "seed_normalization.sql"
-            if seed_path.exists():
-                seed_sql = seed_path.read_text(encoding="utf-8")
-                cur.execute(seed_sql)
-                conn.commit()
-                log.info("normalization_seeded", source=str(seed_path))
+        # The normalization seed is intentionally idempotent. Apply it on every
+        # startup so existing installations pick up new/changed normalize_mapping
+        # rows instead of drifting forever after the first bootstrap.
+        seed_path = Path(__file__).parent / "seed_normalization.sql"
+        if seed_path.exists():
+            seed_sql = seed_path.read_text(encoding="utf-8")
+            cur.execute(seed_sql)
+            conn.commit()
+            log.info("normalization_seeded", source=str(seed_path))
 
         repair_path = Path(__file__).parent / "seed_normalization_repairs.sql"
         if repair_path.exists():

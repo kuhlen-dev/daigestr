@@ -483,3 +483,30 @@ def test_get_corrections_applied_filter(correction):
     not_applied = get_corrections(field_name="test_country", applied=False)
     ids_na = [c["id"] for c in not_applied]
     assert correction["id"] not in ids_na
+
+
+def test_init_normalization_db_repairs_mapping_drift():
+    """Existing DBs with cleared normalize_mapping columns must be repaired."""
+    from normalizer_db import init_normalization_db, get_mapping
+    from templates_db import get_db_connection, _return_conn
+    import normalizer_cache
+
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE template SET normalize_mapping = NULL, required_normalized_fields = '{}' "
+            "WHERE id IN ('bank_statement', 'invoice', 'telecom_bill')"
+        )
+        conn.commit()
+    finally:
+        _return_conn(conn)
+
+    normalizer_cache.cache_reset()
+    init_normalization_db()
+    normalizer_cache.cache_reset()
+
+    for template_name in ("bank_statement", "invoice", "telecom_bill"):
+        mapping = get_mapping(template_name)
+        assert mapping is not None, f"Expected mapping metadata for {template_name}"
+        assert mapping["normalize_mapping"], f"Expected normalize_mapping for {template_name}"
