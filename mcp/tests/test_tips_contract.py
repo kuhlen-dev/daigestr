@@ -45,6 +45,7 @@ def test_tips_document_response_contract_and_null_semantics(monkeypatch):
 
     contract = result["response_contract"]
     assert "markdown" in contract["success_response_fields"]
+    assert "warnings" in contract["success_response_fields"]
     assert "normalized" in contract["success_response_fields"]
     assert "error" in contract["required_top_level_fields"]
     assert "execution_id" in contract["required_meta_fields"]
@@ -104,6 +105,7 @@ def test_tips_document_policy_resolution(monkeypatch):
     assert policy["retry_policy"]["threshold"] == 0.75
     assert policy["long_document_policy"]["page_threshold"] == 25
     assert policy["normalization_policy"]["resolved_template_order"][0] == "meta.template_used"
+    assert "warnings" in result["response_fields"]
 
 
 def test_tips_document_brix_integration_contract(monkeypatch):

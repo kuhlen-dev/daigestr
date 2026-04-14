@@ -268,6 +268,7 @@ from routing import (  # noqa: F401
     _resolve_retry_policy,
     _resolve_normalization_policy,
     _resolve_long_document_policy,
+    _apply_contract_warnings,
     convert_folder_contents,
     convert_url,
     _build_tips_dict,

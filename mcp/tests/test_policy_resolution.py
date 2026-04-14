@@ -146,3 +146,40 @@ def test_convert_auto_persists_resolved_policy_context(monkeypatch):
     assert policy_context["normalization_policy"]["resolved_template"] == "invoice"
     assert policy_context["long_document_policy"]["is_long_document"] is True
     assert policy_context["long_document_policy"]["page_count"] == 26
+    warning_codes = {warning["code"] for warning in (response.warnings or [])}
+    assert "long_document" in warning_codes
+
+
+def test_apply_contract_warnings_materializes_standard_codes():
+    response = _server.create_success_response(
+        "# ok",
+        meta={
+            "retry_applied": True,
+            "retry_reason": "low_quality",
+            "initial_mode": "default",
+            "final_mode": "full",
+        },
+    )
+    response.extracted = {"invoice_number": "INV-1"}
+    response.normalized = None
+    response.normalized_warnings = ["No normalize_mapping found for template 'invoice'"]
+
+    result = _server._apply_contract_warnings(
+        response,
+        normalization_policy={
+            "requested": True,
+            "apply_normalizer": True,
+            "resolved_template": "invoice",
+        },
+        long_document_policy={
+            "is_long_document": True,
+            "page_count": 40,
+            "threshold": 25,
+        },
+    )
+
+    codes = {warning["code"] for warning in (result.warnings or [])}
+    assert "used_retry" in codes
+    assert "long_document" in codes
+    assert "normalizer_missing_mapping" in codes
+    assert "normalization_warning" in codes

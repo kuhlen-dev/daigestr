@@ -365,7 +365,7 @@ def _persist_execution_attempt_result(
             "has_chunks": bool(response.chunks),
             "has_enriched_pdf": bool(response.enriched_pdf),
         },
-        warnings=response.normalized_warnings,
+        warnings=response.warnings or response.normalized_warnings,
         error=response.error.model_dump() if response.error else None,
     )
     if is_final:
@@ -373,7 +373,7 @@ def _persist_execution_attempt_result(
             execution_id,
             status="completed" if response.success else "failed",
             current_stage="completed" if response.success else "failed",
-            warning_summary={"warnings": response.normalized_warnings} if response.normalized_warnings else None,
+            warning_summary={"warnings": response.warnings or response.normalized_warnings} if (response.warnings or response.normalized_warnings) else None,
             error_summary=response.error.model_dump() if response.error else None,
             finished_at_now=True,
         )
@@ -620,6 +620,82 @@ def _apply_output_format(response: "ConvertResponse", output_format: str) -> "Co
     elif output_format == "text":
         from renderers.text import markdown_to_text
         response.markdown = markdown_to_text(response.markdown)
+    return response
+
+
+def _append_contract_warning(
+    response: ConvertResponse,
+    *,
+    code: str,
+    message: str,
+    details: Optional[dict[str, Any]] = None,
+) -> None:
+    warnings = list(response.warnings or [])
+    entry = {
+        "code": code,
+        "message": message,
+    }
+    if details:
+        entry["details"] = details
+    if any(existing.get("code") == code and existing.get("details") == entry.get("details") for existing in warnings):
+        response.warnings = warnings
+        return
+    warnings.append(entry)
+    response.warnings = warnings
+
+
+def _apply_contract_warnings(
+    response: ConvertResponse,
+    *,
+    normalization_policy: dict[str, Any],
+    long_document_policy: dict[str, Any],
+) -> ConvertResponse:
+    """Materialize canonical warning objects from resolved policies and response state."""
+    if response.meta and response.meta.retry_applied:
+        _append_contract_warning(
+            response,
+            code="used_retry",
+            message="An internal retry/escalation attempt was executed before returning the final result.",
+            details={
+                "retry_reason": response.meta.retry_reason,
+                "initial_mode": response.meta.initial_mode,
+                "final_mode": response.meta.final_mode,
+            },
+        )
+    if long_document_policy.get("is_long_document"):
+        _append_contract_warning(
+            response,
+            code="long_document",
+            message="The document met the configured long-document threshold.",
+            details={
+                "page_count": long_document_policy.get("page_count"),
+                "threshold": long_document_policy.get("threshold"),
+            },
+        )
+    normalized_warning_texts = list(response.normalized_warnings or [])
+    if normalization_policy.get("requested") and normalization_policy.get("apply_normalizer") and response.normalized is None:
+        if any("No normalize_mapping found" in warning for warning in normalized_warning_texts):
+            _append_contract_warning(
+                response,
+                code="normalizer_missing_mapping",
+                message="Normalization was requested but no normalize_mapping exists for the resolved template.",
+                details={"template": normalization_policy.get("resolved_template")},
+            )
+        elif response.extracted:
+            _append_contract_warning(
+                response,
+                code="normalized_output_missing",
+                message="Structured extraction produced data but the normalized payload is empty.",
+                details={"template": normalization_policy.get("resolved_template")},
+            )
+    if normalized_warning_texts:
+        for warning in normalized_warning_texts:
+            _append_contract_warning(
+                response,
+                code="normalization_warning",
+                message=warning,
+                details={"template": normalization_policy.get("resolved_template")},
+            )
     return response
 
 
@@ -994,6 +1070,25 @@ async def finalize_url_markdown_response(
             final_quality_score=final_score,
             retry_threshold_used=float(quality_retry_threshold),
         )
+        final_response = _apply_contract_warnings(
+            final_response,
+            normalization_policy=_resolve_normalization_policy(
+                compact=compact,
+                requested_template=template,
+                meta=final_response.meta.model_dump(),
+                auto_extract=auto_extract,
+                extract_schema=extract_schema,
+            ),
+            long_document_policy=_resolve_long_document_policy(
+                filename=source,
+                source_type="url",
+                describe_pages=False,
+                page_count=(
+                    getattr(final_response.meta, "pages_processed", None)
+                    or getattr(final_response.meta, "page_count", None)
+                ),
+            ),
+        )
         _persist_execution_attempt_result(
             execution_id=execution_id,
             attempt_number=attempt_number,
@@ -1029,6 +1124,11 @@ async def finalize_url_markdown_response(
         initial_quality_score=score,
         final_quality_score=score,
         retry_threshold_used=float(quality_retry_threshold) if retry_on_low_quality else None,
+    )
+    response = _apply_contract_warnings(
+        response,
+        normalization_policy=normalization_policy,
+        long_document_policy=long_document_policy,
     )
     _persist_execution_attempt_result(
         execution_id=execution_id,
@@ -1317,6 +1417,25 @@ async def convert_auto(
             final_quality_score=initial_score,
             retry_threshold_used=float(effective_retry_threshold) if effective_retry_enabled else None,
         )
+        response = _apply_contract_warnings(
+            response,
+            normalization_policy=_resolve_normalization_policy(
+                compact=compact,
+                requested_template=template,
+                meta=response.meta.model_dump(),
+                auto_extract=auto_extract,
+                extract_schema=extract_schema,
+            ),
+            long_document_policy=_resolve_long_document_policy(
+                filename=filename,
+                source_type=source_type,
+                describe_pages=describe_pages,
+                page_count=(
+                    getattr(response.meta, "pages_processed", None)
+                    or getattr(response.meta, "page_count", None)
+                ),
+            ),
+        )
         _persist_execution_attempt_result(
             execution_id=execution_id,
             attempt_number=getattr(response.meta, "attempt_number", 1),
@@ -1413,6 +1532,25 @@ async def convert_auto(
         initial_quality_score=initial_score,
         final_quality_score=selected_score,
         retry_threshold_used=float(effective_retry_threshold),
+    )
+    selected_response = _apply_contract_warnings(
+        selected_response,
+        normalization_policy=_resolve_normalization_policy(
+            compact=compact,
+            requested_template=template,
+            meta=selected_response.meta.model_dump(),
+            auto_extract=auto_extract,
+            extract_schema=extract_schema,
+        ),
+        long_document_policy=_resolve_long_document_policy(
+            filename=filename,
+            source_type=source_type,
+            describe_pages=describe_pages,
+            page_count=(
+                getattr(selected_response.meta, "pages_processed", None)
+                or getattr(selected_response.meta, "page_count", None)
+            ),
+        ),
     )
     _persist_execution_attempt_result(
         execution_id=execution_id,
@@ -2881,6 +3019,7 @@ def _build_tips_dict() -> dict:
         },
         "response_fields": {
             "markdown": "Always present — the converted document as Markdown",
+            "warnings": "Standardized contract warnings like used_retry or normalizer_missing_mapping. Null when none were materialized.",
             "extracted": "Present when extract_schema, template, or auto_extract produced structured JSON. Otherwise null.",
             "chunks": "Only present when chunk=true — list of text segments with metadata",
             "meta": "Always present — processing metadata (quality_score, duration, pipeline_steps, etc.)",
@@ -2998,6 +3137,7 @@ def _build_tips_dict() -> dict:
             ],
             "response_structure": {
                 "normalized": "Flat dict with field values. Contains normalizer-specific _quality_score and quality_score. Null fields included unless compact=true.",
+                "warnings": "Array of standardized warning objects with code/message/details on the top-level ConvertResponse.",
                 "normalized_confidence": "Flat dict parallel to normalized. Keys = field names, Values = confidence float (0.0-1.0).",
                 "normalized_version": "String — version hash of the normalization rules.",
                 "normalized_warnings": "Array of strings — warnings (missing fields, validation errors).",

@@ -40,6 +40,7 @@ CANONICAL_RESULT_FIELDS: dict[str, str] = {
     "markdown": "Always present in the response shape. On success it contains the converted document text; on failure it is null.",
     "html": "Always present in the response shape. Null unless output_format='html' succeeded.",
     "error": "Always present in the response shape. Null on success; populated on failure.",
+    "warnings": "Always present in the response shape. Null when no standardized contract warnings were materialized; otherwise list or empty list.",
     "meta": "Always present. Canonical location for request, execution, template, quality, retry, and pipeline metadata.",
     "extracted": "Always present in the response shape. Null when extraction did not run or produced no canonical payload.",
     "chunks": "Always present in the response shape. Null when chunking did not run.",
@@ -55,6 +56,7 @@ CANONICAL_RESULT_FIELDS: dict[str, str] = {
 
 SUCCESS_RESPONSE_DEFAULTS: dict[str, Any] = {
     "html": None,
+    "warnings": None,
     "extracted": None,
     "chunks": None,
     "enriched_pdf": None,
@@ -258,6 +260,7 @@ class ConvertResponse(BaseModel):
     markdown: Optional[str] = Field(None, description="Konvertierter Markdown-Inhalt")
     html: Optional[str] = Field(None, description="Konvertierter HTML-Inhalt (nur wenn output_format='html')")
     error: Optional[ErrorDetail] = Field(None, description="Fehlerdetails (nur bei success=False)")
+    warnings: Optional[list[dict[str, Any]]] = Field(None, description="Standardisierte Contract-Warnings wie used_retry oder normalizer_missing_mapping")
     meta: MetaData = Field(default_factory=MetaData, description="Metadaten")
     extracted: Optional[dict[str, Any]] = Field(None, description="Strukturiert extrahierte Daten (nur wenn extract_schema gesetzt)")
     chunks: Optional[list[dict[str, Any]]] = Field(None, description="RAG-Chunks (nur wenn chunk=True gesetzt, FR-MKIT-011)")
