@@ -28,6 +28,11 @@ import structlog
 from markitdown import MarkItDown as _MarkItDown
 
 from models import (
+    CANONICAL_ERROR_SEMANTICS,
+    CANONICAL_EXECUTION_FIELDS,
+    CANONICAL_META_FIELDS,
+    CANONICAL_NULL_SEMANTICS,
+    CANONICAL_RESULT_FIELDS,
     ConvertResponse,
     MetaData,
     ProgressState,
@@ -2584,29 +2589,25 @@ def _build_tips_dict() -> dict:
         },
         "response_contract": {
             "success_response_fields": {
-                "success": "Always present.",
-                "markdown": "Always present on successful convert/extract responses. May be empty string only for truly empty source content.",
-                "meta": "Always present. Canonical location for request, template, quality, retry, and pipeline metadata.",
-                "extracted": "Always present in the response shape. Null when no structured extraction was requested or produced.",
-                "chunks": "Always present in the response shape. Null when chunking was not requested.",
-                "html": "Always present in the response shape. Null unless output_format='html'.",
-                "enriched_pdf": "Always present in the response shape. Null unless ocr_embed=true generated a searchable PDF.",
-                "normalized": "Always present in the response shape. Null when no normalization mapping applied.",
-                "normalized_version": "Always present in the response shape. Null when normalized is null.",
-                "normalized_warnings": "Always present in the response shape. Null when normalization did not run; otherwise list of warnings or empty list.",
-                "normalized_trace": "Always present in the response shape. Null when normalization did not run.",
-                "normalized_context": "Always present in the response shape. Null when normalization did not run.",
-                "normalized_confidence": "Always present in the response shape. Null when normalization did not run.",
+                field_name: description
+                for field_name, description in CANONICAL_RESULT_FIELDS.items()
+                if field_name != "error"
             },
-            "null_semantics": {
-                "null": "Field belongs to the contract but currently has no value or the corresponding pipeline branch did not run.",
-                "missing": "Should only happen for unknown extra fields or legacy payloads, not for documented contract fields.",
-            },
+            "required_top_level_fields": CANONICAL_RESULT_FIELDS,
+            "required_meta_fields": CANONICAL_META_FIELDS,
+            "null_semantics": CANONICAL_NULL_SEMANTICS,
+            "error_semantics": CANONICAL_ERROR_SEMANTICS,
             "job_progress_endpoints": {
                 "start": "POST /v1/convert/async returns {job_id, status}.",
                 "status": "GET /v1/jobs/{id} returns canonical progress under progress.",
                 "list": "GET /v1/jobs returns the same canonical progress shape per entry.",
                 "result": "GET /v1/jobs/{id}/result returns the final ConvertResponse after completion.",
+            },
+            "execution_endpoints": {
+                "list": "GET /v1/executions returns the canonical history view for direct, async, and later batch-item executions.",
+                "status": "GET /v1/executions/{id} returns the canonical execution status including attempts.",
+                "result": "GET /v1/executions/{id}/result returns the persisted final ConvertResponse for the execution.",
+                "audit": "GET /v1/audit/execution/{id} returns audit events correlated by execution_id.",
             },
             "job_progress_fields": {
                 "progress.status": "Job status snapshot, e.g. queued, processing, failed.",
@@ -2623,17 +2624,9 @@ def _build_tips_dict() -> dict:
                 "progress.upstream_attempt": "Current retry count of an upstream API call when known.",
                 "progress.metadata": "Additional context such as filename or source.",
             },
+            "execution_status_fields": CANONICAL_EXECUTION_FIELDS,
         },
-        "canonical_meta_fields": {
-            "meta.document_type": "Canonical document classification output.",
-            "meta.document_type_confidence": "Confidence for meta.document_type.",
-            "meta.template_used": "Canonical template identifier used or selected for extraction.",
-            "meta.template_version": "Version of the template recorded in meta.template_used.",
-            "meta.quality_score": "Canonical document/conversion quality score.",
-            "meta.quality_grade": "Grade derived from meta.quality_score.",
-            "meta.retry_applied": "True when low-quality escalation was executed.",
-            "meta.retry_reason": "Reason for retry decision: low_quality or missing_quality_score.",
-        },
+        "canonical_meta_fields": {f"meta.{name}": description for name, description in CANONICAL_META_FIELDS.items()},
         "brix_integration_contract": {
             "read_from_raw_meta": [
                 "meta.document_type",

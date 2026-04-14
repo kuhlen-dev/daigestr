@@ -7,28 +7,49 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 
-MINIMUM_META_FIELDS: dict[str, Any] = {
-    "request_id": None,
-    "execution_id": None,
-    "job_id": None,
-    "attempt_number": None,
-    "attempt_count": None,
-    "attempt_mode": None,
-    "document_type": None,
-    "document_type_confidence": None,
-    "template_used": None,
-    "template_version": None,
-    "quality_score": None,
-    "quality_grade": None,
-    "accuracy_mode": None,
-    "pipeline_steps": None,
-    "retry_applied": None,
-    "retry_reason": None,
-    "initial_mode": None,
-    "final_mode": None,
-    "initial_quality_score": None,
-    "final_quality_score": None,
-    "retry_threshold_used": None,
+CANONICAL_META_FIELDS: dict[str, str] = {
+    "request_id": "Stable request correlation id for the logical document run.",
+    "execution_id": "Canonical persisted execution id shared by direct, async, and later batch-item runs.",
+    "job_id": "Async compatibility id when the execution is exposed as a background job.",
+    "attempt_number": "Ordinal number of the attempt that produced the returned payload.",
+    "attempt_count": "Total number of attempts materialized for the returned payload.",
+    "attempt_mode": "Mode of the attempt that produced the returned payload.",
+    "document_type": "Canonical document classification output.",
+    "document_type_confidence": "Confidence for meta.document_type.",
+    "template_used": "Canonical template identifier used or selected for extraction.",
+    "template_version": "Version of the template recorded in meta.template_used.",
+    "quality_score": "Canonical document/conversion quality score used for retries and quality reporting.",
+    "quality_grade": "Grade derived from meta.quality_score.",
+    "accuracy_mode": "Effective accuracy pipeline mode used for this response.",
+    "pipeline_steps": "Ordered list of canonical pipeline stages that materially contributed to the result.",
+    "retry_applied": "True when an internal retry/escalation pass was executed.",
+    "retry_reason": "Reason why retry/escalation was executed or skipped after evaluation.",
+    "initial_mode": "Mode used for the initial attempt before retry evaluation.",
+    "final_mode": "Mode of the final returned attempt.",
+    "initial_quality_score": "Quality score measured on the initial attempt before retry evaluation.",
+    "final_quality_score": "Quality score measured on the final returned attempt.",
+    "retry_threshold_used": "Effective quality threshold used for retry decisions.",
+}
+
+
+MINIMUM_META_FIELDS: dict[str, Any] = {field_name: None for field_name in CANONICAL_META_FIELDS}
+
+
+CANONICAL_RESULT_FIELDS: dict[str, str] = {
+    "success": "Always present. False means the run failed and error is populated.",
+    "markdown": "Always present in the response shape. On success it contains the converted document text; on failure it is null.",
+    "html": "Always present in the response shape. Null unless output_format='html' succeeded.",
+    "error": "Always present in the response shape. Null on success; populated on failure.",
+    "meta": "Always present. Canonical location for request, execution, template, quality, retry, and pipeline metadata.",
+    "extracted": "Always present in the response shape. Null when extraction did not run or produced no canonical payload.",
+    "chunks": "Always present in the response shape. Null when chunking did not run.",
+    "enriched_pdf": "Always present in the response shape. Null unless OCR embedding produced a searchable PDF.",
+    "normalized": "Always present in the response shape. Null when normalization did not run or no mapping applied.",
+    "normalized_version": "Always present in the response shape. Null when normalization did not run.",
+    "normalized_warnings": "Always present in the response shape. Null when normalization did not run; otherwise list or empty list.",
+    "normalized_trace": "Always present in the response shape. Null when normalization did not run.",
+    "normalized_context": "Always present in the response shape. Null when normalization did not run.",
+    "normalized_confidence": "Always present in the response shape. Null when normalization did not run.",
 }
 
 
@@ -43,6 +64,44 @@ SUCCESS_RESPONSE_DEFAULTS: dict[str, Any] = {
     "normalized_trace": None,
     "normalized_context": None,
     "normalized_confidence": None,
+}
+
+
+CANONICAL_NULL_SEMANTICS: dict[str, str] = {
+    "null": "Field belongs to the documented contract but currently has no value or the corresponding pipeline branch did not run.",
+    "missing": "Should only happen for unknown extra fields or legacy payloads. Documented contract fields must not disappear.",
+}
+
+
+CANONICAL_ERROR_SEMANTICS: dict[str, str] = {
+    "success_false": "A failed run must set success=false and populate error.code plus error.message.",
+    "error_present": "error is canonical on failed runs and remains null on successful runs.",
+    "shape_stable": "Failure responses keep the documented top-level shape; non-produced payload branches remain null instead of disappearing.",
+    "meta_retained": "Failure responses still carry canonical meta fields such as request_id, execution_id, retry metadata, and template metadata when known.",
+}
+
+
+CANONICAL_EXECUTION_FIELDS: dict[str, str] = {
+    "execution_id": "Canonical id of the persisted execution.",
+    "request_id": "Stable request correlation id for the logical run.",
+    "execution_kind": "How the execution is consumed: direct, async, batch_item, replay, or system.",
+    "source_type": "Normalized source type for this execution.",
+    "source_ref": "Persisted reference to the logical source.",
+    "job_id": "Async compatibility id when present.",
+    "batch_id": "Parent batch id when the execution belongs to a batch.",
+    "batch_item_id": "Parent batch item id when the execution belongs to a batch.",
+    "status": "Canonical execution status.",
+    "current_stage": "Current or final stage of the execution pipeline.",
+    "document_identity": "Persisted identity and fingerprint of the input document when known.",
+    "policy_context": "Persisted policy resolution used for the run.",
+    "warning_summary": "Aggregated warning information for the execution.",
+    "error_summary": "Aggregated error information for the execution.",
+    "created_at": "Creation timestamp of the execution record.",
+    "updated_at": "Last update timestamp of the execution record.",
+    "started_at": "Start timestamp of the execution when known.",
+    "finished_at": "Finish timestamp of the execution when known.",
+    "attempts": "Persisted attempts that belong to this execution.",
+    "final_result_available": "Whether a final result payload is persisted for the execution.",
 }
 
 

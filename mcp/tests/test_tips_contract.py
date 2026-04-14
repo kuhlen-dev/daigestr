@@ -46,7 +46,10 @@ def test_tips_document_response_contract_and_null_semantics(monkeypatch):
     contract = result["response_contract"]
     assert "markdown" in contract["success_response_fields"]
     assert "normalized" in contract["success_response_fields"]
+    assert "error" in contract["required_top_level_fields"]
+    assert "execution_id" in contract["required_meta_fields"]
     assert contract["null_semantics"]["null"]
+    assert contract["error_semantics"]["success_false"]
     assert contract["job_progress_endpoints"]["status"] == "GET /v1/jobs/{id} returns canonical progress under progress."
 
 
@@ -59,6 +62,18 @@ def test_tips_document_job_progress_fields(monkeypatch):
     assert "progress.current_stage" in progress_fields
     assert "progress.page_current" in progress_fields
     assert "progress.request_id" in progress_fields
+
+
+def test_tips_document_execution_status_fields(monkeypatch):
+    monkeypatch.setattr(_routing, "get_all_template_ids", lambda: ["invoice"])
+
+    result = _server._build_tips_dict()
+
+    execution_fields = result["response_contract"]["execution_status_fields"]
+    assert "execution_id" in execution_fields
+    assert "status" in execution_fields
+    assert "attempts" in execution_fields
+    assert result["response_contract"]["execution_endpoints"]["status"] == "GET /v1/executions/{id} returns the canonical execution status including attempts."
 
 
 def test_tips_document_brix_integration_contract(monkeypatch):

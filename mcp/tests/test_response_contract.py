@@ -8,7 +8,11 @@ integrators can rely on null instead of field drift.
 import json
 
 from models import (
+    CANONICAL_EXECUTION_FIELDS,
+    CANONICAL_META_FIELDS,
+    CANONICAL_RESULT_FIELDS,
     ConvertResponse,
+    ExecutionStatusResponse,
     MetaData,
     MINIMUM_META_FIELDS,
     SUCCESS_RESPONSE_DEFAULTS,
@@ -97,3 +101,20 @@ def test_convert_response_direct_model_still_serializes_stable_null_shape():
 
     for field_name in MINIMUM_META_FIELDS:
         assert field_name in payload["meta"]
+
+
+def test_canonical_meta_field_registry_matches_minimum_meta_defaults():
+    """The documented canonical meta registry must stay aligned with the stable null contract."""
+    assert set(CANONICAL_META_FIELDS) == set(MINIMUM_META_FIELDS)
+
+
+def test_canonical_result_field_registry_matches_convert_response_shape():
+    """The documented top-level result contract must match the response model."""
+    response_fields = set(ConvertResponse.model_fields)
+    assert set(CANONICAL_RESULT_FIELDS) == response_fields
+
+
+def test_execution_status_model_covers_documented_execution_fields():
+    """Execution status docs must stay aligned with the actual API model."""
+    model_fields = set(ExecutionStatusResponse.model_fields)
+    assert set(CANONICAL_EXECUTION_FIELDS) == model_fields
