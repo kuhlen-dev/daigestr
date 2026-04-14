@@ -26,6 +26,12 @@ def _optional_positive_float_env(name: str) -> float | None:
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 TEMP_DIR = Path(os.getenv("TEMP_DIR", "/tmp/markitdown"))
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
+ALLOWED_PATH_ROOTS = tuple(
+    Path(raw.strip()).resolve(strict=False)
+    for raw in os.getenv("ALLOWED_PATH_ROOTS", str(DATA_DIR)).split(":")
+    if raw.strip()
+)
+ALLOW_SYMLINK_PATHS = os.getenv("ALLOW_SYMLINK_PATHS", "false").lower() == "true"
 
 # Template Registry DB (T-MKIT-035)
 TEMPLATES_DB_PATH = Path(os.getenv("TEMPLATES_DB_PATH", str(DATA_DIR / "templates.db")))
@@ -221,7 +227,7 @@ MERMAID_CDN_URL = os.getenv("MERMAID_CDN_URL", "https://cdn.jsdelivr.net/npm/mer
 HIGHLIGHTJS_CDN_URL = os.getenv("HIGHLIGHTJS_CDN_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js")
 HIGHLIGHTJS_CSS_URL = os.getenv("HIGHLIGHTJS_CSS_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css")
 
-VERSION = os.getenv("DAIGESTR_VERSION", "16.4.2")
+VERSION = os.getenv("DAIGESTR_VERSION", "16.4.3")
 START_TIME = time.time()
 
 # =============================================================================

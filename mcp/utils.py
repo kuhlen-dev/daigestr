@@ -42,6 +42,8 @@ def _get(name: str, default):
 
 from settings import (
     DATA_DIR,
+    ALLOWED_PATH_ROOTS,
+    ALLOW_SYMLINK_PATHS,
     IMAGE_EXTENSIONS,
     MARKITDOWN_EXTENSIONS,
     AUDIO_EXTENSIONS,
@@ -382,12 +384,48 @@ def parse_pages(spec: str, total_pages: int) -> list[int]:
 # Path / File Helpers
 # =============================================================================
 
+class PathPolicyError(ValueError):
+    """Raised when a requested filesystem path violates the configured storage policy."""
+
+    def __init__(self, message: str, *, reason: str):
+        super().__init__(message)
+        self.reason = reason
+
+
+def _path_has_symlink_component(path: Path) -> bool:
+    """Return True when any existing component in *path* is a symlink."""
+    current = Path(path.anchor) if path.is_absolute() else Path()
+    parts = path.parts[1:] if path.is_absolute() else path.parts
+    for part in parts:
+        current = current / part
+        if current.exists() and current.is_symlink():
+            return True
+    return False
+
+
 def resolve_path(path: str) -> Path:
-    """Löst relativen Pfad zu absolutem auf."""
-    p = Path(path)
-    if p.is_absolute():
-        return p
-    return DATA_DIR / p
+    """Resolve a user path against the configured storage policy."""
+    if not path or not str(path).strip():
+        raise PathPolicyError("Pfad darf nicht leer sein", reason="empty_path")
+
+    requested = Path(path)
+    candidate = requested if requested.is_absolute() else (DATA_DIR / requested)
+    normalized = candidate.resolve(strict=False)
+
+    if not ALLOW_SYMLINK_PATHS and _path_has_symlink_component(candidate):
+        raise PathPolicyError(
+            f"Symlink-Pfade sind nicht erlaubt: {candidate}",
+            reason="symlink_not_allowed",
+        )
+
+    if not any(normalized == root or root in normalized.parents for root in ALLOWED_PATH_ROOTS):
+        allowed = ", ".join(str(root) for root in ALLOWED_PATH_ROOTS)
+        raise PathPolicyError(
+            f"Pfad liegt außerhalb der erlaubten Roots: {normalized} (erlaubt: {allowed})",
+            reason="path_outside_allowed_roots",
+        )
+
+    return normalized
 
 
 def get_file_extension(filename: str) -> str:

@@ -101,6 +101,8 @@ def test_tips_document_execution_status_fields(monkeypatch):
 def test_tips_document_policy_resolution(monkeypatch):
     monkeypatch.setattr(_routing, "get_all_template_ids", lambda: ["invoice"])
     monkeypatch.setattr(_server, "DEFAULT_CLASSIFY", True)
+    monkeypatch.setattr(_server, "ALLOWED_PATH_ROOTS", ["/data", "/shared"])
+    monkeypatch.setattr(_server, "ALLOW_SYMLINK_PATHS", False)
     monkeypatch.setattr(_server, "QUALITY_RETRY_ENABLED", True)
     monkeypatch.setattr(_server, "QUALITY_RETRY_THRESHOLD", 0.75)
     monkeypatch.setattr(_server, "QUALITY_RETRY_MODE", "full")
@@ -116,6 +118,9 @@ def test_tips_document_policy_resolution(monkeypatch):
     assert policy["retry_policy"]["threshold"] == 0.75
     assert policy["long_document_policy"]["page_threshold"] == 25
     assert policy["normalization_policy"]["resolved_template_order"][0] == "meta.template_used"
+    assert policy["storage_policy"]["allowed_path_roots"] == ["/data", "/shared"]
+    assert policy["storage_policy"]["allow_symlink_paths"] is False
+    assert policy["storage_policy"]["violation_error_code"] == "PATH_NOT_ALLOWED"
     assert "warnings" in result["response_fields"]
     assert "meta.contract_version" in result["canonical_meta_fields"]
 

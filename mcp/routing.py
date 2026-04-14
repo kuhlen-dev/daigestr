@@ -64,6 +64,8 @@ from settings import (
     LONG_DOCUMENT_PAGE_THRESHOLD,
     AUDIT_ENABLED,
     DEFAULT_CLASSIFY,
+    ALLOWED_PATH_ROOTS,
+    ALLOW_SYMLINK_PATHS,
     QUALITY_RETRY_ENABLED,
     QUALITY_RETRY_THRESHOLD,
     QUALITY_RETRY_MODE,
@@ -3133,6 +3135,12 @@ def _build_tips_dict() -> dict:
                 "compact_default": False,
                 "resolved_template_order": ["meta.template_used", "request.template", "meta.document_type"],
                 "apply_when": "Normalization is attempted only when a resolved template/document type exists and extracted data is present.",
+            },
+            "storage_policy": {
+                "allowed_path_roots": [str(root) for root in _get("ALLOWED_PATH_ROOTS", ALLOWED_PATH_ROOTS)],
+                "allow_symlink_paths": bool(_get("ALLOW_SYMLINK_PATHS", ALLOW_SYMLINK_PATHS)),
+                "relative_path_behavior": "Relative request.path values are anchored below DATA_DIR before root and symlink checks are evaluated.",
+                "violation_error_code": "PATH_NOT_ALLOWED",
             },
         },
         "response_fields": {

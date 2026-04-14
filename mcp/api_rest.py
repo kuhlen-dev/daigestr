@@ -70,7 +70,7 @@ from settings import (
     NORMALIZATION_DRIFT_SAMPLE_LIMIT,
 )
 from progress_tracking import build_progress_payload, normalize_progress_payload
-from utils import _get, resolve_path, get_file_extension, get_mimetype, detect_mimetype_from_bytes
+from utils import _get, resolve_path, PathPolicyError, get_file_extension, get_mimetype, detect_mimetype_from_bytes
 from intelligence import (
     classify_document,
     correct_ocr_text,
@@ -468,7 +468,14 @@ async def _api_convert_impl(request: ConvertRequest) -> ConvertResponse:
 
     # Pfad-basiert
     if request.path:
-        file_path = _resolve_path(request.path)
+        try:
+            file_path = _resolve_path(request.path)
+        except PathPolicyError as exc:
+            return create_error_response(
+                ErrorCode.PATH_NOT_ALLOWED,
+                str(exc),
+                meta={**request.meta, "path_policy_reason": exc.reason},
+            )
         if not file_path.exists():
             return create_error_response(
                 ErrorCode.FILE_NOT_FOUND,
@@ -683,7 +690,14 @@ async def api_convert_folder(request: ConvertFolderRequest) -> ConvertResponse:
     """
     Konvertiert alle Dateien in einem Ordner zu Markdown.
     """
-    folder_path = resolve_path(request.path)
+    try:
+        folder_path = resolve_path(request.path)
+    except PathPolicyError as exc:
+        return create_error_response(
+            ErrorCode.PATH_NOT_ALLOWED,
+            str(exc),
+            meta={**request.meta, "path_policy_reason": exc.reason},
+        )
     return await convert_folder_contents(
         folder_path=folder_path,
         input_meta=request.meta,
@@ -991,7 +1005,14 @@ async def api_analyze(request: AnalyzeRequest) -> ConvertResponse:
         )
 
     if request.path:
-        file_path = resolve_path(request.path)
+        try:
+            file_path = resolve_path(request.path)
+        except PathPolicyError as exc:
+            return create_error_response(
+                ErrorCode.PATH_NOT_ALLOWED,
+                str(exc),
+                meta={**request.meta, "path_policy_reason": exc.reason},
+            )
         if not file_path.exists():
             return create_error_response(
                 ErrorCode.FILE_NOT_FOUND,
@@ -1197,7 +1218,10 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
                 effective_schema = tmpl["schema"]
 
         if request.path:
-            file_path = _resolve_path(request.path)
+            try:
+                file_path = _resolve_path(request.path)
+            except PathPolicyError as exc:
+                raise exc
             file_data = file_path.read_bytes()
             filename = file_path.name
             source = str(file_path)
@@ -1321,6 +1345,49 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
         if request.webhook_url:
             await _fire_webhook(request.webhook_url, result)
 
+    except PathPolicyError as exc:
+        log.error("async_job_path_policy_error", job_id=job_id, error=str(exc), reason=exc.reason)
+        error_result = create_error_response(
+            ErrorCode.PATH_NOT_ALLOWED,
+            str(exc),
+            meta={
+                "request_id": request.meta.get("_request_id"),
+                "execution_id": execution_id,
+                "job_id": job_id,
+                "path_policy_reason": exc.reason,
+            },
+        )
+        _job_set_terminal_result(job_id, error_result.model_dump_json(), status="failed")
+        if execution_id:
+            _execution_result_upsert(
+                result_id=_execution_result_id(execution_id, kind="job-path-policy"),
+                execution_id=execution_id,
+                is_final=True,
+                result_status="failed",
+                success=False,
+                response_json=error_result.model_dump(),
+                meta=error_result.meta.model_dump(),
+                extracted=None,
+                normalized=None,
+                warnings=None,
+                error=error_result.error.model_dump() if error_result.error else None,
+            )
+            _execution_update(
+                execution_id,
+                status="failed",
+                current_stage="failed",
+                progress_json=build_progress_payload(
+                    status="failed",
+                    current_stage="failed",
+                    message=str(exc),
+                    percent=100,
+                    request_id=request.meta.get("_request_id"),
+                    job_id=job_id,
+                ),
+                error_summary=error_result.error.model_dump() if error_result.error else None,
+                finished_at_now=True,
+            )
+        return
     except Exception as exc:
         log.error("async_job_failed", job_id=job_id, error=str(exc))
         error_result = create_error_response(
@@ -1580,7 +1647,14 @@ async def _resolve_file_input(path: Optional[str], b64: Optional[str], filename:
     _temp_dir = _get("TEMP_DIR", TEMP_DIR)
 
     if path:
-        file_path = _resolve_path(path)
+        try:
+            file_path = _resolve_path(path)
+        except PathPolicyError as exc:
+            return {
+                "error": str(exc),
+                "error_code": ErrorCode.PATH_NOT_ALLOWED,
+                "details": {"path_policy_reason": exc.reason},
+            }
         if not file_path.exists():
             return {"error": f"Datei nicht gefunden: {file_path}", "error_code": ErrorCode.FILE_NOT_FOUND}
         return file_path.read_bytes(), file_path.name
