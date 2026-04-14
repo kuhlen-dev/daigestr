@@ -255,6 +255,7 @@ from templates_db import (  # noqa: F401
     job_create,
     job_update,
     job_set_result,
+    job_set_terminal_result,
     job_get,
     job_delete,
     job_list,

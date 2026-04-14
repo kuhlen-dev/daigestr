@@ -33,6 +33,12 @@ class _FakeCursor:
             self.state[job_id]["status"] = "completed"
             return
 
+        if "SET result_json=%s, status=%s" in normalized:
+            result_json, status, job_id = params
+            self.state[job_id]["result_json"] = result_json
+            self.state[job_id]["status"] = status
+            return
+
         if "WHERE id=%s AND status NOT IN ('completed', 'failed')" in normalized:
             status, progress_json, job_id = params
             if self.state[job_id]["status"] not in {"completed", "failed"}:

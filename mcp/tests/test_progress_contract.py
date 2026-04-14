@@ -131,6 +131,7 @@ def test_api_get_job_prefers_canonical_execution_progress_over_job_progress():
         "execution_get_by_job_id",
         return_value={
             "id": "exec-1",
+            "status": "completed",
             "progress_json": {
                 "status": "completed",
                 "current_stage": "done",
@@ -148,6 +149,43 @@ def test_api_get_job_prefers_canonical_execution_progress_over_job_progress():
     assert response.progress.current_stage == "done"
     assert response.progress.message == "canonical"
     assert response.progress.percent == 100
+
+
+def test_api_get_job_prefers_canonical_execution_status_over_job_status():
+    created_at = datetime.now(timezone.utc)
+    updated_at = datetime.now(timezone.utc)
+
+    with patch.object(
+        _server_api,
+        "job_get",
+        return_value={
+            "id": "job-status",
+            "status": "completed",
+            "created_at": created_at,
+            "updated_at": updated_at,
+            "progress_json": None,
+        },
+    ), patch.object(
+        _server_api,
+        "execution_get_by_job_id",
+        return_value={
+            "id": "exec-status",
+            "status": "failed",
+            "progress_json": {
+                "status": "failed",
+                "current_stage": "failed",
+                "message": "canonical failed",
+                "percent": 100,
+                "job_id": "job-status",
+            },
+        },
+    ):
+        response = run_async(_server_api.api_get_job("job-status"))
+
+    assert response.execution_id == "exec-status"
+    assert response.status == "failed"
+    assert response.progress is not None
+    assert response.progress.status == "failed"
 
 
 def test_api_list_jobs_materializes_null_progress_when_missing():
@@ -171,6 +209,44 @@ def test_api_list_jobs_materializes_null_progress_when_missing():
     assert len(response.jobs) == 1
     assert response.jobs[0].job_id == "job-1"
     assert response.jobs[0].progress is None
+
+
+def test_api_list_jobs_prefers_canonical_execution_status():
+    now = datetime.now(timezone.utc)
+
+    with patch.object(
+        _server_api,
+        "job_list",
+        return_value=[
+            {
+                "id": "job-1",
+                "status": "completed",
+                "created_at": now,
+                "updated_at": now,
+                "progress_json": None,
+            }
+        ],
+    ), patch.object(
+        _server_api,
+        "execution_get_by_job_id",
+        return_value={
+            "id": "exec-1",
+            "status": "failed",
+            "progress_json": {
+                "status": "failed",
+                "current_stage": "failed",
+                "message": "canonical failed",
+                "percent": 100,
+                "job_id": "job-1",
+            },
+        },
+    ):
+        response = run_async(_server_api.api_list_jobs())
+
+    assert len(response.jobs) == 1
+    assert response.jobs[0].status == "failed"
+    assert response.jobs[0].progress is not None
+    assert response.jobs[0].progress.status == "failed"
 
 
 def test_convert_auto_job_progress_includes_page_counters_for_pdf_page_description():

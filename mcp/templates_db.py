@@ -508,14 +508,21 @@ def job_update(job_id: str, status: str, progress_json: Optional[str] = None) ->
 
 
 def job_set_result(job_id: str, result_json: str) -> None:
-    """Setzt das Ergebnis eines abgeschlossenen Jobs."""
+    """Setzt das Ergebnis eines erfolgreich abgeschlossenen Jobs."""
+    job_set_terminal_result(job_id, result_json, status="completed")
+
+
+def job_set_terminal_result(job_id: str, result_json: str, *, status: str) -> None:
+    """Setzt das Ergebnis eines terminalen Jobs mit explizitem Endstatus."""
+    if status not in {"completed", "failed"}:
+        raise ValueError(f"Unsupported terminal job status: {status}")
     _get_db_conn = _get("get_db_connection", get_db_connection)
     conn = _get_db_conn()
     try:
         cur = conn.cursor()
         cur.execute(
-            "UPDATE job SET result_json=%s, status='completed', updated_at=now() WHERE id=%s",
-            (result_json, job_id)
+            "UPDATE job SET result_json=%s, status=%s, updated_at=now() WHERE id=%s",
+            (result_json, status, job_id)
         )
         conn.commit()
     finally:

@@ -280,6 +280,55 @@ def test_async_execution_status_matches_job_progress(monkeypatch):
     assert execution_status.progress.attempt_mode == "default"
 
 
+def test_async_failed_convert_response_marks_job_failed(monkeypatch):
+    import routing
+    from execution_db import init_execution_db
+    from models import ConvertRequest, create_error_response, ErrorCode
+    from templates_db import job_create, job_get
+
+    api_rest = _load_api_rest_module()
+    init_execution_db()
+
+    async def fake_impl(**kwargs):
+        return create_error_response(
+            ErrorCode.CONVERSION_FAILED,
+            "structured extraction failed",
+            meta={
+                "template_used": "invoice",
+                "template_version": 1,
+            },
+        )
+
+    monkeypatch.setattr(routing, "_convert_auto_impl", fake_impl)
+    monkeypatch.setattr(api_rest, "convert_auto", routing.convert_auto)
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "_convert_auto_impl", fake_impl)
+        monkeypatch.setitem(server_module.__dict__, "convert_auto", routing.convert_auto)
+
+    request = ConvertRequest(
+        base64="aGVsbG8=",
+        filename="hello.txt",
+        meta={},
+    )
+    job_id = str(uuid.uuid4())
+    _, execution_id = api_rest._ensure_execution_for_request(request, execution_kind="async", job_id=job_id)
+    job_create(job_id)
+
+    run_async(api_rest._run_async_job(job_id, request))
+
+    job_row = job_get(job_id)
+    execution_status = api_rest._get_execution_status_payload(execution_id)
+    restored = api_rest._get_job_result_payload(job_id)
+
+    assert job_row["status"] == "failed"
+    assert execution_status.status == "failed"
+    assert execution_status.progress is not None
+    assert execution_status.progress.status == "failed"
+    assert restored.success is False
+    assert restored.error.code == ErrorCode.CONVERSION_FAILED
+
+
 def test_api_get_job_result_falls_back_to_execution_result():
     from execution_db import execution_create, execution_result_upsert, init_execution_db
     from models import create_success_response

@@ -79,7 +79,7 @@ from intelligence import (
 from templates_db import _return_conn as _db_return_conn
 from templates_db import (
     get_all_template_ids, search_templates, cache_clear, check_persistence_health,
-    job_create, job_update, job_set_result, job_get, job_delete, job_list,
+    job_create, job_update, job_set_result, job_set_terminal_result, job_get, job_delete, job_list,
 )
 from execution_db import (
     execution_create,
@@ -236,6 +236,8 @@ def _get_job_result_payload(job_id: str) -> ConvertResponse:
     if not job:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
     if job["status"] != "completed":
+        if job["status"] == "failed" and job.get("result_json"):
+            return ConvertResponse.model_validate_json(job["result_json"])
         raise HTTPException(
             status_code=202,
             detail=f"Job '{job_id}' is not completed yet (status: {job['status']})"
@@ -1031,6 +1033,7 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
     _convert_auto = _get("convert_auto", convert_auto)
     _job_update = _get("job_update", job_update)
     _job_set_result = _get("job_set_result", job_set_result)
+    _job_set_terminal_result = _get("job_set_terminal_result", job_set_terminal_result)
     _execution_update = _get("execution_update", execution_update)
     _execution_result_upsert = _get("execution_result_upsert", execution_result_upsert)
     temp_path: Path | None = None
@@ -1200,7 +1203,10 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
                 ).model_dump_json(),
             )
             return
-        _job_set_result(job_id, result.model_dump_json())
+        if result.success:
+            _job_set_result(job_id, result.model_dump_json())
+        else:
+            _job_set_terminal_result(job_id, result.model_dump_json(), status="failed")
 
         # Webhook senden wenn konfiguriert
         if request.webhook_url:
@@ -1307,7 +1313,7 @@ async def api_list_jobs() -> JobListResponse:
             JobStatusResponse(
                 job_id=j["id"],
                 execution_id=execution["id"] if execution else None,
-                status=j["status"],
+                status=execution["status"] if execution else j["status"],
                 created_at=j["created_at"],
                 updated_at=j["updated_at"],
                 progress=progress,
@@ -1340,7 +1346,7 @@ async def api_get_job(job_id: str) -> JobStatusResponse:
     return JobStatusResponse(
         job_id=job["id"],
         execution_id=execution["id"] if execution else None,
-        status=job["status"],
+        status=execution["status"] if execution else job["status"],
         created_at=job["created_at"],
         updated_at=job["updated_at"],
         progress=progress,
