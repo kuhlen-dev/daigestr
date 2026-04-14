@@ -402,7 +402,7 @@ class ConvertRequest(BaseModel):
     describe_images: bool = Field(False, description="When true, extracts embedded images from DOCX/PPTX and describes them via Mistral Vision. Replaces [image] placeholders with actual descriptions. Costs additional API calls.")
 
     # Klassifizierungs-Option
-    classify: bool = Field(False, description="When true, detects the document type (invoice, contract, cv, etc.) and returns it in meta.document_type with a confidence score.")
+    classify: Optional[bool] = Field(None, description="Classification policy override. true forces document classification, false disables it unless auto_extract or mode escalation requires it, null uses the server-side DEFAULT_CLASSIFY policy.")
     classify_categories: Optional[list[str]] = Field(None, description="Custom Klassifizierungs-Kategorien")
 
     # Extraktion
@@ -545,7 +545,7 @@ class ExtractRequest(BaseModel):
     describe_images: bool = Field(False, description="When true, extracts embedded images from DOCX/PPTX and describes them via Mistral Vision. Replaces [image] placeholders with actual descriptions. Costs additional API calls.")
 
     # Klassifizierung (T-MKIT-022)
-    classify: bool = Field(False, description="When true, detects the document type (invoice, contract, cv, etc.) and returns it in meta.document_type with a confidence score.")
+    classify: Optional[bool] = Field(None, description="Classification policy override. true forces document classification, false disables it unless auto_extract or mode escalation requires it, null uses the server-side DEFAULT_CLASSIFY policy.")
     classify_categories: Optional[list[str]] = Field(None, description="Custom Klassifizierungs-Kategorien")
 
     # Smart Chunking
@@ -599,7 +599,7 @@ class ConvertFolderRequest(BaseModel):
 
     # Optionen (analog zu ConvertRequest)
     describe_images: bool = Field(False, description="Eingebettete Bilder in DOCX/PPTX/PDF/ODT/ODP/HTML via Mistral Vision beschreiben.")
-    classify: bool = Field(False, description="Dokumenttyp via LLM klassifizieren.")
+    classify: Optional[bool] = Field(None, description="Klassifizierungs-Policy-Override. true erzwingt Klassifizierung, false deaktiviert sie außer auto_extract oder Modus-Eskalation verlangen sie, null nutzt DEFAULT_CLASSIFY.")
     classify_categories: Optional[list[str]] = Field(None, description="Erlaubte Klassifizierungs-Kategorien.")
     extract_schema: Optional[dict[str, Any]] = Field(None, description="JSON Schema für strukturierte Daten-Extraktion.")
     auto_extract: bool = Field(False, description="Automatisch klassifizieren, Template suchen und Daten extrahieren.")

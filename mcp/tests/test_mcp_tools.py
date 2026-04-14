@@ -85,7 +85,7 @@ class TestMcpConvertSignature:
     def test_mcp_convert_has_classify_param(self):
         params = _get_params(mcp_convert)
         assert "classify" in params, "mcp_convert fehlt 'classify' Parameter"
-        assert params["classify"] is False, "Default von 'classify' muss False sein"
+        assert params["classify"] is None, "Default von 'classify' muss None sein, damit DEFAULT_CLASSIFY greifen kann"
 
     def test_mcp_convert_has_classify_categories_param(self):
         params = _get_params(mcp_convert)
@@ -402,7 +402,7 @@ class TestMcpExtractSignature:
     def test_mcp_extract_has_classify(self):
         params = _get_params(mcp_extract)
         assert "classify" in params, "mcp_extract fehlt 'classify' Parameter"
-        assert params["classify"] is False
+        assert params["classify"] is None
 
     def test_mcp_extract_has_convert_wrapper_parity_params(self):
         params = _get_params(mcp_extract)
@@ -600,7 +600,7 @@ class TestMcpExtractSignature:
         assert data["html"] is not None
         assert data["chunks"] is not None
         assert data["meta"]["quality_score"] is not None
-        assert data["meta"]["pipeline_steps"] == ["url_fetch", "markitdown"]
+        assert data["meta"]["pipeline_steps"] == ["url_fetch", "markitdown", "classify"]
 
     def test_mcp_extract_url_applies_standard_finalization(self):
         """mcp_extract(url=...) nutzt die gemeinsame URL-Finalisierung inklusive Schema-Extraktion."""

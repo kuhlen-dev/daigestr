@@ -110,6 +110,7 @@ SCAN_THRESHOLD_CHARS = int(os.getenv("SCAN_THRESHOLD_CHARS", "50"))
 # Klassifizierung
 # =============================================================================
 
+DEFAULT_CLASSIFY = os.getenv("DEFAULT_CLASSIFY", "true").lower() == "true"
 DEFAULT_CLASSIFY_CATEGORIES = os.getenv(
     "CLASSIFY_CATEGORIES",
     "invoice,contract,cv,protocol,letter,technical_doc,report,presentation,spreadsheet,other"
@@ -213,7 +214,7 @@ MERMAID_CDN_URL = os.getenv("MERMAID_CDN_URL", "https://cdn.jsdelivr.net/npm/mer
 HIGHLIGHTJS_CDN_URL = os.getenv("HIGHLIGHTJS_CDN_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js")
 HIGHLIGHTJS_CSS_URL = os.getenv("HIGHLIGHTJS_CSS_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css")
 
-VERSION = os.getenv("DAIGESTR_VERSION", "16.2.1")
+VERSION = os.getenv("DAIGESTR_VERSION", "16.2.2")
 START_TIME = time.time()
 
 # =============================================================================

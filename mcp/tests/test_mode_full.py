@@ -91,6 +91,12 @@ class TestModeFieldValidation:
         req = ConvertRequest(path="/data/test.pdf")
         assert req.mode == "default"
 
+    def test_convert_request_classify_default_is_none(self):
+        """Kein classify-Parameter → Policy-Default None, damit DEFAULT_CLASSIFY greifen kann."""
+        from models import ConvertRequest
+        req = ConvertRequest(path="/data/test.pdf")
+        assert req.classify is None
+
     def test_mode_invalid_raises_validation_error(self):
         """Ungültiger mode-Wert → ValidationError."""
         from pydantic import ValidationError
@@ -130,7 +136,8 @@ class TestModeFullDescribeImages:
         vision_resp = _make_vision_response("# Bildbeschreibung")
 
         with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
-             patch.object(_server, "call_mistral_vision_api", new=AsyncMock(return_value=vision_resp)):
+             patch.object(_server, "call_mistral_vision_api", new=AsyncMock(return_value=vision_resp)), \
+             patch.object(_server, "_apply_auto_extract", new=AsyncMock(side_effect=lambda response, *a, **k: response)):
             result = run_async(convert_auto(**_base_convert_kwargs(mode="full")))
 
         assert result.success is True
@@ -183,7 +190,8 @@ class TestModeFullClassify:
         with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
              patch.object(_server, "call_mistral_vision_api", new=AsyncMock(
                  side_effect=side_effects
-             )):
+            )), \
+             patch.object(_server, "_apply_auto_extract", new=AsyncMock(side_effect=lambda response, *a, **k: response)):
             result = run_async(convert_auto(**_base_convert_kwargs(mode="full")))
 
         assert result.success is True
@@ -209,7 +217,8 @@ class TestModeFullChunk:
         with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
              patch.object(_server, "call_mistral_vision_api", new=AsyncMock(
                  side_effect=side_effects
-             )):
+            )), \
+             patch.object(_server, "_apply_auto_extract", new=AsyncMock(side_effect=lambda response, *a, **k: response)):
             result = run_async(convert_auto(**_base_convert_kwargs(mode="full")))
 
         assert result.success is True
@@ -253,14 +262,45 @@ class TestModeDefault:
 
     def test_mode_default_no_classify(self):
         """
-        mode='default' ohne classify=True → document_type bleibt None.
+        mode='default' mit DEFAULT_CLASSIFY=false → document_type bleibt None.
         """
         vision_resp = _make_vision_response("# Normal Result")
 
         with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
+             patch.object(_server, "DEFAULT_CLASSIFY", False), \
              patch.object(_server, "call_mistral_vision_api", new=AsyncMock(return_value=vision_resp)):
             result = run_async(convert_auto(**_base_convert_kwargs(mode="default")))
 
+        assert result.meta.document_type is None
+
+    def test_mode_default_uses_default_classify_policy_when_unset(self):
+        """
+        mode='default' ohne classify-Override folgt DEFAULT_CLASSIFY=true.
+        """
+        vision_resp = _make_vision_response("# Normal Result")
+
+        with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
+             patch.object(_server, "DEFAULT_CLASSIFY", True), \
+             patch.object(_server, "call_mistral_vision_api", new=AsyncMock(return_value=vision_resp)), \
+             patch.object(_server, "classify_document", new=AsyncMock(return_value={"document_type": "invoice", "document_type_confidence": 0.92})):
+            result = run_async(convert_auto(**_base_convert_kwargs(mode="default")))
+
+        assert result.meta.document_type == "invoice"
+        assert result.meta.document_type_confidence == 0.92
+
+    def test_explicit_classify_false_overrides_default_classify_policy(self):
+        """
+        classify=false unterdrückt DEFAULT_CLASSIFY=true, solange auto_extract/mode escalation es nicht erzwingen.
+        """
+        vision_resp = _make_vision_response("# Normal Result")
+
+        with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
+             patch.object(_server, "DEFAULT_CLASSIFY", True), \
+             patch.object(_server, "call_mistral_vision_api", new=AsyncMock(return_value=vision_resp)), \
+             patch.object(_server, "classify_document", new=AsyncMock(return_value={"document_type": "invoice", "document_type_confidence": 0.92})) as classify_mock:
+            result = run_async(convert_auto(**_base_convert_kwargs(mode="default", classify=False)))
+
+        classify_mock.assert_not_awaited()
         assert result.meta.document_type is None
 
 
@@ -286,7 +326,8 @@ class TestModeFullOverridesIndividualParams:
         with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
              patch.object(_server, "call_mistral_vision_api", new=AsyncMock(
                  side_effect=side_effects
-             )):
+            )), \
+             patch.object(_server, "_apply_auto_extract", new=AsyncMock(side_effect=lambda response, *a, **k: response)):
             result = run_async(convert_auto(**_base_convert_kwargs(
                 mode="full",
                 describe_images=False,  # Explizit False — wird durch full überschrieben
@@ -324,7 +365,8 @@ class TestModeFullOverridesIndividualParams:
         with patch.object(_server, "MISTRAL_API_KEY", "test-key"), \
              patch.object(_server, "call_mistral_vision_api", new=AsyncMock(
                  side_effect=side_effects
-             )):
+            )), \
+             patch.object(_server, "_apply_auto_extract", new=AsyncMock(side_effect=lambda response, *a, **k: response)):
             result = run_async(convert_auto(**_base_convert_kwargs(
                 mode="full",
                 chunk=False,  # Explizit False — wird durch full überschrieben

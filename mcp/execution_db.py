@@ -208,6 +208,7 @@ def execution_update(
     current_stage: Optional[str] = None,
     warning_summary: Optional[dict[str, Any]] = None,
     error_summary: Optional[dict[str, Any]] = None,
+    policy_context: Optional[dict[str, Any]] = None,
     started_at_now: bool = False,
     finished_at_now: bool = False,
 ) -> Optional[dict[str, Any]]:
@@ -227,6 +228,9 @@ def execution_update(
     if error_summary is not None:
         assignments.append("error_summary = %s")
         params.append(psycopg2.extras.Json(error_summary))
+    if policy_context is not None:
+        assignments.append("policy_context = %s")
+        params.append(psycopg2.extras.Json(policy_context))
     if started_at_now:
         assignments.append("started_at = COALESCE(started_at, now())")
     if finished_at_now:

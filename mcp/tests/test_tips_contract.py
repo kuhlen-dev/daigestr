@@ -64,6 +64,17 @@ def test_tips_document_job_progress_fields(monkeypatch):
     assert "progress.request_id" in progress_fields
 
 
+def test_tips_document_classify_policy_default(monkeypatch):
+    monkeypatch.setattr(_routing, "get_all_template_ids", lambda: ["invoice"])
+    monkeypatch.setattr(_routing, "DEFAULT_CLASSIFY", True)
+
+    result = _server._build_tips_dict()
+
+    classify_feature = result["optional_features"]["classify"]
+    assert classify_feature["default"] is True
+    assert "DEFAULT_CLASSIFY" in classify_feature["description"]
+
+
 def test_tips_document_execution_status_fields(monkeypatch):
     monkeypatch.setattr(_routing, "get_all_template_ids", lambda: ["invoice"])
 

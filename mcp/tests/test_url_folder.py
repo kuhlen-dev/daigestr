@@ -156,7 +156,7 @@ class TestUrlGoesthroughConvertAuto:
         assert result.meta.title == "Test"
         assert result.meta.quality_score is not None
         assert result.meta.quality_grade is not None
-        assert result.meta.pipeline_steps == ["url_fetch", "markitdown"]
+        assert result.meta.pipeline_steps == ["url_fetch", "markitdown", "classify"]
 
     def test_url_html_applies_output_format_and_chunking(self):
         """HTML-URL-Fallback nutzt trotzdem die Standard-Finalisierung inklusive HTML-Render und Chunks."""
@@ -249,7 +249,7 @@ class TestUrlGoesthroughConvertAuto:
         assert result.success is True
         assert result.meta.quality_score == 0.92
         assert result.meta.accuracy_mode == "high"
-        assert classify_mock.await_count == 1
+        assert classify_mock.await_count == 2
         assert result.meta.retry_applied is True
         assert result.meta.retry_reason == "low_quality"
         assert result.meta.initial_mode == "default"
@@ -513,12 +513,12 @@ class TestExtractHasAccuracy:
         assert req.describe_images is False
 
     def test_extract_request_has_classify_field(self):
-        """ExtractRequest hat classify mit Default False."""
+        """ExtractRequest hat classify mit Policy-Default None."""
         from models import ExtractRequest
 
         req = ExtractRequest(path="/data/test.pdf", extract_schema={"type": "object"})
         assert hasattr(req, "classify")
-        assert req.classify is False
+        assert req.classify is None
 
     def test_extract_request_has_convert_parity_fields(self):
         """ExtractRequest trägt die zentralen Convert-Wrapper-Felder."""

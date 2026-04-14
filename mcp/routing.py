@@ -61,6 +61,7 @@ from settings import (
     BRIX_URL,
     PAGE_DESCRIBE_MAX_PAGES,
     AUDIT_ENABLED,
+    DEFAULT_CLASSIFY,
     QUALITY_RETRY_ENABLED,
     QUALITY_RETRY_THRESHOLD,
     QUALITY_RETRY_MODE,
@@ -478,6 +479,20 @@ def _apply_output_format(response: "ConvertResponse", output_format: str) -> "Co
     return response
 
 
+def _resolve_classify_policy(
+    classify: Optional[bool],
+    *,
+    auto_extract: bool,
+    mode: str,
+) -> bool:
+    """Resolve the effective classify flag from request override, env policy, and forced modes."""
+    if mode in {"full", "deep"} or auto_extract:
+        return True
+    if classify is None:
+        return bool(_get("DEFAULT_CLASSIFY", DEFAULT_CLASSIFY))
+    return classify
+
+
 async def finalize_url_markdown_response(
     markdown: str,
     *,
@@ -485,7 +500,7 @@ async def finalize_url_markdown_response(
     source: str,
     language: str,
     accuracy: str,
-    classify: bool,
+    classify: Optional[bool],
     classify_categories: Optional[list[str]],
     ocr_correct: bool,
     extract_schema: Optional[dict[str, Any]],
@@ -512,6 +527,13 @@ async def finalize_url_markdown_response(
     _apply_auto = _get("_apply_auto_extract", _apply_auto_extract)
     _chunk_md = _get("chunk_markdown", chunk_markdown)
 
+    if mode == "full":
+        accuracy = "high"
+        ocr_correct = True
+        auto_extract = True
+        chunk = True
+
+    classify = _resolve_classify_policy(classify, auto_extract=auto_extract, mode=mode)
     request_id = request_id or meta.get("request_id") or str(uuid.uuid4())
     execution_id = meta.get("execution_id")
     execution_kind = "async" if job_id else "direct"
@@ -533,12 +555,25 @@ async def finalize_url_markdown_response(
     )
     _attempt_upsert = _get("execution_attempt_upsert", execution_attempt_upsert)
     _attempt_upsert(
+        attempt_id=_execution_attempt_id(execution_id, attempt_number),
         execution_id=execution_id,
         attempt_number=attempt_number,
         attempt_mode=mode,
         attempt_reason="initial" if attempt_number == 1 else "retry",
         status="running",
         finished_at_now=False,
+    )
+    _exec_update = _get("execution_update", execution_update)
+    _exec_update(
+        execution_id,
+        policy_context={
+            "mode": mode,
+            "classify": classify,
+            "auto_extract": auto_extract,
+            "template": template,
+            "has_extract_schema": bool(extract_schema),
+            "source_type": "url",
+        },
     )
     _attempt_log = _bind_request_log_context(
         request_id=request_id,
@@ -562,13 +597,6 @@ async def finalize_url_markdown_response(
     retry_on_low_quality = QUALITY_RETRY_ENABLED if retry_on_low_quality is None else retry_on_low_quality
     quality_retry_threshold = QUALITY_RETRY_THRESHOLD if quality_retry_threshold is None else quality_retry_threshold
     quality_retry_mode = QUALITY_RETRY_MODE if quality_retry_mode is None else quality_retry_mode
-
-    if mode == "full":
-        accuracy = "high"
-        classify = True
-        ocr_correct = True
-        auto_extract = True
-        chunk = True
 
     effective_meta["accuracy_mode"] = accuracy
 
@@ -842,7 +870,7 @@ async def convert_auto(
     language: str = "de",
     describe_images: bool = False,
     describe_pages: bool = False,
-    classify: bool = False,
+    classify: Optional[bool] = None,
     classify_categories: list[str] | None = None,
     extract_schema: Optional[dict] = None,
     ocr_correct: bool = False,
@@ -867,6 +895,22 @@ async def convert_auto(
     Intelligente Konvertierung basierend auf Dateityp.
     Kein interner Timeout — externe Limits (REST-Client, Brix-Pipeline) steuern.
     """
+    if mode == "full":
+        describe_pages = True
+        accuracy = "high"
+        ocr_correct = True
+        auto_extract = True
+        chunk = True
+    elif mode == "deep":
+        describe_pages = True
+        describe_images = True
+        accuracy = "high"
+        ocr_correct = True
+        auto_extract = True
+        chunk = True
+
+    classify = _resolve_classify_policy(classify, auto_extract=auto_extract, mode=mode)
+
     request_id = input_meta.get("_request_id") or str(uuid.uuid4())
     job_id = input_meta.get("_job_id")
     execution_id = input_meta.get("execution_id")
@@ -893,6 +937,19 @@ async def convert_auto(
         "execution_id": execution_id,
         "_execution_kind": execution_kind,
     }
+
+    _exec_update = _get("execution_update", execution_update)
+    _exec_update(
+        execution_id,
+        policy_context={
+            "mode": mode,
+            "classify": classify,
+            "auto_extract": auto_extract,
+            "template": template,
+            "has_extract_schema": bool(extract_schema),
+            "source_type": source_type,
+        },
+    )
 
     effective_retry_enabled = _get("QUALITY_RETRY_ENABLED", QUALITY_RETRY_ENABLED)
     if retry_on_low_quality is not None:
@@ -949,7 +1006,6 @@ async def convert_auto(
             attempt_reason="initial" if current_attempt == 1 else "retry",
             status="running",
         )
-        _exec_update = _get("execution_update", execution_update)
         _exec_update(
             execution_id,
             status="processing",
@@ -1186,7 +1242,7 @@ async def _convert_auto_impl(
     language: str = "de",
     describe_images: bool = False,
     describe_pages: bool = False,
-    classify: bool = False,
+    classify: Optional[bool] = None,
     classify_categories: list[str] | None = None,
     extract_schema: Optional[dict] = None,
     ocr_correct: bool = False,
@@ -2385,7 +2441,7 @@ async def convert_folder_contents(
     input_meta: dict[str, Any],
     language: str = "de",
     describe_images: bool = False,
-    classify: bool = False,
+    classify: Optional[bool] = None,
     classify_categories: list[str] | None = None,
     extract_schema: Optional[dict] = None,
     auto_extract: bool = False,
@@ -2540,10 +2596,10 @@ def _build_tips_dict() -> dict:
             {"problem": "chunks is null", "cause": "Missing chunk parameter", "fix": "Add chunk=true to get RAG-ready chunks in the chunks field"},
             {"problem": "Poor quality on scanned PDFs", "cause": "Using standard accuracy", "fix": "Set accuracy='high' for OCR correction + dual-pass validation"},
             {"problem": "Images in DOCX/PPTX/PDF/ODT/ODP/HTML not described", "cause": "describe_images defaults to false", "fix": "Set describe_images=true (costs extra API calls)"},
-            {"problem": "Document type not detected", "cause": "classify defaults to false", "fix": "Set classify=true to get document_type in meta"},
+            {"problem": "Document type not detected", "cause": "Classification was effectively disabled for this request", "fix": "Use classify=true to force classification or leave classify unset to follow DEFAULT_CLASSIFY. auto_extract and mode escalation always enable classification."},
             {"problem": "OCR errors in output", "cause": "No post-correction", "fix": "Set ocr_correct=true or accuracy='high' (auto-enables correction)"},
             {"problem": "ocr_embed has no effect", "cause": "Only works on scanned PDFs", "fix": "ocr_embed only embeds OCR text layer in scanned PDFs — has no effect on text PDFs or other formats"},
-            {"problem": "classify_categories ignored", "cause": "classify defaults to false", "fix": "Set classify=true to use custom categories"},
+            {"problem": "classify_categories ignored", "cause": "Classification was effectively disabled for this request", "fix": "Use classify=true to force classification or leave classify unset so DEFAULT_CLASSIFY can apply. classify=false suppresses custom categories unless auto_extract or mode escalation requires classification."},
             {"problem": "prompt has no effect on documents", "cause": "prompt only affects Vision analysis", "fix": "prompt is only used for image files processed via Vision API, not for documents"},
             {"problem": "Audit log entries missing or incorrect", "cause": "Direct DB writes bypass validation and indexing", "fix": "Do NOT modify audit_log directly in DB — use audit_log_event() from audit_db.py for all writes"},
         ],
@@ -2556,7 +2612,7 @@ def _build_tips_dict() -> dict:
         },
         "optional_features": {
             "accuracy": {"values": ["standard", "high"], "default": "standard", "description": "high activates OCR correction + dual-pass vision validation for scanned documents"},
-            "classify": {"type": "bool", "default": False, "description": "Detect document type (invoice, contract, cv, etc.) with confidence score in meta"},
+            "classify": {"type": "bool|null", "default": _get("DEFAULT_CLASSIFY", DEFAULT_CLASSIFY), "description": "Classification policy override. true forces classification, false disables it unless auto_extract or mode escalation requires it, null uses DEFAULT_CLASSIFY."},
             "extract_schema": {"type": "dict", "default": None, "description": "JSON Schema for structured extraction — result in 'extracted' field. Without this, extracted is always null."},
             "template": {"type": "str", "default": None, "description": "Shortcut for extract_schema. Use GET /v1/templates or /v1/tips for the live template registry."},
             "auto_extract": {"type": "bool", "default": False, "description": "Automatically classify document, find matching template, and extract structured data — all in one call. No template or extract_schema needed."},

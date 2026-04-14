@@ -49,7 +49,7 @@ async def mcp_convert(
     url: Optional[str] = None,
     meta: Optional[dict] = None,
     accuracy: str = "standard",
-    classify: bool = False,
+    classify: Optional[bool] = None,
     classify_categories: Optional[list] = None,
     describe_images: bool = False,
     ocr_correct: bool = False,
@@ -88,7 +88,9 @@ async def mcp_convert(
     To get STRUCTURED JSON, add extract_schema or template parameter.
     To get AUTO-EXTRACTED JSON (no template needed), add auto_extract=true.
     To get RAG CHUNKS, add chunk=true.
-    To CLASSIFY the document type, add classify=true.
+    Classification follows DEFAULT_CLASSIFY when classify is omitted.
+    Use classify=true to force classification or classify=false to suppress it
+    unless auto_extract or mode escalation requires classification.
     To DESCRIBE IMAGES in DOCX/PPTX, add describe_images=true.
     For SCANNED PDFs, use accuracy='high' for best results.
     For mode='full': page-level rendering for PDFs (faster, sees full page context).
@@ -112,7 +114,7 @@ async def mcp_convert(
         url: URL zu Datei oder Webseite.
         meta: Beliebige Metadaten (werden durchgereicht).
         accuracy: Accuracy-Modus: 'standard' (Default) oder 'high'.
-        classify: Dokumenttyp via LLM klassifizieren.
+        classify: Klassifizierungs-Policy-Override. true erzwingt Klassifizierung, false deaktiviert sie außer auto_extract oder Modus-Eskalation verlangen sie, null nutzt DEFAULT_CLASSIFY.
         classify_categories: Erlaubte Dokumenttypen (überschreibt Default).
         describe_images: Eingebettete Bilder in DOCX/PPTX beschreiben.
         ocr_correct: OCR-Nachkorrektur via LLM aktivieren.
@@ -266,7 +268,7 @@ async def mcp_extract(
     meta: Optional[dict] = None,
     accuracy: str = "standard",
     ocr_correct: bool = False,
-    classify: bool = False,
+    classify: Optional[bool] = None,
     classify_categories: Optional[list] = None,
     describe_images: bool = False,
     chunk: bool = False,
@@ -314,7 +316,7 @@ async def mcp_extract(
         meta: Beliebige Metadaten (werden durchgereicht).
         accuracy: Accuracy-Modus: 'standard' (Default) oder 'high'.
         ocr_correct: OCR-Nachkorrektur via LLM aktivieren.
-        classify: Dokumenttyp via LLM klassifizieren.
+        classify: Klassifizierungs-Policy-Override. true erzwingt Klassifizierung, false deaktiviert sie außer auto_extract oder Modus-Eskalation verlangen sie, null nutzt DEFAULT_CLASSIFY.
         classify_categories: Erlaubte Klassifizierungs-Kategorien.
         describe_images: Eingebettete Bilder via Vision beschreiben.
         chunk: Smart Chunking aktivieren.
@@ -464,7 +466,7 @@ async def mcp_convert_folder(
     meta: Optional[dict] = None,
     language: str = "de",
     describe_images: bool = False,
-    classify: bool = False,
+    classify: Optional[bool] = None,
     classify_categories: Optional[list] = None,
     extract_schema: Optional[dict] = None,
     auto_extract: bool = False,
@@ -488,7 +490,7 @@ async def mcp_convert_folder(
         meta: Beliebige Metadaten (werden durchgereicht).
         language: Antwortsprache ('de' oder 'en').
         describe_images: Eingebettete Bilder in DOCX/PPTX/PDF/ODT/ODP/HTML beschreiben.
-        classify: Dokumenttyp via LLM klassifizieren.
+        classify: Klassifizierungs-Policy-Override. true erzwingt Klassifizierung, false deaktiviert sie außer auto_extract oder Modus-Eskalation verlangen sie, null nutzt DEFAULT_CLASSIFY.
         classify_categories: Erlaubte Klassifizierungs-Kategorien.
         extract_schema: JSON Schema für strukturierte Daten-Extraktion.
         auto_extract: Automatisch klassifizieren, Template suchen und Daten extrahieren.
