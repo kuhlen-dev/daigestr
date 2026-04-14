@@ -49,6 +49,7 @@ def init_execution_db() -> None:
                 current_stage TEXT,
                 progress_json JSONB,
                 document_identity JSONB,
+                input_snapshot JSONB,
                 policy_context JSONB,
                 warning_summary JSONB,
                 error_summary JSONB,
@@ -87,6 +88,10 @@ def init_execution_db() -> None:
         cur.execute(
             "ALTER TABLE execution "
             "ADD COLUMN IF NOT EXISTS progress_json JSONB"
+        )
+        cur.execute(
+            "ALTER TABLE execution "
+            "ADD COLUMN IF NOT EXISTS input_snapshot JSONB"
         )
         cur.execute(
             """
@@ -173,6 +178,7 @@ def execution_create(
     batch_id: Optional[str] = None,
     batch_item_id: Optional[str] = None,
     document_identity: Optional[dict[str, Any]] = None,
+    input_snapshot: Optional[dict[str, Any]] = None,
     policy_context: Optional[dict[str, Any]] = None,
     status: str = "queued",
     current_stage: Optional[str] = None,
@@ -190,9 +196,9 @@ def execution_create(
             INSERT INTO execution (
                 id, request_id, idempotency_key, execution_kind, source_type, source_ref,
                 job_id, batch_id, batch_item_id, status, current_stage,
-                progress_json, document_identity, policy_context
+                progress_json, document_identity, input_snapshot, policy_context
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
             (
@@ -209,6 +215,7 @@ def execution_create(
                 current_stage,
                 psycopg2.extras.Json(progress_json) if progress_json is not None else None,
                 psycopg2.extras.Json(document_identity) if document_identity is not None else None,
+                psycopg2.extras.Json(input_snapshot) if input_snapshot is not None else None,
                 psycopg2.extras.Json(policy_context) if policy_context is not None else None,
             ),
         )
@@ -227,6 +234,7 @@ def execution_update(
     progress_json: Optional[dict[str, Any]] = None,
     idempotency_key: Optional[str] = None,
     document_identity: Optional[dict[str, Any]] = None,
+    input_snapshot: Optional[dict[str, Any]] = None,
     warning_summary: Optional[dict[str, Any]] = None,
     error_summary: Optional[dict[str, Any]] = None,
     policy_context: Optional[dict[str, Any]] = None,
@@ -252,6 +260,9 @@ def execution_update(
     if document_identity is not None:
         assignments.append("document_identity = %s")
         params.append(psycopg2.extras.Json(document_identity))
+    if input_snapshot is not None:
+        assignments.append("input_snapshot = %s")
+        params.append(psycopg2.extras.Json(input_snapshot))
     if warning_summary is not None:
         assignments.append("warning_summary = %s")
         params.append(psycopg2.extras.Json(warning_summary))

@@ -85,6 +85,7 @@ def test_tips_document_execution_status_fields(monkeypatch):
     execution_fields = result["response_contract"]["execution_status_fields"]
     assert "execution_id" in execution_fields
     assert "idempotency_key" in execution_fields
+    assert "input_snapshot" in execution_fields
     assert "status" in execution_fields
     assert "progress" in execution_fields
     assert "result_meta_summary" in execution_fields

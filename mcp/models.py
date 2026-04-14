@@ -100,6 +100,7 @@ CANONICAL_EXECUTION_FIELDS: dict[str, str] = {
     "progress": "Canonical persisted progress snapshot shared by direct and async status views.",
     "result_meta_summary": "Condensed final result metadata for history and reporting.",
     "document_identity": "Persisted identity and fingerprint of the input document when known.",
+    "input_snapshot": "Frozen snapshot of the logical input at execution start; later batch-items build on the same structure.",
     "policy_context": "Persisted policy resolution used for the run.",
     "warning_summary": "Aggregated warning information for the execution.",
     "error_summary": "Aggregated error information for the execution.",
@@ -368,6 +369,7 @@ class ExecutionStatusResponse(BaseModel):
     progress: Optional[ProgressState] = Field(None, description="Kanonischer persistierter Progress-Snapshot dieses Laufs")
     result_meta_summary: Optional[dict[str, Any]] = Field(None, description="Verdichtete finale Result-Metadaten für History und Reporting")
     document_identity: Optional[dict[str, Any]] = Field(None, description="Persistierte Identität des Eingangsdokuments")
+    input_snapshot: Optional[dict[str, Any]] = Field(None, description="Eingefrorener Input-Snapshot des logischen Auftrags")
     policy_context: Optional[dict[str, Any]] = Field(None, description="Persistierter Policy-Kontext des Laufs")
     warning_summary: Optional[dict[str, Any]] = Field(None, description="Aggregierte Warnungen")
     error_summary: Optional[dict[str, Any]] = Field(None, description="Aggregierte Fehlerdaten")

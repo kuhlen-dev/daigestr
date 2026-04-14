@@ -297,6 +297,34 @@ def _build_document_identity(
     }
 
 
+def _build_input_snapshot(
+    *,
+    source: str,
+    source_type: str,
+    filename: str,
+    document_identity: Optional[dict[str, Any]],
+    input_meta: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    snapshot = {
+        "source_type": source_type,
+        "source_ref": source,
+        "filename": filename,
+        "document_identity": document_identity or {},
+    }
+    if source_type == "file":
+        snapshot["resolved_path"] = source
+    if source_type == "url":
+        snapshot["url"] = source
+    if source_type == "base64":
+        snapshot["upload_filename"] = filename
+    if input_meta:
+        if input_meta.get("idempotency_key"):
+            snapshot["idempotency_key"] = input_meta.get("idempotency_key")
+        if input_meta.get("pages") is not None:
+            snapshot["pages"] = input_meta.get("pages")
+    return snapshot
+
+
 def _ensure_execution_context(
     *,
     request_id: str,
@@ -307,6 +335,7 @@ def _ensure_execution_context(
     job_id: Optional[str],
     idempotency_key: Optional[str] = None,
     document_identity: Optional[dict[str, Any]] = None,
+    input_snapshot: Optional[dict[str, Any]] = None,
     policy_context: Optional[dict[str, Any]] = None,
 ) -> str:
     start_progress = build_progress_payload(
@@ -326,6 +355,7 @@ def _ensure_execution_context(
             progress_json=start_progress,
             idempotency_key=idempotency_key,
             document_identity=document_identity,
+            input_snapshot=input_snapshot,
             started_at_now=True,
         )
         return execution_id
@@ -344,6 +374,7 @@ def _ensure_execution_context(
             progress_json=existing.get("progress_json") or start_progress,
             idempotency_key=idempotency_key or existing.get("idempotency_key"),
             document_identity=document_identity or existing.get("document_identity"),
+            input_snapshot=existing.get("input_snapshot") or input_snapshot,
             started_at_now=True,
         )
         return existing["id"]
@@ -361,6 +392,7 @@ def _ensure_execution_context(
         current_stage="start",
         progress_json=start_progress,
         document_identity=document_identity,
+        input_snapshot=input_snapshot,
         policy_context=policy_context or {},
     )
     return created["id"]
@@ -873,6 +905,12 @@ async def finalize_url_markdown_response(
         source_type="url",
         source_ref=source,
         job_id=job_id,
+        input_snapshot={
+            "source_type": "url",
+            "source_ref": source,
+            "url": source,
+            "document_identity": {},
+        },
         policy_context={
             "mode_policy": {**mode_policy, "classify": classify},
             "retry_policy": retry_policy,
@@ -1307,6 +1345,13 @@ async def convert_auto(
         source=source,
         source_type=source_type,
     )
+    input_snapshot = _build_input_snapshot(
+        source=source,
+        source_type=source_type,
+        filename=filename,
+        document_identity=document_identity,
+        input_meta=input_meta,
+    )
     execution_id = _ensure_execution_context(
         request_id=request_id,
         execution_id=execution_id,
@@ -1316,6 +1361,7 @@ async def convert_auto(
         job_id=job_id,
         idempotency_key=idempotency_key,
         document_identity=document_identity,
+        input_snapshot=input_snapshot,
         policy_context={
             "mode_policy": {**mode_policy, "classify": classify},
             "retry_policy": retry_policy,

@@ -67,6 +67,10 @@ def test_convert_auto_persists_execution_attempts_and_final_result(monkeypatch):
     assert execution_row["document_identity"]["size_bytes"] == 5
     assert execution_row["document_identity"]["extension"] == "txt"
     assert execution_row["document_identity"]["sha256"]
+    assert execution_row["input_snapshot"]["source_type"] == "file"
+    assert execution_row["input_snapshot"]["resolved_path"] == "/tmp/hello.txt"
+    assert execution_row["input_snapshot"]["filename"] == "hello.txt"
+    assert execution_row["input_snapshot"]["document_identity"]["sha256"] == execution_row["document_identity"]["sha256"]
 
     attempts = execution_attempt_list(response.meta.execution_id)
     assert len(attempts) == 1
@@ -447,6 +451,28 @@ def test_ensure_execution_for_request_reuses_explicit_idempotency_key_for_async(
     assert execution_a == execution_b
     assert request_a.meta["idempotency_key"] == "async-doc"
     assert request_b.meta["idempotency_key"] == "async-doc"
+
+
+def test_execution_status_response_includes_input_snapshot():
+    import uuid
+    from execution_db import execution_create, execution_get_full, init_execution_db
+
+    api_rest = _load_api_rest_module()
+    init_execution_db()
+    execution = execution_create(
+        execution_id=str(uuid.uuid4()),
+        request_id=str(uuid.uuid4()),
+        execution_kind="direct",
+        source_type="file",
+        source_ref="/data/doc.txt",
+        document_identity={"filename": "doc.txt"},
+        input_snapshot={"source_type": "file", "resolved_path": "/data/doc.txt", "filename": "doc.txt"},
+        status="completed",
+        current_stage="done",
+    )
+    payload = api_rest._build_execution_status_response(execution_get_full(execution["id"]))
+
+    assert payload.input_snapshot["resolved_path"] == "/data/doc.txt"
 
 
 def test_async_execution_status_matches_job_progress(monkeypatch):

@@ -285,6 +285,7 @@ def _build_execution_status_response(row: dict[str, Any]) -> ExecutionStatusResp
         progress=progress,
         result_meta_summary=result_meta_summary,
         document_identity=row.get("document_identity"),
+        input_snapshot=row.get("input_snapshot"),
         policy_context=row.get("policy_context"),
         warning_summary=row.get("warning_summary"),
         error_summary=row.get("error_summary"),
