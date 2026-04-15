@@ -797,6 +797,168 @@ def test_get_batch_item_result_reuses_execution_result_payload(monkeypatch):
     assert restored.meta.execution_id == batch_item.execution_id
 
 
+def test_batch_item_cancel_resume_and_retry_orchestration(monkeypatch):
+    from execution_db import execution_queue_get_by_execution_id, execution_result_get_final, execution_result_upsert, execution_update
+    from fastapi import HTTPException
+    from models import BatchCreateRequest, ConvertRequest, create_error_response, ErrorCode
+
+    api_rest = _load_api_rest_module()
+    monkeypatch.setattr(api_rest, "QUEUE_ENABLED", True)
+    monkeypatch.setattr(api_rest, "BATCH_DEFAULT_QUEUE_NAME", "default")
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "QUEUE_ENABLED", True)
+        monkeypatch.setitem(server_module.__dict__, "BATCH_DEFAULT_QUEUE_NAME", "default")
+
+    created = api_rest._start_batch_execution(
+        BatchCreateRequest(
+            batch_ref=f"cancel-resume-batch-{uuid.uuid4()}",
+            items=[ConvertRequest(base64="aGVsbG8=", filename="hello.txt")],
+        )
+    )
+    batch_item = api_rest._get_batch_items_payload(created.batch_id, limit=10, offset=0).items[0]
+
+    cancelled = api_rest._cancel_batch_item(created.batch_id, batch_item.batch_item_id)
+    assert cancelled.status == "cancelled"
+
+    cancelled_batch = api_rest._get_batch_status_payload(created.batch_id)
+    assert cancelled_batch.cancelled_count == 1
+    assert cancelled_batch.status == "cancelled"
+
+    with pytest.raises(HTTPException):
+        api_rest._retry_batch_item(created.batch_id, batch_item.batch_item_id)
+
+    resumed = api_rest._resume_batch_item(created.batch_id, batch_item.batch_item_id)
+    assert resumed.status == "queued"
+    assert resumed.final_result_available is False
+
+    resumed_queue = execution_queue_get_by_execution_id(batch_item.execution_id)
+    assert resumed_queue is not None
+    assert resumed_queue["status"] == "queued"
+
+    failed_result = create_error_response(
+        ErrorCode.CONVERSION_FAILED,
+        "batch item failed",
+        meta={"execution_id": batch_item.execution_id},
+    )
+    execution_result_upsert(
+        result_id=f"result-{uuid.uuid4()}",
+        execution_id=batch_item.execution_id,
+        is_final=True,
+        result_status="failed",
+        success=False,
+        response_json=failed_result.model_dump(mode="json"),
+        meta=failed_result.meta.model_dump(mode="json"),
+        extracted=None,
+        normalized=None,
+        warnings=None,
+        error=failed_result.error.model_dump(mode="json") if failed_result.error else None,
+    )
+    execution_update(batch_item.execution_id, status="failed", current_stage="failed", finished_at_now=True)
+
+    failed = api_rest._get_batch_items_payload(created.batch_id, limit=10, offset=0).items[0]
+    assert failed.status == "failed"
+    assert failed.final_result_available is True
+    assert execution_result_get_final(batch_item.execution_id) is not None
+
+    retried = api_rest._retry_batch_item(created.batch_id, batch_item.batch_item_id)
+    assert retried.status == "queued"
+    assert retried.final_result_available is False
+    assert execution_result_get_final(batch_item.execution_id) is None
+
+
+def test_batch_resume_requeues_only_cancelled_items(monkeypatch):
+    from execution_db import execution_get, execution_queue_get_by_execution_id, execution_update
+    from models import BatchCreateRequest, ConvertRequest
+
+    api_rest = _load_api_rest_module()
+    monkeypatch.setattr(api_rest, "QUEUE_ENABLED", True)
+    monkeypatch.setattr(api_rest, "BATCH_DEFAULT_QUEUE_NAME", "default")
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "QUEUE_ENABLED", True)
+        monkeypatch.setitem(server_module.__dict__, "BATCH_DEFAULT_QUEUE_NAME", "default")
+
+    created = api_rest._start_batch_execution(
+        BatchCreateRequest(
+            batch_ref=f"resume-batch-{uuid.uuid4()}",
+            items=[
+                ConvertRequest(base64="aGVsbG8=", filename="hello.txt"),
+                ConvertRequest(base64="d29ybGQ=", filename="world.txt"),
+            ],
+        )
+    )
+    items = api_rest._get_batch_items_payload(created.batch_id, limit=10, offset=0).items
+    first, second = items
+
+    api_rest._cancel_batch_item(created.batch_id, first.batch_item_id)
+    execution_update(second.execution_id, status="completed", current_stage="done", finished_at_now=True)
+
+    resumed_batch = api_rest._resume_batch(created.batch_id)
+    assert resumed_batch.queued_count == 1
+    assert resumed_batch.completed_count == 1
+    assert resumed_batch.status == "processing"
+
+    first_queue = execution_queue_get_by_execution_id(first.execution_id)
+    assert first_queue is not None and first_queue["status"] == "queued"
+    second_execution = execution_get(second.execution_id)
+    assert second_execution is not None
+    assert second_execution["status"] == "completed"
+
+
+def test_queue_worker_skips_cancelled_batch_item_before_execution(monkeypatch):
+    from execution_db import execution_queue_get_by_execution_id, execution_result_get_final
+    from models import BatchCreateRequest, ConvertRequest
+
+    api_rest = _load_api_rest_module()
+    monkeypatch.setattr(api_rest, "QUEUE_ENABLED", True)
+    monkeypatch.setattr(api_rest, "BATCH_DEFAULT_QUEUE_NAME", "default")
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "QUEUE_ENABLED", True)
+        monkeypatch.setitem(server_module.__dict__, "BATCH_DEFAULT_QUEUE_NAME", "default")
+
+    created = api_rest._start_batch_execution(
+        BatchCreateRequest(
+            batch_ref=f"worker-boundary-{uuid.uuid4()}",
+            items=[ConvertRequest(base64="aGVsbG8=", filename="hello.txt")],
+        )
+    )
+    batch_item = api_rest._get_batch_items_payload(created.batch_id, limit=10, offset=0).items[0]
+    api_rest._cancel_batch_item(created.batch_id, batch_item.batch_item_id)
+    queue_row = execution_queue_get_by_execution_id(batch_item.execution_id)
+    assert queue_row is not None
+
+    called = {"ran": False}
+
+    async def fail_if_run(*args, **kwargs):
+        called["ran"] = True
+        raise AssertionError("_run_async_job must not run for cancelled executions")
+
+    claim_rows = [queue_row, None]
+
+    def fake_claim_next(**kwargs):
+        return claim_rows.pop(0)
+
+    async def stop_after_cancel(_seconds):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(api_rest, "_run_async_job", fail_if_run)
+    monkeypatch.setattr(api_rest, "execution_queue_claim_next", fake_claim_next)
+    monkeypatch.setattr(api_rest.asyncio, "sleep", stop_after_cancel)
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "execution_queue_claim_next", fake_claim_next)
+        monkeypatch.setitem(server_module.__dict__, "_run_async_job", fail_if_run)
+
+    with pytest.raises(asyncio.CancelledError):
+        run_async(api_rest._queue_worker_loop("worker-boundary"))
+
+    queue_row = execution_queue_get_by_execution_id(batch_item.execution_id)
+    assert queue_row["status"] == "cancelled"
+    assert called["ran"] is False
+    assert execution_result_get_final(batch_item.execution_id) is None
+
+
 def test_async_failed_convert_response_marks_job_failed(monkeypatch):
     import routing
     from execution_db import init_execution_db

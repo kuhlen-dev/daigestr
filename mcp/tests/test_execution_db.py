@@ -142,7 +142,9 @@ def test_execution_update(execution_record):
 
 def test_execution_queue_enqueue_claim_and_complete(execution_record):
     from execution_db import (
+        execution_queue_cancel,
         execution_queue_enqueue,
+        execution_queue_get_by_execution_id,
         execution_queue_claim_next,
         execution_queue_complete,
         execution_queue_list,
@@ -171,6 +173,24 @@ def test_execution_queue_enqueue_claim_and_complete(execution_record):
 
     rows = execution_queue_list(limit=10)
     assert any(row["id"] == queued["id"] for row in rows)
+
+    fetched = execution_queue_get_by_execution_id(execution_record["id"])
+    assert fetched is not None
+    assert fetched["id"] == queued["id"]
+
+    cancelled = execution_queue_cancel(execution_record["id"])
+    assert cancelled is not None
+    assert cancelled["status"] == "cancelled"
+
+    resumed = execution_queue_enqueue(
+        queue_id=f"queue-{uuid.uuid4()}",
+        execution_id=execution_record["id"],
+        job_id="job-queue-test",
+        payload={"request": {"path": "/data/test.pdf"}},
+        queue_name=queue_name,
+    )
+    assert resumed["id"] == queued["id"]
+    assert resumed["status"] == "queued"
 
 
 def test_execution_batch_create_and_item_linkage(execution_record):
@@ -273,6 +293,70 @@ def test_execution_batch_create_and_item_linkage(execution_record):
     assert looked_up_completed is not None
     assert looked_up_completed["effective_status"] == "completed"
     assert looked_up_completed["final_result_available"] is True
+
+    execution_update(execution_record["id"], status="cancelled", current_stage="cancelled", finished_at_now=True)
+    cancelled = execution_batch_status_summary(batch_id, active_item_limit=10)
+    assert cancelled is not None
+    assert cancelled["cancelled_count"] == 1
+    assert cancelled["status"] == "cancelled"
+
+
+def test_execution_batch_summary_marks_terminal_mixed_statuses_as_partial(execution_record):
+    from execution_db import (
+        execution_batch_create,
+        execution_batch_item_create,
+        execution_batch_status_summary,
+        execution_create,
+        execution_update,
+    )
+
+    batch_id = f"batch-{uuid.uuid4()}"
+    batch = execution_batch_create(batch_id=batch_id, queue_name="default", status="queued", item_count=2)
+
+    first_batch_item_id = f"item-{uuid.uuid4()}"
+    execution_update(execution_record["id"], batch_id=batch["id"], batch_item_id=first_batch_item_id)
+    execution_batch_item_create(
+        batch_item_id=first_batch_item_id,
+        batch_id=batch["id"],
+        item_index=0,
+        execution_id=execution_record["id"],
+        request_id=execution_record["request_id"],
+        source_type="file",
+        source_ref="/data/a.pdf",
+        filename="a.pdf",
+        status="queued",
+    )
+    execution_update(execution_record["id"], status="completed", current_stage="done", finished_at_now=True)
+
+    second_execution = execution_create(
+        execution_id=f"exec-{uuid.uuid4()}",
+        request_id=f"req-{uuid.uuid4()}",
+        execution_kind="batch_item",
+        source_type="file",
+        source_ref="/data/b.pdf",
+        batch_id=batch["id"],
+        batch_item_id=f"item-{uuid.uuid4()}",
+        status="cancelled",
+        current_stage="cancelled",
+    )
+    execution_batch_item_create(
+        batch_item_id=second_execution["batch_item_id"],
+        batch_id=batch["id"],
+        item_index=1,
+        execution_id=second_execution["id"],
+        request_id=second_execution["request_id"],
+        source_type="file",
+        source_ref="/data/b.pdf",
+        filename="b.pdf",
+        status="cancelled",
+    )
+    execution_update(second_execution["id"], status="cancelled", current_stage="cancelled", finished_at_now=True)
+
+    summary = execution_batch_status_summary(batch["id"], active_item_limit=10)
+    assert summary is not None
+    assert summary["completed_count"] == 1
+    assert summary["cancelled_count"] == 1
+    assert summary["status"] == "partial"
 
 
 def test_execution_attempt_upsert_and_list(execution_record):

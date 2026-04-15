@@ -680,6 +680,28 @@ def execution_result_list(execution_id: str) -> list[dict[str, Any]]:
         _return_conn(conn)
 
 
+def execution_result_clear_final(execution_id: str) -> int:
+    """Demote any current final result rows so a rerun can materialize a new final truth."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE execution_result
+            SET is_final = false,
+                updated_at = now()
+            WHERE execution_id = %s
+              AND is_final = true
+            """,
+            (execution_id,),
+        )
+        cleared = cur.rowcount or 0
+        conn.commit()
+        return int(cleared)
+    finally:
+        _return_conn(conn)
+
+
 def execution_queue_enqueue(
     *,
     queue_id: str,
@@ -725,6 +747,21 @@ def execution_queue_enqueue(
         _return_conn(conn)
 
 
+def execution_queue_get_by_execution_id(execution_id: str) -> Optional[dict[str, Any]]:
+    """Fetch one persisted queue row by canonical execution id."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM execution_queue WHERE execution_id = %s",
+            (execution_id,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        _return_conn(conn)
+
+
 def execution_queue_claim_next(
     *,
     worker_id: str,
@@ -760,6 +797,31 @@ def execution_queue_claim_next(
             RETURNING q.*
             """,
             (queue_name, worker_id, lease_seconds),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return dict(row) if row else None
+    finally:
+        _return_conn(conn)
+
+
+def execution_queue_cancel(execution_id: str) -> Optional[dict[str, Any]]:
+    """Mark a queued or claimed queue row as cancelled by canonical execution id."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE execution_queue
+            SET status = 'cancelled',
+                claimed_by = NULL,
+                claimed_at = NULL,
+                lease_expires_at = NULL,
+                updated_at = now()
+            WHERE execution_id = %s
+            RETURNING *
+            """,
+            (execution_id,),
         )
         row = cur.fetchone()
         conn.commit()
@@ -1104,6 +1166,7 @@ def execution_batch_status_summary(
         failed_count = int(counts.get("failed_count") or 0)
         cancelled_count = int(counts.get("cancelled_count") or 0)
 
+        terminal_count = completed_count + failed_count + cancelled_count
         if item_count == 0:
             derived_status = "queued"
         elif completed_count == item_count:
@@ -1114,7 +1177,7 @@ def execution_batch_status_summary(
             derived_status = "cancelled"
         elif processing_count > 0:
             derived_status = "processing"
-        elif completed_count > 0 and failed_count > 0 and completed_count + failed_count == item_count:
+        elif terminal_count == item_count:
             derived_status = "partial"
         elif completed_count > 0 and completed_count < item_count:
             derived_status = "processing"

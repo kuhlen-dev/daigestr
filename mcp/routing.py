@@ -3203,7 +3203,14 @@ def _build_tips_dict() -> dict:
             "batch_queue_policy": {
                 "default_queue_name": str(_get("BATCH_DEFAULT_QUEUE_NAME", BATCH_DEFAULT_QUEUE_NAME)),
                 "create_endpoint": "POST /v1/batches accepts an explicit item list and persists one canonical batch plus batch_item executions.",
-                "status_note": "This wave only introduces canonical batch creation and queue submission; lightweight batch status and paginated result retrieval land in later W16.5 tasks.",
+                "status_note": "Batch status stays lightweight and canonical; control actions operate on the same execution, execution_result, execution_batch, execution_batch_item, and execution_queue truth.",
+                "control_actions": {
+                    "batch_cancel": "POST /v1/batches/{id}/cancel cancels queued or claimed batch items without introducing a second batch state model.",
+                    "batch_resume": "POST /v1/batches/{id}/resume requeues cancelled batch items using the persisted queue payload.",
+                    "item_cancel": "POST /v1/batches/{id}/items/{item_id}/cancel cancels one batch item on its canonical execution.",
+                    "item_resume": "POST /v1/batches/{id}/items/{item_id}/resume requeues one cancelled batch item on the same canonical execution.",
+                    "item_retry": "POST /v1/batches/{id}/items/{item_id}/retry requeues one failed batch item on the same canonical execution after clearing the prior final result flag.",
+                },
             },
         },
         "response_fields": {
@@ -3241,7 +3248,12 @@ def _build_tips_dict() -> dict:
                 "start_response": "The start response is lightweight and returns {batch_id, status, item_count, batch_ref, queue_name}.",
                 "status": "GET /v1/batches/{id} returns lightweight aggregated counters plus active_items without inlining full document results.",
                 "list": "GET /v1/batches returns the same lightweight batch status shape for recent persisted batches.",
+                "cancel": "POST /v1/batches/{id}/cancel cancels the queued or claimed remainder of a batch without touching completed items.",
+                "resume": "POST /v1/batches/{id}/resume requeues cancelled items of the batch on their existing canonical executions.",
                 "items": "GET /v1/batches/{id}/items returns a paginated lightweight item list with execution linkage and final_result_available flags.",
+                "item_cancel": "POST /v1/batches/{id}/items/{item_id}/cancel cancels one batch item and keeps polling lightweight.",
+                "item_resume": "POST /v1/batches/{id}/items/{item_id}/resume requeues one cancelled batch item via its persisted queue payload.",
+                "item_retry": "POST /v1/batches/{id}/items/{item_id}/retry requeues one failed batch item on the same logical execution after demoting the old final result.",
                 "item_result": "GET /v1/batches/{id}/items/{item_id}/result returns the persisted final ConvertResponse for one batch item via its canonical execution.",
                 "linkage": "Each batch item owns one canonical execution; persisted batch_item executions carry execution_kind=batch_item and execution.batch_id/execution.batch_item_id.",
             },

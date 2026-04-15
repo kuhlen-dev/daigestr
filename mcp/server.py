@@ -240,7 +240,9 @@ from execution_db import (  # noqa: F401
     execution_batch_item_list,
     execution_batch_item_list_paginated,
     execution_queue_enqueue,
+    execution_queue_get_by_execution_id,
     execution_queue_claim_next,
+    execution_queue_cancel,
     execution_queue_complete,
     execution_queue_fail,
     execution_queue_list,
@@ -257,6 +259,7 @@ from execution_db import (  # noqa: F401
     execution_attempt_list,
     execution_result_upsert,
     execution_result_get_final,
+    execution_result_clear_final,
     execution_result_list,
 )
 

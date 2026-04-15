@@ -100,9 +100,11 @@ from templates_db import (
 )
 from execution_db import (
     execution_batch_create,
+    execution_batch_get,
     execution_batch_get_by_idempotency_key,
     execution_batch_item_get,
     execution_batch_item_create,
+    execution_batch_item_list,
     execution_batch_list,
     execution_batch_item_list_paginated,
     execution_batch_status_summary,
@@ -115,12 +117,15 @@ from execution_db import (
     execution_list,
     execution_list_active,
     execution_list_stuck,
+    execution_queue_cancel,
     execution_queue_enqueue,
+    execution_queue_get_by_execution_id,
     execution_queue_claim_next,
     execution_queue_complete,
     execution_queue_fail,
     execution_queue_list,
     execution_update,
+    execution_result_clear_final,
     execution_result_upsert,
     execution_result_get_final,
 )
@@ -512,6 +517,164 @@ def _build_batch_item_response(row: dict[str, Any]) -> BatchItemResponse:
     )
 
 
+def _build_queued_progress_payload(
+    *,
+    request: ConvertRequest,
+    job_id: Optional[str],
+    message: str,
+) -> dict[str, Any]:
+    return build_progress_payload(
+        status="queued",
+        current_stage="queued",
+        message=message,
+        percent=0,
+        request_id=request.meta.get("_request_id"),
+        job_id=job_id,
+    )
+
+
+def _requeue_execution(
+    *,
+    execution_id: str,
+    request: ConvertRequest,
+    queue_name: str,
+    payload: dict[str, Any],
+    message: str,
+) -> None:
+    _get("execution_result_clear_final", execution_result_clear_final)(execution_id)
+    _get("execution_update", execution_update)(
+        execution_id,
+        status="queued",
+        current_stage="queued",
+        progress_json=_build_queued_progress_payload(
+            request=request,
+            job_id=payload.get("job_id"),
+            message=message,
+        ),
+        error_summary={},
+        warning_summary={},
+    )
+    _get("execution_queue_enqueue", execution_queue_enqueue)(
+        queue_id=str(uuid.uuid4()),
+        execution_id=execution_id,
+        job_id=payload.get("job_id"),
+        payload=payload,
+        queue_name=queue_name,
+    )
+
+
+def _require_batch_item_row(batch_id: str, batch_item_id: str) -> dict[str, Any]:
+    row = _get("execution_batch_item_get", execution_batch_item_get)(batch_id, batch_item_id)
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Batch item '{batch_item_id}' not found in batch '{batch_id}'")
+    if not row.get("execution_id"):
+        raise HTTPException(status_code=409, detail=f"Batch item '{batch_item_id}' has no linked execution")
+    return row
+
+
+def _cancel_batch_item(batch_id: str, batch_item_id: str) -> BatchItemResponse:
+    batch_item = _require_batch_item_row(batch_id, batch_item_id)
+    effective_status = batch_item.get("effective_status") or batch_item.get("status")
+    if effective_status in {"completed", "failed"}:
+        raise HTTPException(status_code=409, detail=f"Batch item '{batch_item_id}' is already terminal with status '{effective_status}'")
+
+    execution_id = batch_item["execution_id"]
+    _get("execution_queue_cancel", execution_queue_cancel)(execution_id)
+    _get("execution_update", execution_update)(
+        execution_id,
+        status="cancelled",
+        current_stage="cancelled",
+        progress_json=build_progress_payload(
+            status="cancelled",
+            current_stage="cancelled",
+            message="Batch item cancelled",
+            percent=100,
+            request_id=batch_item["request_id"],
+        ),
+        finished_at_now=True,
+    )
+    refreshed = _require_batch_item_row(batch_id, batch_item_id)
+    return _build_batch_item_response(refreshed)
+
+
+def _resume_batch_item(batch_id: str, batch_item_id: str) -> BatchItemResponse:
+    batch_item = _require_batch_item_row(batch_id, batch_item_id)
+    effective_status = batch_item.get("effective_status") or batch_item.get("status")
+    if effective_status != "cancelled":
+        raise HTTPException(status_code=409, detail=f"Batch item '{batch_item_id}' is not cancelled")
+
+    execution_id = batch_item["execution_id"]
+    queue_row = _get("execution_queue_get_by_execution_id", execution_queue_get_by_execution_id)(execution_id)
+    if not queue_row or not isinstance(queue_row.get("payload"), dict):
+        raise HTTPException(status_code=409, detail=f"Batch item '{batch_item_id}' has no persisted queue payload to resume")
+
+    request_payload = queue_row["payload"].get("request")
+    if not isinstance(request_payload, dict):
+        raise HTTPException(status_code=409, detail=f"Batch item '{batch_item_id}' has no valid persisted request payload")
+
+    request = ConvertRequest(**request_payload)
+    _requeue_execution(
+        execution_id=execution_id,
+        request=request,
+        queue_name=queue_row.get("queue_name") or "default",
+        payload=queue_row["payload"],
+        message="Batch item resumed and queued for worker execution",
+    )
+    refreshed = _require_batch_item_row(batch_id, batch_item_id)
+    return _build_batch_item_response(refreshed)
+
+
+def _retry_batch_item(batch_id: str, batch_item_id: str) -> BatchItemResponse:
+    batch_item = _require_batch_item_row(batch_id, batch_item_id)
+    effective_status = batch_item.get("effective_status") or batch_item.get("status")
+    if effective_status != "failed":
+        raise HTTPException(status_code=409, detail=f"Batch item '{batch_item_id}' is not failed")
+
+    execution_id = batch_item["execution_id"]
+    queue_row = _get("execution_queue_get_by_execution_id", execution_queue_get_by_execution_id)(execution_id)
+    if not queue_row or not isinstance(queue_row.get("payload"), dict):
+        raise HTTPException(status_code=409, detail=f"Batch item '{batch_item_id}' has no persisted queue payload to retry")
+
+    request_payload = queue_row["payload"].get("request")
+    if not isinstance(request_payload, dict):
+        raise HTTPException(status_code=409, detail=f"Batch item '{batch_item_id}' has no valid persisted request payload")
+
+    request = ConvertRequest(**request_payload)
+    _requeue_execution(
+        execution_id=execution_id,
+        request=request,
+        queue_name=queue_row.get("queue_name") or "default",
+        payload=queue_row["payload"],
+        message="Batch item retry queued for worker execution",
+    )
+    refreshed = _require_batch_item_row(batch_id, batch_item_id)
+    return _build_batch_item_response(refreshed)
+
+
+def _cancel_batch(batch_id: str) -> BatchStatusResponse:
+    batch = _get("execution_batch_get", execution_batch_get)(batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail=f"Batch '{batch_id}' not found")
+    for item in _get("execution_batch_item_list", execution_batch_item_list)(batch_id):
+        item_row = _get("execution_batch_item_get", execution_batch_item_get)(batch_id, item["id"])
+        effective_status = (item_row or item).get("effective_status") or item["status"]
+        if effective_status in {"queued", "processing"}:
+            _cancel_batch_item(batch_id, item["id"])
+    return _get_batch_status_payload(batch_id)
+
+
+def _resume_batch(batch_id: str) -> BatchStatusResponse:
+    batch = _get("execution_batch_get", execution_batch_get)(batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail=f"Batch '{batch_id}' not found")
+    for item in _get("execution_batch_item_list", execution_batch_item_list)(batch_id):
+        item_row = _get("execution_batch_item_get", execution_batch_item_get)(batch_id, item["id"])
+        effective_status = (item_row or item).get("effective_status") or item["status"]
+        if effective_status == "cancelled":
+            _resume_batch_item(batch_id, item["id"])
+    return _get_batch_status_payload(batch_id)
+
+
 def _get_batch_items_payload(batch_id: str, *, limit: int = 50, offset: int = 0) -> BatchItemListResponse:
     if limit < 1:
         raise HTTPException(status_code=400, detail="limit must be >= 1")
@@ -607,14 +770,31 @@ async def _queue_worker_loop(worker_id: str) -> None:
                 continue
 
             payload = queue_item.get("payload") or {}
+            execution_id = queue_item.get("execution_id")
+            if execution_id:
+                execution = _get("execution_get", execution_get)(execution_id)
+                if execution and execution.get("status") == "cancelled":
+                    _get("execution_queue_cancel", execution_queue_cancel)(execution_id)
+                    continue
             request_payload = payload.get("request") or {}
             request = ConvertRequest(**request_payload)
             await _run_async_job(queue_item.get("job_id"), request)
             job = _get("job_get", job_get)(queue_item.get("job_id"))
+            if execution_id:
+                execution = _get("execution_get", execution_get)(execution_id)
+                if execution and execution.get("status") == "cancelled":
+                    _get("execution_queue_cancel", execution_queue_cancel)(execution_id)
+                    continue
             if job and job.get("status") == "completed":
                 _get("execution_queue_complete", execution_queue_complete)(queue_item["id"])
-            else:
+            elif queue_item.get("job_id"):
                 _get("execution_queue_fail", execution_queue_fail)(queue_item["id"])
+            else:
+                execution = _get("execution_get", execution_get)(execution_id) if execution_id else None
+                if execution and execution.get("status") == "completed":
+                    _get("execution_queue_complete", execution_queue_complete)(queue_item["id"])
+                else:
+                    _get("execution_queue_fail", execution_queue_fail)(queue_item["id"])
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -1431,6 +1611,11 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
     temp_path: Path | None = None
     execution_id = request.meta.get("execution_id")
 
+    if execution_id:
+        existing_execution = _get("execution_get", execution_get)(execution_id)
+        if existing_execution and existing_execution.get("status") == "cancelled":
+            return
+
     _job_update(
         job_id,
         "processing",
@@ -1877,6 +2062,18 @@ async def api_get_batch(
     return _get_batch_status_payload(batch_id, active_item_limit=active_item_limit)
 
 
+@app.post("/v1/batches/{batch_id}/cancel", response_model=BatchStatusResponse)
+async def api_cancel_batch(batch_id: str) -> BatchStatusResponse:
+    """Bricht alle noch nicht terminalen Items eines Batchs ab."""
+    return _cancel_batch(batch_id)
+
+
+@app.post("/v1/batches/{batch_id}/resume", response_model=BatchStatusResponse)
+async def api_resume_batch(batch_id: str) -> BatchStatusResponse:
+    """Nimmt alle gecancelten Items eines Batchs wieder in die Queue auf."""
+    return _resume_batch(batch_id)
+
+
 @app.get("/v1/batches/{batch_id}/items", response_model=BatchItemListResponse)
 async def api_list_batch_items(
     batch_id: str,
@@ -1894,6 +2091,33 @@ async def api_get_batch_item_result(
 ) -> ConvertResponse:
     """Persistiertes finales ConvertResult eines einzelnen Batch-Items."""
     return _get_batch_item_result_payload(batch_id, batch_item_id)
+
+
+@app.post("/v1/batches/{batch_id}/items/{batch_item_id}/cancel", response_model=BatchItemResponse)
+async def api_cancel_batch_item(
+    batch_id: str,
+    batch_item_id: str,
+) -> BatchItemResponse:
+    """Bricht ein einzelnes Batch-Item ab."""
+    return _cancel_batch_item(batch_id, batch_item_id)
+
+
+@app.post("/v1/batches/{batch_id}/items/{batch_item_id}/resume", response_model=BatchItemResponse)
+async def api_resume_batch_item(
+    batch_id: str,
+    batch_item_id: str,
+) -> BatchItemResponse:
+    """Nimmt ein gecanceltes Batch-Item wieder in die Queue auf."""
+    return _resume_batch_item(batch_id, batch_item_id)
+
+
+@app.post("/v1/batches/{batch_id}/items/{batch_item_id}/retry", response_model=BatchItemResponse)
+async def api_retry_batch_item(
+    batch_id: str,
+    batch_item_id: str,
+) -> BatchItemResponse:
+    """Queue't ein fehlgeschlagenes Batch-Item als Wiederholungsversuch erneut ein."""
+    return _retry_batch_item(batch_id, batch_item_id)
 
 
 @app.get("/v1/jobs", response_model=JobListResponse)
