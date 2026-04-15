@@ -4,7 +4,7 @@
 
 Daigestr is for the point where generic document conversion stops being useful: scanned invoices, ugly PDFs, DOCX reports with embedded charts, mixed-language attachments, or document folders that break downstream automation. It converts, classifies, extracts, and normalizes documents through one self-hosted service with a REST API for workflows and an MCP interface for agents.
 
-Current version: **v16.2.2**
+Current version: **v16.9.3**
 
 ## Why Teams Use It
 
@@ -27,7 +27,9 @@ Daigestr routes each document through the right path for that document.
 - **Schema extraction**: extract structured JSON from templates or custom schemas
 - **Auto-extract**: classify, select a template, and extract in one call
 - **Normalization**: map template-specific fields onto stable downstream fields
-- **Folder and async processing**: process batches, long-running jobs, and webhook callbacks
+- **Execution history and polling**: every direct, async, batch-item, and replay run is exposed through the canonical execution model
+- **Folder, async, and batch processing**: process long-running jobs, explicit persisted batches, and webhook callbacks
+- **Replay and operator tooling**: replay stored snapshots, inspect execution diagnostics, and govern operator-only surfaces through env flags
 - **Two interfaces, one engine**: REST for pipelines, MCP for agents
 
 ## What Makes It Different
@@ -56,7 +58,7 @@ Daigestr routes each document through the right path for that document.
 | Extraction | Template-backed or custom-schema JSON extraction |
 | Classification | Configurable document-type classification with confidence |
 | Normalization | Stable downstream fields across heterogeneous templates |
-| Operations | Async jobs, webhooks, request cache, audit log, health endpoints |
+| Operations | Async jobs, persisted executions, batches, audit log, health/diagnostics, replay controls |
 | Integrations | REST API, MCP tools, Docker Compose deployment |
 
 ## What It Looks Like
@@ -150,8 +152,25 @@ curl http://localhost:18006/v1/health
 | `POST` | `/v1/convert/folder` | Convert all files in a folder |
 | `POST` | `/v1/extract` | Extract structured data |
 | `POST` | `/v1/convert/async` | Start an async conversion job |
+| `GET` | `/v1/executions` | Canonical history across direct, async, batch-item, and replay runs |
+| `GET` | `/v1/executions/{id}` | Canonical execution status, attempts, progress, subjobs, result summary |
+| `GET` | `/v1/executions/{id}/result` | Persisted final ConvertResponse for one execution |
+| `POST` | `/v1/executions/{id}/replay` | Create a replay execution from an existing snapshot |
+| `POST` | `/v1/batches` | Persist and enqueue an explicit batch of convert requests |
+| `GET` | `/v1/batches` | List lightweight batch status entries |
+| `GET` | `/v1/batches/{id}` | Aggregated lightweight batch status |
+| `GET` | `/v1/batches/{id}/items` | Paginated lightweight batch-item history |
+| `GET` | `/v1/batches/{id}/items/{item_id}/result` | Final ConvertResponse for one batch item |
+| `POST` | `/v1/batches/{id}/cancel` | Cancel all non-terminal batch items |
+| `POST` | `/v1/batches/{id}/resume` | Requeue cancelled batch items |
+| `POST` | `/v1/batches/{id}/items/{item_id}/cancel` | Cancel one batch item |
+| `POST` | `/v1/batches/{id}/items/{item_id}/resume` | Requeue one cancelled batch item |
+| `POST` | `/v1/batches/{id}/items/{item_id}/retry` | Requeue one failed batch item on the same logical execution |
+| `POST` | `/v1/batches/{id}/items/{item_id}/replay` | Create a replay execution from a batch-item snapshot |
 | `GET` | `/v1/jobs/{id}` | Check async job status |
 | `GET` | `/v1/jobs/{id}/result` | Fetch async job result |
+| `GET` | `/v1/diagnostics/executions` | Active/stuck execution and normalizer drift diagnostics |
+| `GET` | `/v1/tips` | Machine-readable contract and policy guide for agents and integrators |
 | `GET` | `/v1/templates` | Inspect live template registry |
 | `GET` | `/v1/health` | Health and readiness |
 
@@ -207,6 +226,26 @@ curl -X POST http://localhost:18006/v1/convert/async \
   }'
 ```
 
+### Persisted batch processing
+
+```bash
+curl -X POST http://localhost:18006/v1/batches \
+  -H "Content-Type: application/json" \
+  -d '{
+    "batch_ref": "case-2026-04",
+    "items": [
+      {"path": "/data/invoice-a.pdf", "template": "invoice"},
+      {"path": "/data/invoice-b.pdf", "template": "invoice"}
+    ]
+  }'
+```
+
+### Replay one finished execution from snapshots
+
+```bash
+curl -X POST http://localhost:18006/v1/executions/exec-123/replay
+```
+
 ## Important Request Options
 
 | Option | Purpose |
@@ -224,6 +263,24 @@ curl -X POST http://localhost:18006/v1/convert/async \
 | `no_cache: true` | bypass cached results |
 | `compact: true` | remove null fields from the normalized output |
 
+## Execution Model And Polling
+
+Daigestr now exposes one canonical execution model across all processing paths.
+
+- **Direct**: `POST /v1/convert` and `POST /v1/extract` return the final `ConvertResponse` immediately.
+- **Async**: `POST /v1/convert/async` returns `job_id` plus `execution_id`. Poll `GET /v1/jobs/{id}` or `GET /v1/executions/{execution_id}` and fetch the final result from the matching `/result` endpoint.
+- **Batch**: `POST /v1/batches` creates one persisted batch plus one canonical `execution_kind=batch_item` execution per item. Poll `GET /v1/batches/{id}` for aggregate state, inspect `GET /v1/batches/{id}/items` for per-item state, and fetch final payloads from `GET /v1/batches/{id}/items/{item_id}/result`.
+- **Replay**: replay endpoints create a new canonical `execution_kind=replay` run. Poll the returned `status_path` and fetch the returned `result_path`.
+
+The canonical execution status surface is `GET /v1/executions/{id}`. It includes:
+
+- `progress` for live polling
+- `attempts` for internal retries/escalations
+- `subjobs` for upstream provider jobs such as Mistral batch
+- `result_meta_summary` for lightweight final metadata
+- `result_artifact_refs` for references such as enriched PDFs without inlining heavy payloads
+- `final_result_available` to signal whether `/result` is populated
+
 ## Output Model
 
 Successful responses are Markdown-first and can add structured payloads on top.
@@ -235,10 +292,16 @@ Successful responses are Markdown-first and can add structured payloads on top.
   "meta": {
     "format": "pdf",
     "duration_ms": 1240,
+    "contract_version": "1.0",
+    "request_id": "req-123",
+    "execution_id": "exec-123",
     "quality_score": 0.91,
     "document_type": "invoice",
     "template_used": "invoice"
   },
+  "warnings": [
+    {"code": "used_retry", "message": "Result was escalated after low initial quality"}
+  ],
   "extracted": {
     "invoice_number": "INV-2026-0042"
   }
@@ -252,6 +315,8 @@ Depending on options and template coverage, responses can also include:
 - `compact`
 - `enriched_pdf`
 - `html`
+
+The `meta` object is the canonical source for `request_id`, `execution_id`, `contract_version`, classification, template resolution, retry metadata, and quality metadata. For agents, `GET /v1/tips` and MCP `get_tips` are the normative machine-readable contract.
 
 ## Template Registry And Normalization
 
@@ -300,6 +365,21 @@ Everything important is `.env`-driven. No hardcoded deployment assumptions are r
 |----------|---------|
 | `CACHE_TTL_SECONDS` | request cache TTL |
 | `JOB_TIMEOUT_SECONDS` | timeout for async jobs |
+| `QUEUE_ENABLED` | enable persisted worker queue for async and batch execution pickup |
+| `QUEUE_WORKER_COUNT` | number of queue workers |
+| `QUEUE_LEASE_SECONDS` | claim lease duration for queued executions |
+| `BATCH_DEFAULT_QUEUE_NAME` | default queue name for persisted batches |
+| `QUALITY_RETRY_ENABLED` | allow one escalation retry on low-quality extraction |
+| `QUALITY_RETRY_THRESHOLD` | threshold for low-quality retry decisions |
+| `QUALITY_RETRY_MODE` | escalation mode for low-quality retry |
+| `EXECUTION_RESULT_RETENTION_DAYS` | retention for persisted result payloads |
+| `EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS` | retention for artifact references such as enriched PDFs |
+| `DEBUG_SNAPSHOTS_RETENTION_DAYS` | retention for replay/debug snapshots |
+| `PII_STORAGE_MODE` | payload storage policy for sensitive branches |
+| `DEBUG_SNAPSHOTS_ALLOW_PII` | allow sensitive payload branches in snapshots |
+| `AUDIT_API_ENABLED` | gate `/v1/audit/*` export surfaces |
+| `DEBUG_SNAPSHOT_API_ENABLED` | gate `/v1/debug/snapshots*` export surfaces |
+| `REPLAY_API_ENABLED` | gate replay-triggering endpoints |
 | `WEBHOOK_TIMEOUT_SECONDS` | webhook timeout |
 | `SCAN_THRESHOLD_CHARS` | scanned-PDF detection threshold |
 | `MAX_FILE_SIZE_MB` | input size limit |
@@ -338,6 +418,25 @@ Core tools:
 - `health`
 - `list_files`
 - `get_tips`
+
+`get_tips` is the machine-readable contract source for execution behavior, retention rules, operator boundaries, and polling semantics. Prefer it over hand-maintained summaries when wiring agents or orchestration.
+
+## Operator Boundaries And Retention
+
+Operational surfaces are intentionally gated and auditable.
+
+- `AUDIT_API_ENABLED` governs `/v1/audit/*`.
+- `DEBUG_SNAPSHOT_API_ENABLED` governs `/v1/debug/snapshots*`.
+- `REPLAY_API_ENABLED` governs replay endpoints for executions, batch items, and snapshot normalization.
+- Replay, snapshot export access, and batch-item control actions emit `operator_action` audit events when the audit sink is enabled.
+
+Retention is separated by data class:
+
+- execution lineage metadata stays available until a later explicit governance rule removes it
+- `execution_result` payload rows expire via `EXECUTION_RESULT_RETENTION_DAYS`
+- `artifact_refs` expire earlier via `EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS`
+- debug snapshots expire via `DEBUG_SNAPSHOTS_RETENTION_DAYS`
+- strict PII mode suppresses sensitive branches in debug snapshots unless `DEBUG_SNAPSHOTS_ALLOW_PII=true`
 
 ## Local Development
 
