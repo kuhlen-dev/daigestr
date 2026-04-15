@@ -112,7 +112,7 @@ class TestApiHealthPersistence:
             "database_url_configured": True,
             "connection_ok": True,
             "missing_tables": [],
-        }):
+        }), patch.object(_server_api, "get_normalization_drift_summary", return_value={"coverage_pct": 92.5, "templates_without_mapping": ["policy"]}):
             response = run_async(_server_api.api_health())
 
         assert response.status == "ok"
@@ -127,6 +127,8 @@ class TestApiHealthPersistence:
         assert response.meta["pii_policy"]["debug_snapshots_allow_pii"] == _server_api.DEBUG_SNAPSHOTS_ALLOW_PII
         assert response.meta["operator_policy"]["audit_api_enabled"] == _server_api.AUDIT_API_ENABLED
         assert response.meta["operator_policy"]["debug_snapshot_api_enabled"] == _server_api.DEBUG_SNAPSHOT_API_ENABLED
+        assert response.meta["normalizer_drift"]["coverage_pct"] == 92.5
+        assert response.meta["normalizer_drift"]["templates_without_mapping"] == ["policy"]
 
     def test_api_health_reports_error_when_persistence_not_ready(self):
         with patch.object(_server_api, "check_persistence_health", return_value={
@@ -135,10 +137,11 @@ class TestApiHealthPersistence:
             "connection_ok": False,
             "missing_tables": ["template"],
             "error": "db down",
-        }):
+        }), patch.object(_server_api, "get_normalization_drift_summary", return_value={"coverage_pct": 0.0, "templates_without_mapping": []}):
             response = run_async(_server_api.api_health())
 
         assert response.status == "error"
         assert response.meta["persistence_ready"] is False
         assert response.meta["missing_tables"] == ["template"]
         assert response.meta["persistence_error"] == "db down"
+        assert response.meta["normalizer_drift"]["coverage_pct"] == 0.0

@@ -2204,7 +2204,9 @@ async def api_health() -> HealthResponse:
     uptime = int(time.time() - START_TIME)
     mistral_configured = bool(MISTRAL_API_KEY)
     _check_persistence = _get("check_persistence_health", check_persistence_health)
+    _drift_summary = _get("get_normalization_drift_summary", get_normalization_drift_summary)
     persistence = _check_persistence()
+    normalizer_drift = _drift_summary(limit=NORMALIZATION_DRIFT_SAMPLE_LIMIT)
     status = "ok" if persistence.get("ready") else "error"
     retention_policy = {
         "execution_metadata": {
@@ -2268,6 +2270,7 @@ async def api_health() -> HealthResponse:
             "retention_policy": retention_policy,
             "pii_policy": pii_policy,
             "operator_policy": operator_policy,
+            "normalizer_drift": normalizer_drift,
             "uptime_seconds": uptime,
             "mcp_port": MCP_PORT,
             "rest_port": REST_PORT,
