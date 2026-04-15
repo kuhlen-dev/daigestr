@@ -78,6 +78,9 @@ from settings import (
     PII_STORAGE_MODE,
     DEBUG_SNAPSHOTS_ALLOW_PII,
     PII_SENSITIVE_FIELDS,
+    DEBUG_SNAPSHOT_API_ENABLED,
+    REPLAY_API_ENABLED,
+    AUDIT_API_ENABLED,
     MCP_PORT,
     REST_PORT,
     LOG_LEVEL,
@@ -171,6 +174,7 @@ from mistral_client import (
 )
 from api_rest_audit import audit_router
 from api_rest_normalize import normalize_router, corrections_router, batch_router
+from audit_db import audit_log_event
 
 log = structlog.get_logger()
 _MISTRAL_BATCH_POLL_TASKS: list[asyncio.Task] = []
@@ -692,7 +696,14 @@ def _replay_execution(execution_id: str, *, snapshot_id: Optional[int] = None) -
     source_execution = _get("execution_get", execution_get)(execution_id)
     if not source_execution:
         raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
-    return _run_execution_replay(source_execution, snapshot_id=snapshot_id)
+    replay = _run_execution_replay(source_execution, snapshot_id=snapshot_id)
+    _audit_operator_action(
+        request_id=source_execution["request_id"],
+        execution_id=source_execution["id"],
+        action="execution_replay",
+        metadata={"snapshot_id": replay.snapshot_id, "replay_execution_id": replay.execution_id},
+    )
+    return replay
 
 
 def _replay_batch_item(batch_id: str, batch_item_id: str, *, snapshot_id: Optional[int] = None) -> ReplayStartResponse:
@@ -700,12 +711,24 @@ def _replay_batch_item(batch_id: str, batch_item_id: str, *, snapshot_id: Option
     source_execution = _get("execution_get", execution_get)(batch_item["execution_id"])
     if not source_execution:
         raise HTTPException(status_code=404, detail=f"Execution '{batch_item['execution_id']}' not found")
-    return _run_execution_replay(
+    replay = _run_execution_replay(
         source_execution,
         snapshot_id=snapshot_id,
         source_batch_id=batch_id,
         source_batch_item_id=batch_item_id,
     )
+    _audit_operator_action(
+        request_id=source_execution["request_id"],
+        execution_id=source_execution["id"],
+        action="batch_item_replay",
+        metadata={
+            "batch_id": batch_id,
+            "batch_item_id": batch_item_id,
+            "snapshot_id": replay.snapshot_id,
+            "replay_execution_id": replay.execution_id,
+        },
+    )
+    return replay
 
 
 def _get_job_result_payload(job_id: str) -> ConvertResponse:
@@ -792,6 +815,38 @@ def _build_batch_item_response(row: dict[str, Any]) -> BatchItemResponse:
         updated_at=row["updated_at"],
         final_result_available=bool(row.get("final_result_available")),
     )
+
+
+def _audit_operator_action(
+    *,
+    request_id: Optional[str],
+    execution_id: Optional[str] = None,
+    job_id: Optional[str] = None,
+    action: str,
+    metadata: Optional[dict[str, Any]] = None,
+) -> None:
+    try:
+        _get("audit_log_event", audit_log_event)(
+            request_id=request_id or f"operator-{action}",
+            execution_id=execution_id,
+            job_id=job_id,
+            event_type="step",
+            step="operator_action",
+            detail=action,
+            metadata=metadata or {},
+        )
+    except Exception:
+        pass
+
+
+def _check_debug_snapshot_api_enabled() -> None:
+    if not _get("DEBUG_SNAPSHOT_API_ENABLED", DEBUG_SNAPSHOT_API_ENABLED):
+        raise HTTPException(status_code=404, detail="Debug snapshot API is disabled (DEBUG_SNAPSHOT_API_ENABLED=false)")
+
+
+def _check_replay_api_enabled() -> None:
+    if not _get("REPLAY_API_ENABLED", REPLAY_API_ENABLED):
+        raise HTTPException(status_code=404, detail="Replay API is disabled (REPLAY_API_ENABLED=false)")
 
 
 def _build_queued_progress_payload(
@@ -1161,6 +1216,12 @@ def _cancel_batch_item(batch_id: str, batch_item_id: str) -> BatchItemResponse:
         ),
         finished_at_now=True,
     )
+    _audit_operator_action(
+        request_id=batch_item["request_id"],
+        execution_id=execution_id,
+        action="batch_item_cancel",
+        metadata={"batch_id": batch_id, "batch_item_id": batch_item_id},
+    )
     refreshed = _require_batch_item_row(batch_id, batch_item_id)
     return _build_batch_item_response(refreshed)
 
@@ -1187,6 +1248,12 @@ def _resume_batch_item(batch_id: str, batch_item_id: str) -> BatchItemResponse:
         queue_name=queue_row.get("queue_name") or "default",
         payload=queue_row["payload"],
         message="Batch item resumed and queued for worker execution",
+    )
+    _audit_operator_action(
+        request_id=batch_item["request_id"],
+        execution_id=execution_id,
+        action="batch_item_resume",
+        metadata={"batch_id": batch_id, "batch_item_id": batch_item_id},
     )
     refreshed = _require_batch_item_row(batch_id, batch_item_id)
     return _build_batch_item_response(refreshed)
@@ -1238,6 +1305,12 @@ def _retry_batch_item(batch_id: str, batch_item_id: str) -> BatchItemResponse:
             payload=queue_row["payload"],
             message="Batch item retry queued for worker execution",
         )
+    _audit_operator_action(
+        request_id=batch_item["request_id"],
+        execution_id=execution_id,
+        action="batch_item_retry",
+        metadata={"batch_id": batch_id, "batch_item_id": batch_item_id},
+    )
     refreshed = _require_batch_item_row(batch_id, batch_item_id)
     return _build_batch_item_response(refreshed)
 
@@ -2160,6 +2233,16 @@ async def api_health() -> HealthResponse:
             "replay_artifact": "temporary_reference",
         },
     }
+    operator_policy = {
+        "audit_api_enabled": AUDIT_API_ENABLED,
+        "debug_snapshot_api_enabled": DEBUG_SNAPSHOT_API_ENABLED,
+        "replay_api_enabled": REPLAY_API_ENABLED,
+        "operator_surfaces": {
+            "audit": "AUDIT_API_ENABLED gates /v1/audit/* access",
+            "debug_snapshot_export": "DEBUG_SNAPSHOT_API_ENABLED gates /v1/debug/snapshots* export access",
+            "replay": "REPLAY_API_ENABLED gates execution, batch-item, and snapshot replay endpoints",
+        },
+    }
 
     return HealthResponse(
         status=status,
@@ -2182,6 +2265,7 @@ async def api_health() -> HealthResponse:
             "debug_snapshot_retention_days": DEBUG_SNAPSHOTS_RETENTION_DAYS,
             "retention_policy": retention_policy,
             "pii_policy": pii_policy,
+            "operator_policy": operator_policy,
             "uptime_seconds": uptime,
             "mcp_port": MCP_PORT,
             "rest_port": REST_PORT,
@@ -2944,6 +3028,7 @@ async def api_get_execution_result(execution_id: str) -> ConvertResponse:
 @app.post("/v1/executions/{execution_id}/replay", response_model=ReplayStartResponse)
 async def api_replay_execution(execution_id: str, snapshot_id: Optional[int] = None) -> ReplayStartResponse:
     """Erzeugt einen kanonischen Replay-Lauf aus einem vorhandenen Snapshot der Execution."""
+    _check_replay_api_enabled()
     return _replay_execution(execution_id, snapshot_id=snapshot_id)
 
 
@@ -2954,6 +3039,7 @@ async def api_replay_batch_item(
     snapshot_id: Optional[int] = None,
 ) -> ReplayStartResponse:
     """Erzeugt einen kanonischen Replay-Lauf aus einem vorhandenen Snapshot des Batch-Items."""
+    _check_replay_api_enabled()
     return _replay_batch_item(batch_id, batch_item_id, snapshot_id=snapshot_id)
 
 
@@ -2979,18 +3065,32 @@ async def api_list_debug_snapshots(
     limit: int = 100,
 ) -> dict:
     """List stored debug snapshots for replay and regression analysis."""
+    _check_debug_snapshot_api_enabled()
     _snapshot_list = _get("debug_snapshot_list", debug_snapshot_list)
     rows = _snapshot_list(request_id=request_id, job_id=job_id, stage=stage, limit=limit)
+    _audit_operator_action(
+        request_id=request_id,
+        job_id=job_id,
+        action="debug_snapshot_list",
+        metadata={"stage": stage, "limit": limit, "count": len(rows)},
+    )
     return {"snapshots": rows, "count": len(rows)}
 
 
 @app.get("/v1/debug/snapshots/{snapshot_id}")
 async def api_get_debug_snapshot(snapshot_id: int) -> dict:
     """Return one stored debug snapshot."""
+    _check_debug_snapshot_api_enabled()
     _snapshot_get = _get("debug_snapshot_get", debug_snapshot_get)
     row = _snapshot_get(snapshot_id)
     if not row:
         raise HTTPException(status_code=404, detail=f"Debug snapshot '{snapshot_id}' not found")
+    _audit_operator_action(
+        request_id=row.get("request_id"),
+        job_id=row.get("job_id"),
+        action="debug_snapshot_get",
+        metadata={"snapshot_id": snapshot_id, "stage": row.get("stage")},
+    )
     return row
 
 
@@ -3001,13 +3101,22 @@ async def api_replay_debug_snapshot_normalize(
     compact: bool = False,
 ) -> dict:
     """Replay normalization from a stored snapshot without new OCR/LLM calls."""
+    _check_debug_snapshot_api_enabled()
+    _check_replay_api_enabled()
     _snapshot_get = _get("debug_snapshot_get", debug_snapshot_get)
     _replay_normalize = _get("replay_normalization_from_snapshot", replay_normalization_from_snapshot)
     row = _snapshot_get(snapshot_id)
     if not row:
         raise HTTPException(status_code=404, detail=f"Debug snapshot '{snapshot_id}' not found")
     try:
-        return await _replay_normalize(row, template_name=template_name, compact=compact)
+        result = await _replay_normalize(row, template_name=template_name, compact=compact)
+        _audit_operator_action(
+            request_id=row.get("request_id"),
+            job_id=row.get("job_id"),
+            action="debug_snapshot_replay_normalize",
+            metadata={"snapshot_id": snapshot_id, "template_name": result.get("template_name")},
+        )
+        return result
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

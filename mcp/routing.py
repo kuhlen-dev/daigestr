@@ -86,6 +86,9 @@ from settings import (
     PII_STORAGE_MODE,
     DEBUG_SNAPSHOTS_ALLOW_PII,
     PII_SENSITIVE_FIELDS,
+    DEBUG_SNAPSHOT_API_ENABLED,
+    REPLAY_API_ENABLED,
+    AUDIT_API_ENABLED,
 )
 from utils import (
     _get,
@@ -3263,6 +3266,20 @@ def _build_tips_dict() -> dict:
                 "result_payload": "Canonical result payloads are treated as temporary sensitive storage and are governed by result retention.",
                 "debug_snapshot": "Debug snapshots are treated as temporary sensitive storage and content branches stay suppressed in strict mode unless DEBUG_SNAPSHOTS_ALLOW_PII=true.",
                 "replay_artifact": "Replay-visible artifact refs stay reference-only and follow artifact retention rather than durable payload storage.",
+            },
+            "operator_boundary_policy": {
+                "audit_api_enabled": bool(_get("AUDIT_API_ENABLED", AUDIT_API_ENABLED)),
+                "debug_snapshot_api_enabled": bool(_get("DEBUG_SNAPSHOT_API_ENABLED", DEBUG_SNAPSHOT_API_ENABLED)),
+                "replay_api_enabled": bool(_get("REPLAY_API_ENABLED", REPLAY_API_ENABLED)),
+                "export_boundaries": {
+                    "audit": "Audit export surfaces are governed by AUDIT_API_ENABLED.",
+                    "debug_snapshot": "Debug snapshot export surfaces are governed by DEBUG_SNAPSHOT_API_ENABLED.",
+                    "replay": "Replay-triggering surfaces are governed by REPLAY_API_ENABLED.",
+                },
+                "auditability": {
+                    "operator_actions": "Replay, snapshot export access, and batch item control actions emit audit operator_action events when the audit sink is available.",
+                    "deletion_and_replay": "Deletion remains visible through retention-configured cleanup paths; replay and control actions are explicitly logged.",
+                },
             },
         },
         "response_fields": {

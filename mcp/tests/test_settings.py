@@ -158,6 +158,10 @@ class TestSettingsDefaults:
         assert "markdown" in settings.PII_SENSITIVE_FIELDS
         assert "extracted" in settings.PII_SENSITIVE_FIELDS
 
+    def test_operator_boundary_defaults(self, settings):
+        assert settings.DEBUG_SNAPSHOT_API_ENABLED is False
+        assert settings.REPLAY_API_ENABLED is False
+
     def test_long_document_threshold_default(self, settings):
         assert settings.LONG_DOCUMENT_PAGE_THRESHOLD == 25
         assert isinstance(settings.LONG_DOCUMENT_PAGE_THRESHOLD, int)

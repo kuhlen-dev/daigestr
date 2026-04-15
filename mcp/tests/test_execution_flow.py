@@ -897,6 +897,30 @@ def test_replay_execution_creates_separate_replay_execution_from_latest_snapshot
     assert replay_result["response_json"]["meta"]["replayed_from_execution_id"] == original_execution["id"]
 
 
+def test_replay_execution_respects_operator_flag(monkeypatch):
+    api_rest = _load_api_rest_module()
+
+    class HTTPExceptionStub(Exception):
+        def __init__(self, status_code: int, detail: str):
+            super().__init__(detail)
+            self.status_code = status_code
+            self.detail = detail
+
+    api_rest.HTTPException = HTTPExceptionStub
+    monkeypatch.setattr(api_rest, "REPLAY_API_ENABLED", False)
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "REPLAY_API_ENABLED", False)
+
+    try:
+        api_rest._check_replay_api_enabled()
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 404
+        assert "REPLAY_API_ENABLED" in getattr(exc, "detail", str(exc))
+    else:
+        raise AssertionError("Expected HTTPException when replay API is disabled")
+
+
 def test_replay_batch_item_creates_replay_execution_without_mutating_original_batch():
     from debug_snapshot_db import debug_snapshot_store, init_debug_snapshot_db
     from execution_db import execution_get, execution_result_get_final, init_execution_db
@@ -983,6 +1007,53 @@ def test_replay_execution_raises_404_when_no_snapshot_exists():
         assert "no stored replay snapshots" in getattr(exc, "detail", str(exc))
     else:
         raise AssertionError("Expected HTTPException for missing replay snapshot")
+
+
+def test_batch_item_control_actions_emit_audit_events(monkeypatch):
+    from execution_db import init_execution_db
+    from models import BatchCreateRequest, ConvertRequest, create_error_response, ErrorCode
+
+    api_rest = _load_api_rest_module()
+    init_execution_db()
+    api_rest.QUEUE_ENABLED = True
+    api_rest.BATCH_DEFAULT_QUEUE_NAME = "default"
+    events = []
+    monkeypatch.setattr(api_rest, "audit_log_event", lambda *args, **kwargs: events.append(kwargs))
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        server_module.QUEUE_ENABLED = True
+        server_module.BATCH_DEFAULT_QUEUE_NAME = "default"
+        server_module.audit_log_event = lambda *args, **kwargs: events.append(kwargs)
+
+    created = api_rest._start_batch_execution(
+        BatchCreateRequest(
+            batch_ref=f"audit-batch-{uuid.uuid4()}",
+            items=[ConvertRequest(base64="aGVsbG8=", filename="hello.txt")],
+        )
+    )
+    batch_item = api_rest._get_batch_items_payload(created.batch_id, limit=10, offset=0).items[0]
+    api_rest._cancel_batch_item(created.batch_id, batch_item.batch_item_id)
+    api_rest._resume_batch_item(created.batch_id, batch_item.batch_item_id)
+    error_result = create_error_response(
+        ErrorCode.CONVERSION_FAILED,
+        "failed",
+        meta={"request_id": batch_item.request_id, "execution_id": batch_item.execution_id},
+    )
+    api_rest._persist_execution_attempt_result(
+        execution_id=batch_item.execution_id,
+        attempt_number=1,
+        response=error_result,
+        attempt_mode="default",
+        attempt_reason="initial",
+        is_final=True,
+        result_status="failed",
+    )
+    api_rest._retry_batch_item(created.batch_id, batch_item.batch_item_id)
+
+    details = {entry.get("detail") for entry in events}
+    assert "batch_item_cancel" in details
+    assert "batch_item_resume" in details
+    assert "batch_item_retry" in details
 
 
 def test_execution_result_cleanup_removes_result_from_execution_and_batch_views():

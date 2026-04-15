@@ -35,7 +35,8 @@ _server_api = _load_api_server()
 
 
 def test_api_list_debug_snapshots_uses_storage_filtering():
-    with patch.object(_server_api, "debug_snapshot_list", return_value=[{"id": 1}, {"id": 2}]) as list_mock:
+    with patch.object(_server_api, "DEBUG_SNAPSHOT_API_ENABLED", True), \
+         patch.object(_server_api, "debug_snapshot_list", return_value=[{"id": 1}, {"id": 2}]) as list_mock:
         result = run_async(
             _server_api.api_list_debug_snapshots(
                 request_id="req-1",
@@ -58,7 +59,8 @@ def test_api_list_debug_snapshots_uses_storage_filtering():
 def test_api_get_debug_snapshot_returns_payload():
     snapshot = {"id": 3, "payload_json": {"markdown": "# Test"}}
 
-    with patch.object(_server_api, "debug_snapshot_get", return_value=snapshot):
+    with patch.object(_server_api, "DEBUG_SNAPSHOT_API_ENABLED", True), \
+         patch.object(_server_api, "debug_snapshot_get", return_value=snapshot):
         result = run_async(_server_api.api_get_debug_snapshot(3))
 
     assert result["id"] == 3
@@ -66,7 +68,8 @@ def test_api_get_debug_snapshot_returns_payload():
 
 
 def test_api_get_debug_snapshot_raises_404_for_missing_snapshot():
-    with patch.object(_server_api, "debug_snapshot_get", return_value=None):
+    with patch.object(_server_api, "DEBUG_SNAPSHOT_API_ENABLED", True), \
+         patch.object(_server_api, "debug_snapshot_get", return_value=None):
         try:
             run_async(_server_api.api_get_debug_snapshot(999))
         except Exception as exc:
@@ -76,11 +79,24 @@ def test_api_get_debug_snapshot_raises_404_for_missing_snapshot():
             raise AssertionError("Expected HTTPException for missing snapshot")
 
 
+def test_api_debug_snapshot_endpoints_respect_operator_flag():
+    with patch.object(_server_api, "DEBUG_SNAPSHOT_API_ENABLED", False):
+        try:
+            run_async(_server_api.api_list_debug_snapshots())
+        except Exception as exc:
+            assert getattr(exc, "status_code", None) == 404
+            assert "DEBUG_SNAPSHOT_API_ENABLED" in getattr(exc, "detail", str(exc))
+        else:
+            raise AssertionError("Expected HTTPException when debug snapshot API is disabled")
+
+
 def test_api_replay_debug_snapshot_normalize_returns_replayed_payload():
     snapshot = {"id": 7, "payload_json": {"extracted": {"foo": "bar"}, "meta": {"template_used": "invoice"}}}
     replayed = {"snapshot_id": 7, "template_name": "invoice", "normalized": {"amount": 12}}
 
-    with patch.object(_server_api, "debug_snapshot_get", return_value=snapshot), \
+    with patch.object(_server_api, "DEBUG_SNAPSHOT_API_ENABLED", True), \
+         patch.object(_server_api, "REPLAY_API_ENABLED", True), \
+         patch.object(_server_api, "debug_snapshot_get", return_value=snapshot), \
          patch.object(_server_api, "replay_normalization_from_snapshot", new=AsyncMock(return_value=replayed)):
         result = run_async(_server_api.api_replay_debug_snapshot_normalize(7))
 
@@ -89,7 +105,9 @@ def test_api_replay_debug_snapshot_normalize_returns_replayed_payload():
 
 
 def test_api_replay_debug_snapshot_normalize_raises_404_for_missing_snapshot():
-    with patch.object(_server_api, "debug_snapshot_get", return_value=None):
+    with patch.object(_server_api, "DEBUG_SNAPSHOT_API_ENABLED", True), \
+         patch.object(_server_api, "REPLAY_API_ENABLED", True), \
+         patch.object(_server_api, "debug_snapshot_get", return_value=None):
         try:
             run_async(_server_api.api_replay_debug_snapshot_normalize(999))
         except Exception as exc:
@@ -102,7 +120,9 @@ def test_api_replay_debug_snapshot_normalize_raises_404_for_missing_snapshot():
 def test_api_replay_debug_snapshot_normalize_maps_value_error_to_400():
     snapshot = {"id": 7, "payload_json": {"meta": {"template_used": "invoice"}}}
 
-    with patch.object(_server_api, "debug_snapshot_get", return_value=snapshot), \
+    with patch.object(_server_api, "DEBUG_SNAPSHOT_API_ENABLED", True), \
+         patch.object(_server_api, "REPLAY_API_ENABLED", True), \
+         patch.object(_server_api, "debug_snapshot_get", return_value=snapshot), \
          patch.object(
              _server_api,
              "replay_normalization_from_snapshot",
@@ -115,3 +135,15 @@ def test_api_replay_debug_snapshot_normalize_maps_value_error_to_400():
             assert "no extracted payload" in getattr(exc, "detail", str(exc))
         else:
             raise AssertionError("Expected HTTPException for invalid replay payload")
+
+
+def test_api_replay_debug_snapshot_normalize_respects_replay_flag():
+    with patch.object(_server_api, "DEBUG_SNAPSHOT_API_ENABLED", True), \
+         patch.object(_server_api, "REPLAY_API_ENABLED", False):
+        try:
+            run_async(_server_api.api_replay_debug_snapshot_normalize(7))
+        except Exception as exc:
+            assert getattr(exc, "status_code", None) == 404
+            assert "REPLAY_API_ENABLED" in getattr(exc, "detail", str(exc))
+        else:
+            raise AssertionError("Expected HTTPException when replay API is disabled")

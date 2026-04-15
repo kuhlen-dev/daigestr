@@ -216,3 +216,19 @@ def test_tips_document_pii_payload_policy(monkeypatch):
     assert pii_policy["debug_snapshots_allow_pii"] is False
     assert pii_policy["sensitive_fields"] == ["markdown", "extracted", "normalized"]
     assert "strict mode" in pii_policy["debug_snapshot"]
+
+
+def test_tips_document_operator_boundary_policy(monkeypatch):
+    monkeypatch.setattr(_routing, "get_all_template_ids", lambda: ["invoice"])
+    monkeypatch.setattr(_server, "AUDIT_API_ENABLED", True)
+    monkeypatch.setattr(_server, "DEBUG_SNAPSHOT_API_ENABLED", False)
+    monkeypatch.setattr(_server, "REPLAY_API_ENABLED", False)
+
+    result = _server._build_tips_dict()
+
+    operator_policy = result["policy_resolution"]["operator_boundary_policy"]
+    assert operator_policy["audit_api_enabled"] is True
+    assert operator_policy["debug_snapshot_api_enabled"] is False
+    assert operator_policy["replay_api_enabled"] is False
+    assert "AUDIT_API_ENABLED" in operator_policy["export_boundaries"]["audit"]
+    assert "operator_action" in operator_policy["auditability"]["operator_actions"]

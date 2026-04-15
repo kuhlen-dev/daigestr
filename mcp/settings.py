@@ -253,7 +253,7 @@ MERMAID_CDN_URL = os.getenv("MERMAID_CDN_URL", "https://cdn.jsdelivr.net/npm/mer
 HIGHLIGHTJS_CDN_URL = os.getenv("HIGHLIGHTJS_CDN_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js")
 HIGHLIGHTJS_CSS_URL = os.getenv("HIGHLIGHTJS_CSS_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css")
 
-VERSION = os.getenv("DAIGESTR_VERSION", "16.8.2")
+VERSION = os.getenv("DAIGESTR_VERSION", "16.8.3")
 START_TIME = time.time()
 
 # =============================================================================
@@ -317,6 +317,8 @@ PII_SENSITIVE_FIELDS = tuple(
     ).split(",")
     if part.strip()
 )
+DEBUG_SNAPSHOT_API_ENABLED = os.getenv("DEBUG_SNAPSHOT_API_ENABLED", "false").lower() == "true"
+REPLAY_API_ENABLED = os.getenv("REPLAY_API_ENABLED", "false").lower() == "true"
 DEBUG_SNAPSHOTS_POLICIES = tuple(
     part.strip()
     for part in os.getenv(
