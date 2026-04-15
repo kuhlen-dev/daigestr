@@ -14,6 +14,9 @@ def _reload_debug_snapshots(monkeypatch, **env):
         "DEBUG_SNAPSHOTS_INCLUDE_EXTRACTED",
         "DEBUG_SNAPSHOTS_INCLUDE_NORMALIZED",
         "DEBUG_SNAPSHOTS_INCLUDE_ERRORS",
+        "DEBUG_SNAPSHOTS_ALLOW_PII",
+        "PII_STORAGE_MODE",
+        "PII_SENSITIVE_FIELDS",
     ]:
         monkeypatch.delenv(key, raising=False)
     for key, value in env.items():
@@ -99,6 +102,7 @@ def test_build_debug_snapshot_payload_respects_include_flags(monkeypatch):
         DEBUG_SNAPSHOTS_INCLUDE_NORMALIZED="false",
         DEBUG_SNAPSHOTS_INCLUDE_ERRORS="true",
         DEBUG_SNAPSHOTS_RETENTION_DAYS="21",
+        DEBUG_SNAPSHOTS_ALLOW_PII="true",
     )
 
     payload = module.build_debug_snapshot_payload(
@@ -123,6 +127,74 @@ def test_build_debug_snapshot_payload_respects_include_flags(monkeypatch):
     assert payload["extracted"] == {"foo": "bar"}
     assert "normalized" not in payload
     assert payload["error"] == "boom"
+
+
+def test_build_debug_snapshot_payload_suppresses_sensitive_branches_in_strict_mode(monkeypatch):
+    module = _reload_debug_snapshots(
+        monkeypatch,
+        DEBUG_SNAPSHOTS_ENABLED="true",
+        DEBUG_SNAPSHOTS_INCLUDE_MARKDOWN="true",
+        DEBUG_SNAPSHOTS_INCLUDE_EXTRACTED="true",
+        DEBUG_SNAPSHOTS_INCLUDE_NORMALIZED="true",
+        DEBUG_SNAPSHOTS_INCLUDE_ERRORS="true",
+        PII_STORAGE_MODE="strict",
+        DEBUG_SNAPSHOTS_ALLOW_PII="false",
+    )
+
+    payload = module.build_debug_snapshot_payload(
+        request_id="req-2",
+        job_id="job-2",
+        filename="invoice.pdf",
+        source_type="file",
+        stage="normalized_result",
+        attempt_number=1,
+        attempt_count=1,
+        attempt_mode="default",
+        meta={"quality_score": 0.91},
+        markdown="# sensitive",
+        extracted={"iban": "DE123"},
+        normalized={"amount": 12},
+        error=None,
+    )
+
+    assert payload["pii_storage_mode"] == "strict"
+    assert payload["pii_payloads_included"] is False
+    assert "markdown" not in payload
+    assert "extracted" not in payload
+    assert "normalized" not in payload
+
+
+def test_build_debug_snapshot_payload_allows_sensitive_branches_when_explicitly_enabled(monkeypatch):
+    module = _reload_debug_snapshots(
+        monkeypatch,
+        DEBUG_SNAPSHOTS_ENABLED="true",
+        DEBUG_SNAPSHOTS_INCLUDE_MARKDOWN="true",
+        DEBUG_SNAPSHOTS_INCLUDE_EXTRACTED="true",
+        DEBUG_SNAPSHOTS_INCLUDE_NORMALIZED="true",
+        PII_STORAGE_MODE="strict",
+        DEBUG_SNAPSHOTS_ALLOW_PII="true",
+    )
+
+    payload = module.build_debug_snapshot_payload(
+        request_id="req-3",
+        job_id="job-3",
+        filename="invoice.pdf",
+        source_type="file",
+        stage="normalized_result",
+        attempt_number=1,
+        attempt_count=1,
+        attempt_mode="default",
+        meta={"quality_score": 0.91},
+        markdown="# visible",
+        extracted={"iban": "DE123"},
+        normalized={"amount": 12},
+        error=None,
+    )
+
+    assert payload["pii_payloads_included"] is True
+    assert payload["markdown"] == "# visible"
+    assert payload["extracted"] == {"iban": "DE123"}
+    assert payload["normalized"] == {"amount": 12}
 
 
 def test_invalid_debug_snapshot_policy_raises(monkeypatch):

@@ -123,6 +123,8 @@ class TestApiHealthPersistence:
         assert response.meta["debug_snapshot_retention_days"] == _server_api.DEBUG_SNAPSHOTS_RETENTION_DAYS
         assert response.meta["retention_policy"]["execution_metadata"]["retention_days"] is None
         assert response.meta["retention_policy"]["result_payload"]["retention_days"] == _server_api.EXECUTION_RESULT_RETENTION_DAYS
+        assert response.meta["pii_policy"]["storage_mode"] == _server_api.PII_STORAGE_MODE
+        assert response.meta["pii_policy"]["debug_snapshots_allow_pii"] == _server_api.DEBUG_SNAPSHOTS_ALLOW_PII
 
     def test_api_health_reports_error_when_persistence_not_ready(self):
         with patch.object(_server_api, "check_persistence_health", return_value={

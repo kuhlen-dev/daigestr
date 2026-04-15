@@ -23,6 +23,8 @@ from settings import (
     DEBUG_SNAPSHOTS_LOW_QUALITY_THRESHOLD,
     DEBUG_SNAPSHOTS_POLICIES,
     DEBUG_SNAPSHOTS_RETENTION_DAYS,
+    DEBUG_SNAPSHOTS_ALLOW_PII,
+    PII_STORAGE_MODE,
 )
 
 
@@ -79,6 +81,7 @@ def build_debug_snapshot_payload(
     error: Optional[str] = None,
 ) -> dict[str, Any]:
     """Materializes a canonical debug snapshot payload according to env settings."""
+    include_sensitive_payloads = DEBUG_SNAPSHOTS_ALLOW_PII or PII_STORAGE_MODE != "strict"
     payload: dict[str, Any] = {
         "request_id": request_id,
         "job_id": job_id,
@@ -89,13 +92,15 @@ def build_debug_snapshot_payload(
         "attempt_count": attempt_count,
         "attempt_mode": attempt_mode,
         "retention_days": DEBUG_SNAPSHOTS_RETENTION_DAYS,
+        "pii_storage_mode": PII_STORAGE_MODE,
+        "pii_payloads_included": include_sensitive_payloads,
         "meta": copy.deepcopy(meta) if isinstance(meta, dict) else {},
     }
-    if DEBUG_SNAPSHOTS_INCLUDE_MARKDOWN:
+    if DEBUG_SNAPSHOTS_INCLUDE_MARKDOWN and include_sensitive_payloads:
         payload["markdown"] = markdown
-    if DEBUG_SNAPSHOTS_INCLUDE_EXTRACTED:
+    if DEBUG_SNAPSHOTS_INCLUDE_EXTRACTED and include_sensitive_payloads:
         payload["extracted"] = copy.deepcopy(extracted) if isinstance(extracted, dict) else extracted
-    if DEBUG_SNAPSHOTS_INCLUDE_NORMALIZED:
+    if DEBUG_SNAPSHOTS_INCLUDE_NORMALIZED and include_sensitive_payloads:
         payload["normalized"] = copy.deepcopy(normalized) if isinstance(normalized, dict) else normalized
     if DEBUG_SNAPSHOTS_INCLUDE_ERRORS:
         payload["error"] = error

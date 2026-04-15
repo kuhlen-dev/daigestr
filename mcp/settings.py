@@ -253,7 +253,7 @@ MERMAID_CDN_URL = os.getenv("MERMAID_CDN_URL", "https://cdn.jsdelivr.net/npm/mer
 HIGHLIGHTJS_CDN_URL = os.getenv("HIGHLIGHTJS_CDN_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js")
 HIGHLIGHTJS_CSS_URL = os.getenv("HIGHLIGHTJS_CSS_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css")
 
-VERSION = os.getenv("DAIGESTR_VERSION", "16.8.1")
+VERSION = os.getenv("DAIGESTR_VERSION", "16.8.2")
 START_TIME = time.time()
 
 # =============================================================================
@@ -305,6 +305,18 @@ DEBUG_SNAPSHOTS_ENABLED = os.getenv("DEBUG_SNAPSHOTS_ENABLED", "false").lower() 
 DEBUG_SNAPSHOTS_RETENTION_DAYS = int(os.getenv("DEBUG_SNAPSHOTS_RETENTION_DAYS", "14"))
 EXECUTION_RESULT_RETENTION_DAYS = int(os.getenv("EXECUTION_RESULT_RETENTION_DAYS", "30"))
 EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS = int(os.getenv("EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS", "14"))
+PII_STORAGE_MODE = os.getenv("PII_STORAGE_MODE", "strict").strip().lower()
+if PII_STORAGE_MODE not in {"strict", "standard"}:
+    raise ValueError("PII_STORAGE_MODE must be 'strict' or 'standard'")
+DEBUG_SNAPSHOTS_ALLOW_PII = os.getenv("DEBUG_SNAPSHOTS_ALLOW_PII", "false").lower() == "true"
+PII_SENSITIVE_FIELDS = tuple(
+    part.strip()
+    for part in os.getenv(
+        "PII_SENSITIVE_FIELDS",
+        "markdown,html,extracted,normalized,base64,url,source_ref,email,phone,address,iban,tax_id",
+    ).split(",")
+    if part.strip()
+)
 DEBUG_SNAPSHOTS_POLICIES = tuple(
     part.strip()
     for part in os.getenv(

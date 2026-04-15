@@ -201,3 +201,18 @@ def test_tips_document_retention_policy(monkeypatch):
     assert retention["debug_snapshot"]["retention_days"] == 5
     assert retention["replay_artifact"]["retention_days"] == 14
     assert "execution_result_cleanup" in retention["result_payload"]["cleanup_behavior"]
+
+
+def test_tips_document_pii_payload_policy(monkeypatch):
+    monkeypatch.setattr(_routing, "get_all_template_ids", lambda: ["invoice"])
+    monkeypatch.setattr(_server, "PII_STORAGE_MODE", "strict")
+    monkeypatch.setattr(_server, "DEBUG_SNAPSHOTS_ALLOW_PII", False)
+    monkeypatch.setattr(_server, "PII_SENSITIVE_FIELDS", ("markdown", "extracted", "normalized"))
+
+    result = _server._build_tips_dict()
+
+    pii_policy = result["policy_resolution"]["pii_payload_policy"]
+    assert pii_policy["storage_mode"] == "strict"
+    assert pii_policy["debug_snapshots_allow_pii"] is False
+    assert pii_policy["sensitive_fields"] == ["markdown", "extracted", "normalized"]
+    assert "strict mode" in pii_policy["debug_snapshot"]

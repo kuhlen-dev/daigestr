@@ -152,6 +152,12 @@ class TestSettingsDefaults:
         assert settings.EXECUTION_RESULT_RETENTION_DAYS == 30
         assert settings.EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS == 14
 
+    def test_pii_policy_defaults(self, settings):
+        assert settings.PII_STORAGE_MODE == "strict"
+        assert settings.DEBUG_SNAPSHOTS_ALLOW_PII is False
+        assert "markdown" in settings.PII_SENSITIVE_FIELDS
+        assert "extracted" in settings.PII_SENSITIVE_FIELDS
+
     def test_long_document_threshold_default(self, settings):
         assert settings.LONG_DOCUMENT_PAGE_THRESHOLD == 25
         assert isinstance(settings.LONG_DOCUMENT_PAGE_THRESHOLD, int)

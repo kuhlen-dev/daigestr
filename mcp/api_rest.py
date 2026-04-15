@@ -75,6 +75,9 @@ from settings import (
     EXECUTION_RESULT_RETENTION_DAYS,
     EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS,
     DEBUG_SNAPSHOTS_RETENTION_DAYS,
+    PII_STORAGE_MODE,
+    DEBUG_SNAPSHOTS_ALLOW_PII,
+    PII_SENSITIVE_FIELDS,
     MCP_PORT,
     REST_PORT,
     LOG_LEVEL,
@@ -2146,6 +2149,17 @@ async def api_health() -> HealthResponse:
             "scope": "execution_result artifact_refs",
         },
     }
+    pii_policy = {
+        "storage_mode": PII_STORAGE_MODE,
+        "debug_snapshots_allow_pii": DEBUG_SNAPSHOTS_ALLOW_PII,
+        "sensitive_fields": list(PII_SENSITIVE_FIELDS),
+        "data_classes": {
+            "execution_metadata": "operational",
+            "result_payload": "temporary_sensitive",
+            "debug_snapshot": "temporary_sensitive_opt_in",
+            "replay_artifact": "temporary_reference",
+        },
+    }
 
     return HealthResponse(
         status=status,
@@ -2167,6 +2181,7 @@ async def api_health() -> HealthResponse:
             "execution_result_artifact_retention_days": EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS,
             "debug_snapshot_retention_days": DEBUG_SNAPSHOTS_RETENTION_DAYS,
             "retention_policy": retention_policy,
+            "pii_policy": pii_policy,
             "uptime_seconds": uptime,
             "mcp_port": MCP_PORT,
             "rest_port": REST_PORT,

@@ -83,6 +83,9 @@ from settings import (
     EXECUTION_RESULT_RETENTION_DAYS,
     EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS,
     DEBUG_SNAPSHOTS_RETENTION_DAYS,
+    PII_STORAGE_MODE,
+    DEBUG_SNAPSHOTS_ALLOW_PII,
+    PII_SENSITIVE_FIELDS,
 )
 from utils import (
     _get,
@@ -3251,6 +3254,15 @@ def _build_tips_dict() -> dict:
                     "scope": "execution_result.artifact_refs including replay-visible artifact references",
                     "cleanup_behavior": "Expired artifact references are cleared before full result-row deletion.",
                 },
+            },
+            "pii_payload_policy": {
+                "storage_mode": str(_get("PII_STORAGE_MODE", PII_STORAGE_MODE)),
+                "debug_snapshots_allow_pii": bool(_get("DEBUG_SNAPSHOTS_ALLOW_PII", DEBUG_SNAPSHOTS_ALLOW_PII)),
+                "sensitive_fields": list(_get("PII_SENSITIVE_FIELDS", PII_SENSITIVE_FIELDS)),
+                "execution_metadata": "Operational metadata may persist longer, but should not inline document content.",
+                "result_payload": "Canonical result payloads are treated as temporary sensitive storage and are governed by result retention.",
+                "debug_snapshot": "Debug snapshots are treated as temporary sensitive storage and content branches stay suppressed in strict mode unless DEBUG_SNAPSHOTS_ALLOW_PII=true.",
+                "replay_artifact": "Replay-visible artifact refs stay reference-only and follow artifact retention rather than durable payload storage.",
             },
         },
         "response_fields": {
