@@ -157,4 +157,6 @@ def test_tips_document_batch_creation_contract(monkeypatch):
 
     batch_endpoints = result["response_contract"]["batch_endpoints"]
     assert "POST /v1/batches" in batch_endpoints["start"]
+    assert "GET /v1/batches/{id}" in batch_endpoints["status"]
+    assert "GET /v1/batches" in batch_endpoints["list"]
     assert "execution_kind=batch_item" in batch_endpoints["linkage"]

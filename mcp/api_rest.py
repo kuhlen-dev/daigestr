@@ -25,8 +25,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from models import (
+    BatchActiveItemResponse,
     BatchCreateRequest,
+    BatchListResponse,
     BatchStartResponse,
+    BatchStatusResponse,
     ConvertRequest,
     ConvertResponse,
     ConvertFolderRequest,
@@ -72,6 +75,7 @@ from settings import (
     QUEUE_POLL_INTERVAL_SECONDS,
     QUEUE_LEASE_SECONDS,
     BATCH_DEFAULT_QUEUE_NAME,
+    BATCH_STATUS_ACTIVE_ITEM_LIMIT,
     EXECUTION_DIAGNOSTICS_LIMIT,
     EXECUTION_STUCK_THRESHOLD_SECONDS,
     NORMALIZATION_DRIFT_SAMPLE_LIMIT,
@@ -96,6 +100,8 @@ from execution_db import (
     execution_batch_create,
     execution_batch_get_by_idempotency_key,
     execution_batch_item_create,
+    execution_batch_list,
+    execution_batch_status_summary,
     execution_create,
     execution_get,
     execution_get_full,
@@ -437,6 +443,48 @@ def _get_job_result_payload(job_id: str) -> ConvertResponse:
     if final_result and final_result.get("response_json"):
         return ConvertResponse.model_validate(final_result["response_json"])
     raise HTTPException(status_code=500, detail=f"Job '{job_id}' has no result data")
+
+
+def _build_batch_status_response(row: dict[str, Any]) -> BatchStatusResponse:
+    active_items = [
+        BatchActiveItemResponse(
+            batch_item_id=item["batch_item_id"],
+            item_index=item["item_index"],
+            execution_id=item.get("execution_id"),
+            filename=item.get("filename"),
+            status=item["status"],
+            current_stage=item.get("current_stage"),
+        )
+        for item in row.get("active_items", [])
+    ]
+    return BatchStatusResponse(
+        batch_id=row["id"],
+        batch_ref=row.get("batch_ref"),
+        queue_name=row["queue_name"],
+        status=row["status"],
+        item_count=row.get("item_count") or 0,
+        queued_count=row.get("queued_count") or 0,
+        processing_count=row.get("processing_count") or 0,
+        completed_count=row.get("completed_count") or 0,
+        failed_count=row.get("failed_count") or 0,
+        cancelled_count=row.get("cancelled_count") or 0,
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        started_at=row.get("started_at"),
+        finished_at=row.get("finished_at"),
+        metadata=row.get("metadata"),
+        active_items=active_items,
+    )
+
+
+def _get_batch_status_payload(batch_id: str, *, active_item_limit: int = BATCH_STATUS_ACTIVE_ITEM_LIMIT) -> BatchStatusResponse:
+    row = _get("execution_batch_status_summary", execution_batch_status_summary)(
+        batch_id,
+        active_item_limit=active_item_limit,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Batch '{batch_id}' not found")
+    return _build_batch_status_response(row)
 
 
 def _get_execution_diagnostics_payload(
@@ -1746,6 +1794,30 @@ async def api_convert_async(request: ConvertRequest) -> AsyncJobStartResponse:
 async def api_create_batch(body: BatchCreateRequest) -> BatchStartResponse:
     """Persistiert einen Batch mit expliziten Items und queue't die verlinkten batch_item executions."""
     return _start_batch_execution(body)
+
+
+@app.get("/v1/batches", response_model=BatchListResponse)
+async def api_list_batches(
+    limit: int = 50,
+    active_item_limit: int = BATCH_STATUS_ACTIVE_ITEM_LIMIT,
+) -> BatchListResponse:
+    """Leichtgewichtige Liste persistierter Batches mit aggregierten Statuszählern."""
+    rows = _get("execution_batch_list", execution_batch_list)(limit=limit)
+    summary_fn = _get("execution_batch_status_summary", execution_batch_status_summary)
+    batches = []
+    for row in rows:
+        summary = summary_fn(row["id"], active_item_limit=active_item_limit) or row
+        batches.append(_build_batch_status_response(summary))
+    return BatchListResponse(batches=batches)
+
+
+@app.get("/v1/batches/{batch_id}", response_model=BatchStatusResponse)
+async def api_get_batch(
+    batch_id: str,
+    active_item_limit: int = BATCH_STATUS_ACTIVE_ITEM_LIMIT,
+) -> BatchStatusResponse:
+    """Leichtgewichtiger pollbarer Status eines persistierten Batch-Auftrags."""
+    return _get_batch_status_payload(batch_id, active_item_limit=active_item_limit)
 
 
 @app.get("/v1/jobs", response_model=JobListResponse)

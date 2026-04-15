@@ -107,6 +107,7 @@ QUEUE_WORKER_COUNT = int(os.getenv("QUEUE_WORKER_COUNT", "2"))
 QUEUE_POLL_INTERVAL_SECONDS = float(os.getenv("QUEUE_POLL_INTERVAL_SECONDS", "1"))
 QUEUE_LEASE_SECONDS = int(os.getenv("QUEUE_LEASE_SECONDS", "300"))
 BATCH_DEFAULT_QUEUE_NAME = os.getenv("BATCH_DEFAULT_QUEUE_NAME", "default")
+BATCH_STATUS_ACTIVE_ITEM_LIMIT = int(os.getenv("BATCH_STATUS_ACTIVE_ITEM_LIMIT", "10"))
 
 # Retry
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
@@ -232,7 +233,7 @@ MERMAID_CDN_URL = os.getenv("MERMAID_CDN_URL", "https://cdn.jsdelivr.net/npm/mer
 HIGHLIGHTJS_CDN_URL = os.getenv("HIGHLIGHTJS_CDN_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js")
 HIGHLIGHTJS_CSS_URL = os.getenv("HIGHLIGHTJS_CSS_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css")
 
-VERSION = os.getenv("DAIGESTR_VERSION", "16.5.2")
+VERSION = os.getenv("DAIGESTR_VERSION", "16.5.3")
 START_TIME = time.time()
 
 # =============================================================================

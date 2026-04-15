@@ -331,6 +331,41 @@ class BatchStartResponse(BaseModel):
     queue_name: str = Field(..., description="Ziel-Queue des Batch-Auftrags")
 
 
+class BatchActiveItemResponse(BaseModel):
+    """Leichtgewichtige Sicht auf ein aktives oder noch nicht abgeschlossenes Batch-Item."""
+    batch_item_id: str = Field(..., description="Kanonische ID des Batch-Items")
+    item_index: int = Field(..., description="Stabile Position des Items im Batch")
+    execution_id: Optional[str] = Field(None, description="Verknüpfte canonical execution des Items")
+    filename: Optional[str] = Field(None, description="Dateiname oder Quellbezeichner des Items")
+    status: str = Field(..., description="Aktueller Item-Status")
+    current_stage: Optional[str] = Field(None, description="Aktuelle Stage der verknüpften execution sofern bekannt")
+
+
+class BatchStatusResponse(BaseModel):
+    """Leichtgewichtiger, pollbarer Status eines persistierten Batch-Auftrags."""
+    batch_id: str = Field(..., description="Kanonische ID des Batch-Auftrags")
+    batch_ref: Optional[str] = Field(None, description="Optionale fachliche Batch-Referenz")
+    queue_name: str = Field(..., description="Ziel-Queue des Batch-Auftrags")
+    status: str = Field(..., description="Aggregierter Batch-Status")
+    item_count: int = Field(..., description="Gesamtzahl der Batch-Items")
+    queued_count: int = Field(..., description="Anzahl aktuell gequeueter Items")
+    processing_count: int = Field(..., description="Anzahl aktuell laufender Items")
+    completed_count: int = Field(..., description="Anzahl erfolgreich abgeschlossener Items")
+    failed_count: int = Field(..., description="Anzahl fehlgeschlagener Items")
+    cancelled_count: int = Field(..., description="Anzahl abgebrochener Items")
+    created_at: Any = Field(..., description="Erstellungszeitpunkt des Batchs")
+    updated_at: Any = Field(..., description="Letzte Aktualisierung des Batchs")
+    started_at: Optional[Any] = Field(None, description="Zeitpunkt der ersten aktiven Verarbeitung")
+    finished_at: Optional[Any] = Field(None, description="Zeitpunkt des terminalen Batch-Abschlusses")
+    metadata: Optional[dict[str, Any]] = Field(None, description="Persistierte Batch-Metadaten")
+    active_items: list[BatchActiveItemResponse] = Field(default_factory=list, description="Leichtgewichtige Sicht auf aktive oder noch nicht terminale Items")
+
+
+class BatchListResponse(BaseModel):
+    """Liste pollbarer Batch-Status-Einträge."""
+    batches: list[BatchStatusResponse] = Field(default_factory=list, description="Neueste Batch-Aufträge zuerst")
+
+
 class BatchItemRequest(BaseModel):
     """Ein einzelnes Batch-Item. Nutzt denselben Eingabemodus wie ConvertRequest."""
     model_config = ConfigDict(str_strip_whitespace=True)

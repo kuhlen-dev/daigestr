@@ -977,3 +977,143 @@ def execution_batch_item_list(batch_id: str) -> list[dict[str, Any]]:
         return [dict(r) for r in cur.fetchall()]
     finally:
         _return_conn(conn)
+
+
+def execution_batch_list(limit: int = 50) -> list[dict[str, Any]]:
+    """List persisted execution batches, newest first."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM execution_batch ORDER BY created_at DESC LIMIT %s", (limit,))
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        _return_conn(conn)
+
+
+def execution_batch_status_summary(
+    batch_id: str,
+    *,
+    active_item_limit: int = 10,
+) -> Optional[dict[str, Any]]:
+    """Return one lightweight batch summary with derived status counts and active items."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM execution_batch WHERE id = %s", (batch_id,))
+        batch = cur.fetchone()
+        if not batch:
+            return None
+        batch_row = dict(batch)
+        cur.execute(
+            """
+            SELECT
+                COUNT(*) AS item_count,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(e.status, i.status) = 'queued'
+                ) AS queued_count,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(e.status, i.status) = 'processing'
+                ) AS processing_count,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(e.status, i.status) = 'completed'
+                ) AS completed_count,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(e.status, i.status) = 'failed'
+                ) AS failed_count,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(e.status, i.status) = 'cancelled'
+                ) AS cancelled_count,
+                MIN(e.started_at) FILTER (WHERE e.started_at IS NOT NULL) AS started_at,
+                MAX(e.finished_at) FILTER (WHERE e.finished_at IS NOT NULL) AS finished_at
+            FROM execution_batch_item i
+            LEFT JOIN execution e ON e.id = i.execution_id
+            WHERE i.batch_id = %s
+            """,
+            (batch_id,),
+        )
+        counts = dict(cur.fetchone())
+        item_count = int(counts.get("item_count") or 0)
+        queued_count = int(counts.get("queued_count") or 0)
+        processing_count = int(counts.get("processing_count") or 0)
+        completed_count = int(counts.get("completed_count") or 0)
+        failed_count = int(counts.get("failed_count") or 0)
+        cancelled_count = int(counts.get("cancelled_count") or 0)
+
+        if item_count == 0:
+            derived_status = "queued"
+        elif completed_count == item_count:
+            derived_status = "completed"
+        elif failed_count == item_count:
+            derived_status = "failed"
+        elif cancelled_count == item_count:
+            derived_status = "cancelled"
+        elif processing_count > 0:
+            derived_status = "processing"
+        elif completed_count > 0 and failed_count > 0 and completed_count + failed_count == item_count:
+            derived_status = "partial"
+        elif completed_count > 0 and completed_count < item_count:
+            derived_status = "processing"
+        else:
+            derived_status = "queued"
+
+        cur.execute(
+            """
+            SELECT
+                i.id AS batch_item_id,
+                i.item_index,
+                i.execution_id,
+                i.filename,
+                COALESCE(e.status, i.status) AS status,
+                e.current_stage
+            FROM execution_batch_item i
+            LEFT JOIN execution e ON e.id = i.execution_id
+            WHERE i.batch_id = %s
+              AND COALESCE(e.status, i.status) IN ('queued', 'processing')
+            ORDER BY i.item_index ASC
+            LIMIT %s
+            """,
+            (batch_id, active_item_limit),
+        )
+        active_items = [dict(r) for r in cur.fetchall()]
+
+        started_at = counts.get("started_at") or batch_row.get("started_at")
+        finished_at = counts.get("finished_at") if derived_status in {"completed", "failed", "partial", "cancelled"} else None
+        cur.execute(
+            """
+            UPDATE execution_batch
+            SET
+                status = %s,
+                item_count = %s,
+                completed_count = %s,
+                failed_count = %s,
+                submitted_count = %s,
+                started_at = COALESCE(started_at, %s),
+                finished_at = %s,
+                updated_at = now()
+            WHERE id = %s
+            RETURNING *
+            """,
+            (
+                derived_status,
+                item_count,
+                completed_count,
+                failed_count,
+                item_count,
+                started_at,
+                finished_at,
+                batch_id,
+            ),
+        )
+        updated_batch = dict(cur.fetchone())
+        conn.commit()
+        return {
+            **updated_batch,
+            "queued_count": queued_count,
+            "processing_count": processing_count,
+            "completed_count": completed_count,
+            "failed_count": failed_count,
+            "cancelled_count": cancelled_count,
+            "active_items": active_items,
+        }
+    finally:
+        _return_conn(conn)

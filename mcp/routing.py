@@ -3239,6 +3239,8 @@ def _build_tips_dict() -> dict:
             "batch_endpoints": {
                 "start": "POST /v1/batches persists a batch plus canonical batch_item executions and enqueues them for worker pickup.",
                 "start_response": "The start response is lightweight and returns {batch_id, status, item_count, batch_ref, queue_name}.",
+                "status": "GET /v1/batches/{id} returns lightweight aggregated counters plus active_items without inlining full document results.",
+                "list": "GET /v1/batches returns the same lightweight batch status shape for recent persisted batches.",
                 "linkage": "Each batch item owns one canonical execution; persisted batch_item executions carry execution_kind=batch_item and execution.batch_id/execution.batch_item_id.",
             },
             "idempotency": {

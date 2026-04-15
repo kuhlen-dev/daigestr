@@ -632,6 +632,81 @@ def test_start_batch_execution_reuses_batch_idempotency_key(monkeypatch):
     assert first.item_count == second.item_count == 1
 
 
+def test_get_batch_status_aggregates_execution_counts(monkeypatch):
+    from execution_db import execution_batch_status_summary, execution_update
+    from models import BatchCreateRequest, ConvertRequest
+
+    api_rest = _load_api_rest_module()
+    monkeypatch.setattr(api_rest, "_get", lambda name, default: getattr(api_rest, name, default))
+    monkeypatch.setattr(api_rest, "QUEUE_ENABLED", True)
+    monkeypatch.setattr(api_rest, "BATCH_DEFAULT_QUEUE_NAME", "default")
+    monkeypatch.setattr(api_rest, "execution_batch_status_summary", execution_batch_status_summary)
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "QUEUE_ENABLED", True)
+        monkeypatch.setitem(server_module.__dict__, "BATCH_DEFAULT_QUEUE_NAME", "default")
+        monkeypatch.setitem(server_module.__dict__, "execution_batch_status_summary", execution_batch_status_summary)
+
+    response = api_rest._start_batch_execution(
+        BatchCreateRequest(
+            batch_ref="status-batch",
+            idempotency_key=f"batch-status-{uuid.uuid4()}",
+            items=[
+                ConvertRequest(base64="aGVsbG8=", filename="hello.txt"),
+                ConvertRequest(base64="d29ybGQ=", filename="world.txt"),
+            ],
+        )
+    )
+
+    batch = api_rest._get_batch_status_payload(response.batch_id)
+    assert batch.status == "queued"
+    assert batch.item_count == 2
+    assert batch.queued_count == 2
+    assert len(batch.active_items) == 2
+
+    first_execution_id = batch.active_items[0].execution_id
+    execution_update(first_execution_id, status="completed", current_stage="done", finished_at_now=True)
+
+    refreshed = api_rest._get_batch_status_payload(response.batch_id)
+    assert refreshed.completed_count == 1
+    assert refreshed.queued_count == 1
+    assert refreshed.status == "processing"
+
+
+def test_list_batches_returns_lightweight_status_entries(monkeypatch):
+    from execution_db import execution_batch_list, execution_batch_status_summary
+    from models import BatchCreateRequest, ConvertRequest
+
+    api_rest = _load_api_rest_module()
+    monkeypatch.setattr(api_rest, "_get", lambda name, default: getattr(api_rest, name, default))
+    monkeypatch.setattr(api_rest, "QUEUE_ENABLED", True)
+    monkeypatch.setattr(api_rest, "BATCH_DEFAULT_QUEUE_NAME", "default")
+    monkeypatch.setattr(api_rest, "execution_batch_list", execution_batch_list)
+    monkeypatch.setattr(api_rest, "execution_batch_status_summary", execution_batch_status_summary)
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "QUEUE_ENABLED", True)
+        monkeypatch.setitem(server_module.__dict__, "BATCH_DEFAULT_QUEUE_NAME", "default")
+        monkeypatch.setitem(server_module.__dict__, "execution_batch_list", execution_batch_list)
+        monkeypatch.setitem(server_module.__dict__, "execution_batch_status_summary", execution_batch_status_summary)
+
+    created = api_rest._start_batch_execution(
+        BatchCreateRequest(
+            batch_ref=f"list-batch-{uuid.uuid4()}",
+            items=[ConvertRequest(base64="aGVsbG8=", filename="hello.txt")],
+        )
+    )
+
+    rows = api_rest.execution_batch_list(limit=10)
+    batches = [
+        api_rest._build_batch_status_response(
+            api_rest.execution_batch_status_summary(row["id"], active_item_limit=api_rest.BATCH_STATUS_ACTIVE_ITEM_LIMIT)
+        )
+        for row in rows
+    ]
+    assert any(batch.batch_id == created.batch_id for batch in batches)
+
+
 def test_async_failed_convert_response_marks_job_failed(monkeypatch):
     import routing
     from execution_db import init_execution_db

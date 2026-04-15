@@ -180,6 +180,8 @@ def test_execution_batch_create_and_item_linkage(execution_record):
         execution_batch_get_by_idempotency_key,
         execution_batch_item_create,
         execution_batch_item_list,
+        execution_batch_list,
+        execution_batch_status_summary,
         execution_update,
     )
 
@@ -227,6 +229,21 @@ def test_execution_batch_create_and_item_linkage(execution_record):
     items = execution_batch_item_list(batch_id)
     assert len(items) == 1
     assert items[0]["id"] == batch_item_id
+
+    listed = execution_batch_list(limit=10)
+    assert any(row["id"] == batch_id for row in listed)
+
+    summary = execution_batch_status_summary(batch_id, active_item_limit=10)
+    assert summary is not None
+    assert summary["item_count"] == 1
+    assert summary["queued_count"] == 1
+    assert summary["status"] == "queued"
+
+    execution_update(execution_record["id"], status="completed", current_stage="done", finished_at_now=True)
+    refreshed = execution_batch_status_summary(batch_id, active_item_limit=10)
+    assert refreshed is not None
+    assert refreshed["completed_count"] == 1
+    assert refreshed["status"] == "completed"
 
 
 def test_execution_attempt_upsert_and_list(execution_record):
