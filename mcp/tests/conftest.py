@@ -184,7 +184,11 @@ def load_server_module(
 
 def run_async(coro):
     """Führt eine Coroutine synchron aus (für Pytest ohne asyncio-Plugin)."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 def _safe_reset_runtime_state() -> None:

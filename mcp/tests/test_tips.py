@@ -277,6 +277,7 @@ class TestResponseHints:
                 source="/data/doc.pdf",
                 source_type="file",
                 input_meta={},
+                classify=False,
                 accuracy="standard",
             ))
 
@@ -300,6 +301,7 @@ class TestResponseHints:
                 source="/data/report.docx",
                 source_type="file",
                 input_meta={},
+                classify=False,
                 describe_images=False,
             ))
 
@@ -325,6 +327,7 @@ class TestResponseHints:
                 source="/data/invoice.pdf",
                 source_type="file",
                 input_meta={},
+                classify=False,
                 extract_schema={"type": "object", "properties": {"invoice_number": {"type": "string"}}},
                 accuracy="standard",
             ))
@@ -356,6 +359,7 @@ class TestResponseHints:
                 source="/data/scan.pdf",
                 source_type="file",
                 input_meta={},
+                classify=False,
                 ocr_correct=False,
                 accuracy="standard",
             ))
