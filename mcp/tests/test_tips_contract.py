@@ -163,3 +163,18 @@ def test_tips_document_batch_creation_contract(monkeypatch):
     assert "GET /v1/batches/{id}/items" in batch_endpoints["items"]
     assert "GET /v1/batches/{id}/items/{item_id}/result" in batch_endpoints["item_result"]
     assert "execution_kind=batch_item" in batch_endpoints["linkage"]
+
+
+def test_tips_document_mistral_batch_policy(monkeypatch):
+    monkeypatch.setattr(_routing, "get_all_template_ids", lambda: ["invoice"])
+    monkeypatch.setattr(_server, "MISTRAL_BATCH_ENABLED", True)
+    monkeypatch.setattr(_server, "MISTRAL_BATCH_MIN_ITEMS", 10)
+    monkeypatch.setattr(_server, "MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", ("file", "base64"))
+
+    result = _server._build_tips_dict()
+
+    mistral_batch_policy = result["policy_resolution"]["batch_queue_policy"]["mistral_batch_policy"]
+    assert mistral_batch_policy["enabled"] is True
+    assert mistral_batch_policy["min_items"] == 10
+    assert mistral_batch_policy["allowed_source_types"] == ["file", "base64"]
+    assert "preferred_dispatch_target" in mistral_batch_policy["decision_note"]

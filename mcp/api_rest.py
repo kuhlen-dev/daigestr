@@ -62,6 +62,9 @@ from settings import (
     MISTRAL_VISION_MODEL,
     MISTRAL_OCR_MODEL,
     MISTRAL_OCR_ENABLED,
+    MISTRAL_BATCH_ALLOWED_SOURCE_TYPES,
+    MISTRAL_BATCH_ENABLED,
+    MISTRAL_BATCH_MIN_ITEMS,
     MAX_FILE_SIZE_MB,
     IMAGE_MAX_WIDTH,
     MAX_RETRIES,
@@ -129,6 +132,7 @@ from execution_db import (
     execution_result_clear_final,
     execution_result_upsert,
     execution_result_get_final,
+    execution_subjob_upsert,
 )
 from normalizer_db import get_normalization_drift_summary
 from debug_snapshot_db import debug_snapshot_list, debug_snapshot_get
@@ -284,6 +288,65 @@ def _build_batch_item_artifacts(request: ConvertRequest) -> tuple[Optional[dict[
         )
         return None, input_snapshot
     return None, None
+
+
+def _merge_execution_policy_context(execution_id: Optional[str], **sections: dict[str, Any]) -> None:
+    if not execution_id:
+        return
+    existing = _get("execution_get", execution_get)(execution_id)
+    current_policy = dict(existing.get("policy_context") or {}) if existing else {}
+    for key, value in sections.items():
+        if value is not None:
+            current_policy[key] = value
+    _get("execution_update", execution_update)(execution_id, policy_context=current_policy)
+
+
+def _resolve_dispatch_policy(
+    *,
+    request: ConvertRequest,
+    execution_kind: str,
+    batch_item_count: Optional[int] = None,
+) -> dict[str, Any]:
+    source_type, source_ref = _infer_execution_source(request)
+    if execution_kind == "direct":
+        return {
+            "preferred_dispatch_target": "direct",
+            "effective_dispatch_target": "direct",
+            "reason": "sync_request_path",
+            "source_type": source_type,
+            "source_ref": source_ref,
+            "mistral_batch_enabled": bool(_get("MISTRAL_BATCH_ENABLED", MISTRAL_BATCH_ENABLED)),
+        }
+    if execution_kind == "async":
+        return {
+            "preferred_dispatch_target": "queued",
+            "effective_dispatch_target": "queued",
+            "reason": "async_request_path",
+            "source_type": source_type,
+            "source_ref": source_ref,
+            "mistral_batch_enabled": bool(_get("MISTRAL_BATCH_ENABLED", MISTRAL_BATCH_ENABLED)),
+        }
+
+    item_count = int(batch_item_count or 0)
+    enabled = bool(_get("MISTRAL_BATCH_ENABLED", MISTRAL_BATCH_ENABLED))
+    min_items = int(_get("MISTRAL_BATCH_MIN_ITEMS", MISTRAL_BATCH_MIN_ITEMS))
+    allowed_source_types = tuple(_get("MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", MISTRAL_BATCH_ALLOWED_SOURCE_TYPES))
+    eligible = enabled and item_count >= min_items and (source_type or "") in allowed_source_types
+    preferred_target = "mistral_batch" if eligible else "queued"
+    reason = "threshold_met_for_provider_batch" if eligible else "local_queue_selected"
+    fallback_reason = "provider_batch_submission_lands_in_later_wave" if eligible else None
+    return {
+        "preferred_dispatch_target": preferred_target,
+        "effective_dispatch_target": "queued",
+        "reason": reason,
+        "fallback_reason": fallback_reason,
+        "source_type": source_type,
+        "source_ref": source_ref,
+        "batch_item_count": item_count,
+        "mistral_batch_enabled": enabled,
+        "mistral_batch_min_items": min_items,
+        "mistral_batch_allowed_source_types": list(allowed_source_types),
+    }
 
 
 def _ensure_execution_for_request(
@@ -914,6 +977,10 @@ async def _api_convert_impl(request: ConvertRequest) -> ConvertResponse:
             meta=request.meta
         )
     _ensure_execution_for_request(request, execution_kind="direct")
+    _merge_execution_policy_context(
+        request.meta.get("execution_id"),
+        dispatch_policy=_resolve_dispatch_policy(request=request, execution_kind="direct"),
+    )
 
     # Template → Schema Auflösung (AC-014-4)
     effective_schema = request.extract_schema
@@ -1919,6 +1986,10 @@ async def _start_async_execution(request: ConvertRequest) -> AsyncJobStartRespon
     _job_create = _get("job_create", job_create)
     job_id = str(uuid.uuid4())
     _, execution_id = _ensure_execution_for_request(request, execution_kind="async", job_id=job_id)
+    _merge_execution_policy_context(
+        execution_id,
+        dispatch_policy=_resolve_dispatch_policy(request=request, execution_kind="async"),
+    )
     _job_create(job_id)
     if _get("QUEUE_ENABLED", QUEUE_ENABLED):
         _get("execution_queue_enqueue", execution_queue_enqueue)(
@@ -1952,6 +2023,13 @@ def _start_batch_execution(body: BatchCreateRequest) -> BatchStartResponse:
 
     queue_name = body.queue_name or _get("BATCH_DEFAULT_QUEUE_NAME", BATCH_DEFAULT_QUEUE_NAME)
     batch_idempotency_key = _build_batch_idempotency_key(body, queue_name)
+    batch_dispatch_policy = {
+        "queue_name": queue_name,
+        "mistral_batch_enabled": bool(_get("MISTRAL_BATCH_ENABLED", MISTRAL_BATCH_ENABLED)),
+        "mistral_batch_min_items": int(_get("MISTRAL_BATCH_MIN_ITEMS", MISTRAL_BATCH_MIN_ITEMS)),
+        "mistral_batch_allowed_source_types": list(_get("MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", MISTRAL_BATCH_ALLOWED_SOURCE_TYPES)),
+        "batch_item_count": len(body.items),
+    }
     if batch_idempotency_key:
         existing = _get("execution_batch_get_by_idempotency_key", execution_batch_get_by_idempotency_key)(batch_idempotency_key)
         if existing:
@@ -1971,7 +2049,7 @@ def _start_batch_execution(body: BatchCreateRequest) -> BatchStartResponse:
         queue_name=queue_name,
         status="queued",
         item_count=len(body.items),
-        metadata=body.meta or {},
+        metadata={**(body.meta or {}), "dispatch_policy": batch_dispatch_policy},
     )
 
     for item_index, item_request in enumerate(body.items):
@@ -2019,6 +2097,26 @@ def _start_batch_execution(body: BatchCreateRequest) -> BatchStartResponse:
             status="queued",
             current_stage="queued",
         )
+        dispatch_policy = _resolve_dispatch_policy(
+            request=item_request,
+            execution_kind="batch_item",
+            batch_item_count=len(body.items),
+        )
+        _merge_execution_policy_context(execution_id, dispatch_policy=dispatch_policy)
+        if dispatch_policy["preferred_dispatch_target"] == "mistral_batch":
+            _get("execution_subjob_upsert", execution_subjob_upsert)(
+                subjob_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{execution_id}:mistral-batch")),
+                execution_id=execution_id,
+                batch_id=batch_id,
+                batch_item_id=batch_item_id,
+                provider="mistral",
+                subjob_type="mistral_batch",
+                subjob_status="queued",
+                metadata={
+                    "decision_only": True,
+                    "dispatch_policy": dispatch_policy,
+                },
+            )
         _get("execution_queue_enqueue", execution_queue_enqueue)(
             queue_id=str(uuid.uuid4()),
             execution_id=execution_id,

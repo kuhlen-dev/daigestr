@@ -919,6 +919,45 @@ def test_batch_resume_requeues_only_cancelled_items(monkeypatch):
     assert second_execution["status"] == "completed"
 
 
+def test_batch_execution_records_mistral_batch_dispatch_policy(monkeypatch):
+    from execution_db import execution_get_full
+    from models import BatchCreateRequest, ConvertRequest
+
+    api_rest = _load_api_rest_module()
+    monkeypatch.setattr(api_rest, "QUEUE_ENABLED", True)
+    monkeypatch.setattr(api_rest, "BATCH_DEFAULT_QUEUE_NAME", "default")
+    monkeypatch.setattr(api_rest, "MISTRAL_BATCH_ENABLED", True)
+    monkeypatch.setattr(api_rest, "MISTRAL_BATCH_MIN_ITEMS", 2)
+    monkeypatch.setattr(api_rest, "MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", ("file", "base64", "url"))
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "QUEUE_ENABLED", True)
+        monkeypatch.setitem(server_module.__dict__, "BATCH_DEFAULT_QUEUE_NAME", "default")
+        monkeypatch.setitem(server_module.__dict__, "MISTRAL_BATCH_ENABLED", True)
+        monkeypatch.setitem(server_module.__dict__, "MISTRAL_BATCH_MIN_ITEMS", 2)
+        monkeypatch.setitem(server_module.__dict__, "MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", ("file", "base64", "url"))
+
+    created = api_rest._start_batch_execution(
+        BatchCreateRequest(
+            batch_ref=f"dispatch-batch-{uuid.uuid4()}",
+            items=[
+                ConvertRequest(base64="aGVsbG8=", filename="hello.txt"),
+                ConvertRequest(base64="d29ybGQ=", filename="world.txt"),
+            ],
+        )
+    )
+
+    batch_items = api_rest._get_batch_items_payload(created.batch_id, limit=10, offset=0).items
+    execution = execution_get_full(batch_items[0].execution_id)
+    assert execution is not None
+    dispatch_policy = execution["policy_context"]["dispatch_policy"]
+    assert dispatch_policy["preferred_dispatch_target"] == "mistral_batch"
+    assert dispatch_policy["effective_dispatch_target"] == "queued"
+    assert dispatch_policy["fallback_reason"] == "provider_batch_submission_lands_in_later_wave"
+    assert execution["subjobs"][0]["subjob_type"] == "mistral_batch"
+    assert execution["subjobs"][0]["metadata"]["decision_only"] is True
+
+
 def test_queue_worker_skips_cancelled_batch_item_before_execution(monkeypatch):
     from execution_db import execution_queue_get_by_execution_id, execution_result_get_final
     from models import BatchCreateRequest, ConvertRequest

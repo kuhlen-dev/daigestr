@@ -66,6 +66,17 @@ MISTRAL_OCR_EXTRACT_FOOTER = os.getenv("MISTRAL_OCR_EXTRACT_FOOTER", "false").lo
 MISTRAL_OCR_CONFIDENCE_GRANULARITY = os.getenv("MISTRAL_OCR_CONFIDENCE_GRANULARITY", "page").strip().lower()
 if MISTRAL_OCR_CONFIDENCE_GRANULARITY not in {"none", "page", "word"}:
     raise ValueError("MISTRAL_OCR_CONFIDENCE_GRANULARITY must be one of: none, page, word")
+MISTRAL_BATCH_ENABLED = os.getenv("MISTRAL_BATCH_ENABLED", "false").lower() == "true"
+MISTRAL_BATCH_MIN_ITEMS = int(os.getenv("MISTRAL_BATCH_MIN_ITEMS", "10"))
+if MISTRAL_BATCH_MIN_ITEMS < 1:
+    raise ValueError("MISTRAL_BATCH_MIN_ITEMS must be >= 1")
+MISTRAL_BATCH_ALLOWED_SOURCE_TYPES = tuple(
+    raw.strip().lower()
+    for raw in os.getenv("MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", "file,base64,url").split(",")
+    if raw.strip()
+)
+if not MISTRAL_BATCH_ALLOWED_SOURCE_TYPES:
+    raise ValueError("MISTRAL_BATCH_ALLOWED_SOURCE_TYPES must contain at least one source type")
 # =============================================================================
 # Server Ports
 # =============================================================================
@@ -233,7 +244,7 @@ MERMAID_CDN_URL = os.getenv("MERMAID_CDN_URL", "https://cdn.jsdelivr.net/npm/mer
 HIGHLIGHTJS_CDN_URL = os.getenv("HIGHLIGHTJS_CDN_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js")
 HIGHLIGHTJS_CSS_URL = os.getenv("HIGHLIGHTJS_CSS_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css")
 
-VERSION = os.getenv("DAIGESTR_VERSION", "16.6.1")
+VERSION = os.getenv("DAIGESTR_VERSION", "16.6.2")
 START_TIME = time.time()
 
 # =============================================================================

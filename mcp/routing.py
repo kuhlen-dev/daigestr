@@ -71,6 +71,9 @@ from settings import (
     QUEUE_POLL_INTERVAL_SECONDS,
     QUEUE_LEASE_SECONDS,
     BATCH_DEFAULT_QUEUE_NAME,
+    MISTRAL_BATCH_ALLOWED_SOURCE_TYPES,
+    MISTRAL_BATCH_ENABLED,
+    MISTRAL_BATCH_MIN_ITEMS,
     QUALITY_RETRY_ENABLED,
     QUALITY_RETRY_THRESHOLD,
     QUALITY_RETRY_MODE,
@@ -3204,6 +3207,12 @@ def _build_tips_dict() -> dict:
                 "default_queue_name": str(_get("BATCH_DEFAULT_QUEUE_NAME", BATCH_DEFAULT_QUEUE_NAME)),
                 "create_endpoint": "POST /v1/batches accepts an explicit item list and persists one canonical batch plus batch_item executions.",
                 "status_note": "Batch status stays lightweight and canonical; control actions operate on the same execution, execution_result, execution_batch, execution_batch_item, and execution_queue truth.",
+                "mistral_batch_policy": {
+                    "enabled": bool(_get("MISTRAL_BATCH_ENABLED", MISTRAL_BATCH_ENABLED)),
+                    "min_items": int(_get("MISTRAL_BATCH_MIN_ITEMS", MISTRAL_BATCH_MIN_ITEMS)),
+                    "allowed_source_types": list(_get("MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", MISTRAL_BATCH_ALLOWED_SOURCE_TYPES)),
+                    "decision_note": "Dispatch policy records preferred_dispatch_target and effective_dispatch_target per execution; provider batch submission lands in later W16.6 tasks.",
+                },
                 "control_actions": {
                     "batch_cancel": "POST /v1/batches/{id}/cancel cancels queued or claimed batch items without introducing a second batch state model.",
                     "batch_resume": "POST /v1/batches/{id}/resume requeues cancelled batch items using the persisted queue payload.",
