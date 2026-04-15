@@ -1,6 +1,7 @@
 import asyncio
 import sys
 import uuid
+from pathlib import Path
 
 import pytest
 
@@ -548,6 +549,87 @@ def test_api_convert_async_enqueues_when_queue_enabled(monkeypatch):
     assert captured["scheduled"] is False
     queue_rows = execution_queue_list(limit=20)
     assert any(row["job_id"] == response.job_id and row["execution_id"] == response.execution_id for row in queue_rows)
+
+
+def test_start_batch_execution_persists_batch_items_and_linked_executions(monkeypatch):
+    from execution_db import (
+        execution_batch_get,
+        execution_batch_item_list,
+        execution_get_full,
+        execution_queue_list,
+        init_execution_db,
+    )
+    from models import BatchCreateRequest, ConvertRequest
+
+    api_rest = _load_api_rest_module()
+    init_execution_db()
+    monkeypatch.setattr(api_rest, "QUEUE_ENABLED", True)
+    monkeypatch.setattr(api_rest, "BATCH_DEFAULT_QUEUE_NAME", "default")
+    monkeypatch.setattr(api_rest, "resolve_path", lambda path: Path(path))
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "QUEUE_ENABLED", True)
+        monkeypatch.setitem(server_module.__dict__, "BATCH_DEFAULT_QUEUE_NAME", "default")
+
+    body = BatchCreateRequest(
+        batch_ref="family-import",
+        idempotency_key=f"batch-{uuid.uuid4()}",
+        meta={"source": "brix"},
+        items=[
+            ConvertRequest(path="/root/docker/daigestr/data/e16/t1633_invoice.txt", meta={"document_id": 1001}),
+            ConvertRequest(base64="aGVsbG8=", filename="hello.txt", meta={"document_id": 1002}),
+        ],
+    )
+
+    response = api_rest._start_batch_execution(body)
+
+    assert response.status == "queued"
+    assert response.item_count == 2
+    batch_row = execution_batch_get(response.batch_id)
+    assert batch_row is not None
+    assert batch_row["batch_ref"] == "family-import"
+    assert batch_row["metadata"]["source"] == "brix"
+
+    items = execution_batch_item_list(response.batch_id)
+    assert len(items) == 2
+    assert items[0]["item_index"] == 0
+    assert items[0]["execution_id"] is not None
+    assert items[0]["metadata"]["batch_id"] == response.batch_id
+    assert items[1]["metadata"]["document_id"] == 1002
+
+    execution = execution_get_full(items[0]["execution_id"])
+    assert execution is not None
+    assert execution["execution_kind"] == "batch_item"
+    assert execution["batch_id"] == response.batch_id
+    assert execution["batch_item_id"] == items[0]["id"]
+    assert execution["input_snapshot"]["document_identity"]["sha256"]
+
+    queue_rows = execution_queue_list(limit=20)
+    assert sum(1 for row in queue_rows if row["execution_id"] in {item["execution_id"] for item in items}) == 2
+
+
+def test_start_batch_execution_reuses_batch_idempotency_key(monkeypatch):
+    from models import BatchCreateRequest, ConvertRequest
+
+    api_rest = _load_api_rest_module()
+    monkeypatch.setattr(api_rest, "QUEUE_ENABLED", True)
+    monkeypatch.setattr(api_rest, "BATCH_DEFAULT_QUEUE_NAME", "default")
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "QUEUE_ENABLED", True)
+        monkeypatch.setitem(server_module.__dict__, "BATCH_DEFAULT_QUEUE_NAME", "default")
+
+    body = BatchCreateRequest(
+        batch_ref="same-batch",
+        idempotency_key="batch-idem-1",
+        items=[ConvertRequest(base64="aGVsbG8=", filename="hello.txt")],
+    )
+
+    first = api_rest._start_batch_execution(body)
+    second = api_rest._start_batch_execution(body)
+
+    assert first.batch_id == second.batch_id
+    assert first.item_count == second.item_count == 1
 
 
 def test_async_failed_convert_response_marks_job_failed(monkeypatch):

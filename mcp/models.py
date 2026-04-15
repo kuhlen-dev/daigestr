@@ -4,7 +4,7 @@ Daigestr — Datenmodelle und Schemas
 
 from datetime import datetime, timezone
 from typing import Any, Optional
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from settings import CONTRACT_VERSION
 
 
@@ -320,6 +320,44 @@ class AsyncJobStartResponse(BaseModel):
     job_id: str = Field(..., description="ID des gestarteten Jobs")
     execution_id: Optional[str] = Field(None, description="Kanonische ID des gestarteten Ausführungslaufs")
     status: str = Field(..., description="Initialer Jobstatus, typischerweise 'queued'")
+
+
+class BatchStartResponse(BaseModel):
+    """Antwort nach dem Start eines persistierten Batch-Auftrags."""
+    batch_id: str = Field(..., description="Kanonische ID des gestarteten Batch-Auftrags")
+    status: str = Field(..., description="Initialer Batch-Status, typischerweise 'queued'")
+    item_count: int = Field(..., description="Anzahl der im Batch persistierten Items")
+    batch_ref: Optional[str] = Field(None, description="Optionale fachliche Batch-Referenz des Aufrufers")
+    queue_name: str = Field(..., description="Ziel-Queue des Batch-Auftrags")
+
+
+class BatchItemRequest(BaseModel):
+    """Ein einzelnes Batch-Item. Nutzt denselben Eingabemodus wie ConvertRequest."""
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    path: Optional[str] = Field(None, description="Dateipfad (relativ zu /data oder absolut)")
+    base64: Optional[str] = Field(None, description="Base64-kodierte Datei")
+    filename: Optional[str] = Field(None, description="Dateiname (erforderlich bei base64)")
+    url: Optional[str] = Field(None, description="URL zu Datei oder Webseite")
+    meta: dict[str, Any] = Field(default_factory=dict, description="Freie Metadaten pro Batch-Item")
+
+    @model_validator(mode="after")
+    def validate_input_mode(self) -> "BatchItemRequest":
+        modes = [bool(self.path), bool(self.base64), bool(self.url)]
+        if sum(modes) != 1:
+            raise ValueError("Exactly one of path, base64, or url must be provided for each batch item")
+        if self.base64 and not self.filename:
+            raise ValueError("filename is required when base64 is provided")
+        return self
+
+
+class BatchCreateRequest(BaseModel):
+    """Persistierter Batch-Auftrag für mehrere Convert-Items."""
+    batch_ref: Optional[str] = Field(None, description="Optionale fachliche Referenz des aufrufenden Systems")
+    idempotency_key: Optional[str] = Field(None, description="Optionale stabile Deduplizierungs-ID für denselben logischen Batch")
+    queue_name: Optional[str] = Field(None, description="Optionale Ziel-Queue; fällt sonst auf die env-default Queue zurück")
+    meta: dict[str, Any] = Field(default_factory=dict, description="Freie Batch-Metadaten")
+    items: list["ConvertRequest"] = Field(..., min_length=1, description="Explizite Liste von Convert-kompatiblen Batch-Items")
 
 
 class JobStatusResponse(BaseModel):

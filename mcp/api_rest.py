@@ -25,6 +25,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from models import (
+    BatchCreateRequest,
+    BatchStartResponse,
     ConvertRequest,
     ConvertResponse,
     ConvertFolderRequest,
@@ -69,6 +71,7 @@ from settings import (
     QUEUE_WORKER_COUNT,
     QUEUE_POLL_INTERVAL_SECONDS,
     QUEUE_LEASE_SECONDS,
+    BATCH_DEFAULT_QUEUE_NAME,
     EXECUTION_DIAGNOSTICS_LIMIT,
     EXECUTION_STUCK_THRESHOLD_SECONDS,
     NORMALIZATION_DRIFT_SAMPLE_LIMIT,
@@ -90,6 +93,9 @@ from templates_db import (
     job_create, job_update, job_set_result, job_set_terminal_result, job_get, job_delete, job_list,
 )
 from execution_db import (
+    execution_batch_create,
+    execution_batch_get_by_idempotency_key,
+    execution_batch_item_create,
     execution_create,
     execution_get,
     execution_get_full,
@@ -112,6 +118,8 @@ from normalizer_db import get_normalization_drift_summary
 from debug_snapshot_db import debug_snapshot_list, debug_snapshot_get
 from debug_snapshots import replay_normalization_from_snapshot
 from routing import (
+    _build_document_identity,
+    _build_input_snapshot,
     convert_auto,
     convert_url,
     convert_folder_contents,
@@ -175,6 +183,91 @@ def _build_request_idempotency_key(request: ConvertRequest, execution_kind: str,
         basis["job_id"] = job_id
     payload = json.dumps(basis, sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _build_batch_item_key(request: ConvertRequest, item_index: int) -> str:
+    basis: dict[str, Any] = {
+        "item_index": item_index,
+        "template": request.template,
+        "mode": request.mode,
+        "auto_extract": request.auto_extract,
+        "has_extract_schema": bool(request.extract_schema),
+    }
+    if request.path:
+        basis.update({"source_type": "file", "source_ref": request.path})
+    elif request.base64 and request.filename:
+        basis.update(
+            {
+                "source_type": "base64",
+                "filename": request.filename,
+                "content_sha256": hashlib.sha256(request.base64.encode("utf-8")).hexdigest(),
+            }
+        )
+    elif request.url:
+        basis.update({"source_type": "url", "source_ref": request.url})
+    payload = json.dumps(basis, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _build_batch_idempotency_key(request: BatchCreateRequest, queue_name: str) -> Optional[str]:
+    if request.idempotency_key:
+        return str(request.idempotency_key)
+    basis = {
+        "batch_ref": request.batch_ref,
+        "queue_name": queue_name,
+        "meta": request.meta,
+        "items": [_build_batch_item_key(item, index) for index, item in enumerate(request.items)],
+    }
+    payload = json.dumps(basis, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _build_batch_item_artifacts(request: ConvertRequest) -> tuple[Optional[dict[str, Any]], Optional[dict[str, Any]]]:
+    source_type, source_ref = _infer_execution_source(request)
+    filename = request.filename or (Path(request.path).name if request.path else None) or source_ref or "upload"
+    if request.path:
+        resolved = resolve_path(request.path)
+        file_data = resolved.read_bytes()
+        document_identity = _build_document_identity(
+            file_data=file_data,
+            filename=filename,
+            source=str(resolved),
+            source_type=source_type,
+        )
+        input_snapshot = _build_input_snapshot(
+            source=str(resolved),
+            source_type=source_type,
+            filename=filename,
+            document_identity=document_identity,
+            input_meta=request.meta,
+        )
+        return document_identity, input_snapshot
+    if request.base64 and request.filename:
+        file_data = base64.b64decode(request.base64)
+        document_identity = _build_document_identity(
+            file_data=file_data,
+            filename=filename,
+            source=filename,
+            source_type=source_type,
+        )
+        input_snapshot = _build_input_snapshot(
+            source=filename,
+            source_type=source_type,
+            filename=filename,
+            document_identity=document_identity,
+            input_meta=request.meta,
+        )
+        return document_identity, input_snapshot
+    if request.url:
+        input_snapshot = _build_input_snapshot(
+            source=source_ref or filename,
+            source_type=source_type,
+            filename=filename,
+            document_identity=None,
+            input_meta=request.meta,
+        )
+        return None, input_snapshot
+    return None, None
 
 
 def _ensure_execution_for_request(
@@ -1543,6 +1636,101 @@ async def _start_async_execution(request: ConvertRequest) -> AsyncJobStartRespon
     return AsyncJobStartResponse(job_id=job_id, execution_id=execution_id, status="queued")
 
 
+def _start_batch_execution(body: BatchCreateRequest) -> BatchStartResponse:
+    """Persist one canonical batch plus batch_items and enqueue linked batch_item executions."""
+    if not _get("QUEUE_ENABLED", QUEUE_ENABLED):
+        raise HTTPException(status_code=409, detail="Batch execution requires QUEUE_ENABLED=true")
+
+    queue_name = body.queue_name or _get("BATCH_DEFAULT_QUEUE_NAME", BATCH_DEFAULT_QUEUE_NAME)
+    batch_idempotency_key = _build_batch_idempotency_key(body, queue_name)
+    if batch_idempotency_key:
+        existing = _get("execution_batch_get_by_idempotency_key", execution_batch_get_by_idempotency_key)(batch_idempotency_key)
+        if existing:
+            return BatchStartResponse(
+                batch_id=existing["id"],
+                status=existing["status"],
+                item_count=existing["item_count"],
+                batch_ref=existing.get("batch_ref"),
+                queue_name=existing["queue_name"],
+            )
+
+    batch_id = str(uuid.uuid4())
+    _get("execution_batch_create", execution_batch_create)(
+        batch_id=batch_id,
+        batch_ref=body.batch_ref,
+        idempotency_key=batch_idempotency_key,
+        queue_name=queue_name,
+        status="queued",
+        item_count=len(body.items),
+        metadata=body.meta or {},
+    )
+
+    for item_index, item_request in enumerate(body.items):
+        item_meta = dict(item_request.meta or {})
+        item_key = _build_batch_item_key(item_request, item_index)
+        item_meta.setdefault("batch_id", batch_id)
+        if body.batch_ref is not None:
+            item_meta.setdefault("batch_ref", body.batch_ref)
+        item_meta.setdefault("item_key", item_key)
+        item_meta.setdefault("idempotency_key", f"{batch_id}:{item_index}:{item_key}")
+        item_request.meta = item_meta
+
+        request_id, execution_id = _ensure_execution_for_request(item_request, execution_kind="batch_item")
+        document_identity, input_snapshot = _build_batch_item_artifacts(item_request)
+        batch_item_id = str(uuid.uuid4())
+
+        _get("execution_update", execution_update)(
+            execution_id,
+            status="queued",
+            current_stage="queued",
+            batch_id=batch_id,
+            batch_item_id=batch_item_id,
+            document_identity=document_identity,
+            input_snapshot=input_snapshot,
+        )
+        source_type, source_ref = _infer_execution_source(item_request)
+        filename = item_request.filename or (Path(item_request.path).name if item_request.path else None) or source_ref
+        _get("execution_batch_item_create", execution_batch_item_create)(
+            batch_item_id=batch_item_id,
+            batch_id=batch_id,
+            item_index=item_index,
+            execution_id=execution_id,
+            request_id=request_id,
+            source_type=source_type,
+            source_ref=source_ref,
+            filename=filename,
+            status="queued",
+            item_key=item_key,
+            metadata=item_meta,
+            document_identity=document_identity,
+            input_snapshot=input_snapshot,
+        )
+        _get("execution_update", execution_update)(
+            execution_id,
+            status="queued",
+            current_stage="queued",
+        )
+        _get("execution_queue_enqueue", execution_queue_enqueue)(
+            queue_id=str(uuid.uuid4()),
+            execution_id=execution_id,
+            job_id=None,
+            payload={
+                "request": item_request.model_dump(mode="json"),
+                "batch_id": batch_id,
+                "batch_item_id": batch_item_id,
+            },
+            queue_name=queue_name,
+        )
+
+    return BatchStartResponse(
+        batch_id=batch_id,
+        status="queued",
+        item_count=len(body.items),
+        batch_ref=body.batch_ref,
+        queue_name=queue_name,
+    )
+
+
 @app.post("/v1/convert/async", response_model=AsyncJobStartResponse)
 async def api_convert_async(request: ConvertRequest) -> AsyncJobStartResponse:
     """
@@ -1552,6 +1740,12 @@ async def api_convert_async(request: ConvertRequest) -> AsyncJobStartResponse:
     abgefragt werden. Das Ergebnis ist über GET /v1/jobs/{id}/result abrufbar.
     """
     return await _start_async_execution(request)
+
+
+@app.post("/v1/batches", response_model=BatchStartResponse)
+async def api_create_batch(body: BatchCreateRequest) -> BatchStartResponse:
+    """Persistiert einen Batch mit expliziten Items und queue't die verlinkten batch_item executions."""
+    return _start_batch_execution(body)
 
 
 @app.get("/v1/jobs", response_model=JobListResponse)

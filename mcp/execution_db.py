@@ -161,6 +161,72 @@ def init_execution_db() -> None:
         )
         cur.execute(
             """
+            CREATE TABLE IF NOT EXISTS execution_batch (
+                id TEXT PRIMARY KEY,
+                batch_ref TEXT,
+                idempotency_key TEXT UNIQUE,
+                queue_name TEXT NOT NULL DEFAULT 'default',
+                status TEXT NOT NULL DEFAULT 'queued'
+                    CHECK (status IN ('queued', 'processing', 'completed', 'failed', 'partial', 'cancelled')),
+                item_count INTEGER NOT NULL DEFAULT 0,
+                submitted_count INTEGER NOT NULL DEFAULT 0,
+                completed_count INTEGER NOT NULL DEFAULT 0,
+                failed_count INTEGER NOT NULL DEFAULT 0,
+                metadata JSONB,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                updated_at TIMESTAMPTZ DEFAULT now(),
+                started_at TIMESTAMPTZ,
+                finished_at TIMESTAMPTZ
+            )
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_execution_batch_status_created_at "
+            "ON execution_batch(status, created_at DESC)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_execution_batch_batch_ref "
+            "ON execution_batch(batch_ref)"
+        )
+
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS execution_batch_item (
+                id TEXT PRIMARY KEY,
+                batch_id TEXT NOT NULL REFERENCES execution_batch(id) ON DELETE CASCADE,
+                item_index INTEGER NOT NULL,
+                execution_id TEXT UNIQUE REFERENCES execution(id) ON DELETE SET NULL,
+                request_id TEXT NOT NULL UNIQUE,
+                source_type TEXT,
+                source_ref TEXT,
+                filename TEXT,
+                status TEXT NOT NULL DEFAULT 'queued'
+                    CHECK (status IN ('queued', 'processing', 'completed', 'failed', 'cancelled')),
+                item_key TEXT,
+                metadata JSONB,
+                document_identity JSONB,
+                input_snapshot JSONB,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                updated_at TIMESTAMPTZ DEFAULT now(),
+                UNIQUE (batch_id, item_index)
+            )
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_execution_batch_item_batch_id "
+            "ON execution_batch_item(batch_id, item_index)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_execution_batch_item_execution_id "
+            "ON execution_batch_item(execution_id)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_execution_batch_item_item_key "
+            "ON execution_batch_item(item_key)"
+        )
+
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS execution_queue (
                 id TEXT PRIMARY KEY,
                 execution_id TEXT NOT NULL UNIQUE REFERENCES execution(id) ON DELETE CASCADE,
@@ -260,6 +326,8 @@ def execution_update(
     current_stage: Optional[str] = None,
     progress_json: Optional[dict[str, Any]] = None,
     idempotency_key: Optional[str] = None,
+    batch_id: Optional[str] = None,
+    batch_item_id: Optional[str] = None,
     document_identity: Optional[dict[str, Any]] = None,
     input_snapshot: Optional[dict[str, Any]] = None,
     warning_summary: Optional[dict[str, Any]] = None,
@@ -284,6 +352,12 @@ def execution_update(
     if idempotency_key is not None:
         assignments.append("idempotency_key = %s")
         params.append(idempotency_key)
+    if batch_id is not None:
+        assignments.append("batch_id = %s")
+        params.append(batch_id)
+    if batch_item_id is not None:
+        assignments.append("batch_item_id = %s")
+        params.append(batch_item_id)
     if document_identity is not None:
         assignments.append("document_identity = %s")
         params.append(psycopg2.extras.Json(document_identity))
@@ -759,6 +833,147 @@ def execution_queue_list(*, status: Optional[str] = None, limit: int = 100) -> l
                 "SELECT * FROM execution_queue ORDER BY created_at DESC LIMIT %s",
                 (limit,),
             )
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        _return_conn(conn)
+
+
+def execution_batch_create(
+    *,
+    batch_id: str,
+    batch_ref: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
+    queue_name: str = "default",
+    status: str = "queued",
+    item_count: int = 0,
+    metadata: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Create or reuse one persisted execution batch row."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO execution_batch (
+                id, batch_ref, idempotency_key, queue_name, status, item_count, metadata
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                batch_id,
+                batch_ref,
+                idempotency_key,
+                queue_name,
+                status,
+                item_count,
+                psycopg2.extras.Json(metadata) if metadata is not None else None,
+            ),
+        )
+        row = dict(cur.fetchone())
+        conn.commit()
+        return row
+    finally:
+        _return_conn(conn)
+
+
+def execution_batch_get(batch_id: str) -> Optional[dict[str, Any]]:
+    """Fetch one persisted execution batch row by id."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM execution_batch WHERE id = %s", (batch_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        _return_conn(conn)
+
+
+def execution_batch_get_by_idempotency_key(idempotency_key: str) -> Optional[dict[str, Any]]:
+    """Fetch one persisted execution batch row by idempotency key."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM execution_batch WHERE idempotency_key = %s", (idempotency_key,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        _return_conn(conn)
+
+
+def execution_batch_item_create(
+    *,
+    batch_item_id: str,
+    batch_id: str,
+    item_index: int,
+    execution_id: Optional[str],
+    request_id: str,
+    source_type: Optional[str],
+    source_ref: Optional[str],
+    filename: Optional[str],
+    status: str = "queued",
+    item_key: Optional[str] = None,
+    metadata: Optional[dict[str, Any]] = None,
+    document_identity: Optional[dict[str, Any]] = None,
+    input_snapshot: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Create or refresh one persisted batch item row."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO execution_batch_item (
+                id, batch_id, item_index, execution_id, request_id, source_type, source_ref,
+                filename, status, item_key, metadata, document_identity, input_snapshot
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (batch_id, item_index) DO UPDATE SET
+                execution_id = EXCLUDED.execution_id,
+                request_id = EXCLUDED.request_id,
+                source_type = EXCLUDED.source_type,
+                source_ref = EXCLUDED.source_ref,
+                filename = EXCLUDED.filename,
+                status = EXCLUDED.status,
+                item_key = EXCLUDED.item_key,
+                metadata = EXCLUDED.metadata,
+                document_identity = EXCLUDED.document_identity,
+                input_snapshot = EXCLUDED.input_snapshot,
+                updated_at = now()
+            RETURNING *
+            """,
+            (
+                batch_item_id,
+                batch_id,
+                item_index,
+                execution_id,
+                request_id,
+                source_type,
+                source_ref,
+                filename,
+                status,
+                item_key,
+                psycopg2.extras.Json(metadata) if metadata is not None else None,
+                psycopg2.extras.Json(document_identity) if document_identity is not None else None,
+                psycopg2.extras.Json(input_snapshot) if input_snapshot is not None else None,
+            ),
+        )
+        row = dict(cur.fetchone())
+        conn.commit()
+        return row
+    finally:
+        _return_conn(conn)
+
+
+def execution_batch_item_list(batch_id: str) -> list[dict[str, Any]]:
+    """List all persisted batch items for one batch in item order."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM execution_batch_item WHERE batch_id = %s ORDER BY item_index ASC",
+            (batch_id,),
+        )
         return [dict(r) for r in cur.fetchall()]
     finally:
         _return_conn(conn)

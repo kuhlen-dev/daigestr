@@ -70,6 +70,7 @@ from settings import (
     QUEUE_WORKER_COUNT,
     QUEUE_POLL_INTERVAL_SECONDS,
     QUEUE_LEASE_SECONDS,
+    BATCH_DEFAULT_QUEUE_NAME,
     QUALITY_RETRY_ENABLED,
     QUALITY_RETRY_THRESHOLD,
     QUALITY_RETRY_MODE,
@@ -3199,6 +3200,11 @@ def _build_tips_dict() -> dict:
                 "lease_seconds": int(_get("QUEUE_LEASE_SECONDS", QUEUE_LEASE_SECONDS)),
                 "note": "When enabled, POST /v1/convert/async queues canonical executions for worker pickup instead of spawning an unbounded background task per request.",
             },
+            "batch_queue_policy": {
+                "default_queue_name": str(_get("BATCH_DEFAULT_QUEUE_NAME", BATCH_DEFAULT_QUEUE_NAME)),
+                "create_endpoint": "POST /v1/batches accepts an explicit item list and persists one canonical batch plus batch_item executions.",
+                "status_note": "This wave only introduces canonical batch creation and queue submission; lightweight batch status and paginated result retrieval land in later W16.5 tasks.",
+            },
         },
         "response_fields": {
             "markdown": "Always present — the converted document as Markdown",
@@ -3230,10 +3236,15 @@ def _build_tips_dict() -> dict:
                 "result": "GET /v1/executions/{id}/result returns the persisted final ConvertResponse for the execution.",
                 "audit": "GET /v1/audit/execution/{id} returns audit events correlated by execution_id.",
             },
+            "batch_endpoints": {
+                "start": "POST /v1/batches persists a batch plus canonical batch_item executions and enqueues them for worker pickup.",
+                "start_response": "The start response is lightweight and returns {batch_id, status, item_count, batch_ref, queue_name}.",
+                "linkage": "Each batch item owns one canonical execution; persisted batch_item executions carry execution_kind=batch_item and execution.batch_id/execution.batch_item_id.",
+            },
             "idempotency": {
                 "request_meta_key": "meta.idempotency_key optionally pins repeated requests to the same canonical execution instead of creating a duplicate logical run.",
                 "status_field": "execution_status.idempotency_key exposes the persisted deduplication key when one was resolved.",
-                "scope_note": "Idempotency currently applies to canonical execution reuse for direct and async requests; later batch-item reuse builds on the same field.",
+                "scope_note": "Idempotency applies to canonical execution reuse for direct, async, and persisted batch-item requests; batch creation itself also accepts a stable idempotency key.",
             },
             "diagnostics_endpoints": {
                 "executions": "GET /v1/diagnostics/executions returns active executions, stuck executions, and normalization drift diagnostics for operators.",

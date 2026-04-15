@@ -143,3 +143,18 @@ def test_tips_document_brix_integration_contract(monkeypatch):
     assert "meta.template_used" in contract["read_from_raw_meta"]
     assert "meta.quality_score" in contract["read_from_raw_meta"]
     assert "normalized._quality_score as document quality" in contract["do_not_use_as_canonical"]
+
+
+def test_tips_document_batch_creation_contract(monkeypatch):
+    monkeypatch.setattr(_routing, "get_all_template_ids", lambda: ["invoice"])
+    monkeypatch.setattr(_server, "BATCH_DEFAULT_QUEUE_NAME", "default")
+
+    result = _server._build_tips_dict()
+
+    batch_policy = result["policy_resolution"]["batch_queue_policy"]
+    assert batch_policy["default_queue_name"] == "default"
+    assert "POST /v1/batches" in batch_policy["create_endpoint"]
+
+    batch_endpoints = result["response_contract"]["batch_endpoints"]
+    assert "POST /v1/batches" in batch_endpoints["start"]
+    assert "execution_kind=batch_item" in batch_endpoints["linkage"]

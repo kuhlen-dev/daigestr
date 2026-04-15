@@ -34,7 +34,7 @@ def setup_db():
 def test_execution_tables_exist():
     from templates_db import get_db_connection, _return_conn
 
-    expected = {"execution", "execution_attempt", "execution_result", "execution_queue"}
+    expected = {"execution", "execution_attempt", "execution_result", "execution_batch", "execution_batch_item", "execution_queue"}
     conn = get_db_connection()
     try:
         cur = conn.cursor()
@@ -54,9 +54,15 @@ def test_persistence_health_includes_execution_tables():
     assert "execution" in health["required_tables_checked"]
     assert "execution_attempt" in health["required_tables_checked"]
     assert "execution_result" in health["required_tables_checked"]
+    assert "execution_batch" in health["required_tables_checked"]
+    assert "execution_batch_item" in health["required_tables_checked"]
+    assert "execution_queue" in health["required_tables_checked"]
     assert "execution" in health["present_tables"]
     assert "execution_attempt" in health["present_tables"]
     assert "execution_result" in health["present_tables"]
+    assert "execution_batch" in health["present_tables"]
+    assert "execution_batch_item" in health["present_tables"]
+    assert "execution_queue" in health["present_tables"]
 
 
 @pytest.fixture
@@ -165,6 +171,62 @@ def test_execution_queue_enqueue_claim_and_complete(execution_record):
 
     rows = execution_queue_list(limit=10)
     assert any(row["id"] == queued["id"] for row in rows)
+
+
+def test_execution_batch_create_and_item_linkage(execution_record):
+    from execution_db import (
+        execution_batch_create,
+        execution_batch_get,
+        execution_batch_get_by_idempotency_key,
+        execution_batch_item_create,
+        execution_batch_item_list,
+        execution_update,
+    )
+
+    batch_id = f"batch-{uuid.uuid4()}"
+    batch = execution_batch_create(
+        batch_id=batch_id,
+        batch_ref="family-import",
+        idempotency_key=f"batch-idem-{uuid.uuid4()}",
+        queue_name="default",
+        status="queued",
+        item_count=1,
+        metadata={"source": "brix"},
+    )
+    assert batch["id"] == batch_id
+    assert batch["item_count"] == 1
+
+    by_id = execution_batch_get(batch_id)
+    assert by_id is not None
+    assert by_id["batch_ref"] == "family-import"
+
+    by_idempotency = execution_batch_get_by_idempotency_key(batch["idempotency_key"])
+    assert by_idempotency is not None
+    assert by_idempotency["id"] == batch_id
+
+    batch_item_id = f"item-{uuid.uuid4()}"
+    execution_update(execution_record["id"], batch_id=batch_id, batch_item_id=batch_item_id)
+    item = execution_batch_item_create(
+        batch_item_id=batch_item_id,
+        batch_id=batch_id,
+        item_index=0,
+        execution_id=execution_record["id"],
+        request_id=execution_record["request_id"],
+        source_type="file",
+        source_ref="/data/test.pdf",
+        filename="test.pdf",
+        status="queued",
+        item_key="item-key",
+        metadata={"document_id": 123},
+        document_identity={"filename": "test.pdf"},
+        input_snapshot={"resolved_path": "/data/test.pdf"},
+    )
+    assert item["execution_id"] == execution_record["id"]
+    assert item["metadata"]["document_id"] == 123
+
+    items = execution_batch_item_list(batch_id)
+    assert len(items) == 1
+    assert items[0]["id"] == batch_item_id
 
 
 def test_execution_attempt_upsert_and_list(execution_record):
