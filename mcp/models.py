@@ -295,6 +295,25 @@ class ConvertResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     """Antwort für Health-Check Endpoint."""
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "status": "ok",
+                "version": "16.9.2",
+                "meta": {
+                    "persistence_ready": True,
+                    "mistral_api_configured": True,
+                    "execution_result_retention_days": 30,
+                    "debug_snapshot_retention_days": 5,
+                    "operator_policy": {
+                        "audit_api_enabled": True,
+                        "debug_snapshot_api_enabled": False,
+                        "replay_api_enabled": False,
+                    },
+                },
+            }
+        }
+    )
     status: str = Field(..., description="Status: 'ok' oder 'error'")
     version: str = Field(..., description="Server-Version")
     meta: dict[str, Any] = Field(default_factory=dict, description="Zusätzliche Infos")
@@ -319,6 +338,15 @@ class ProgressState(BaseModel):
 
 class AsyncJobStartResponse(BaseModel):
     """Antwort nach dem Start eines asynchronen Convert-Jobs."""
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "job_id": "job-123",
+                "execution_id": "exec-123",
+                "status": "queued",
+            }
+        }
+    )
     job_id: str = Field(..., description="ID des gestarteten Jobs")
     execution_id: Optional[str] = Field(None, description="Kanonische ID des gestarteten Ausführungslaufs")
     status: str = Field(..., description="Initialer Jobstatus, typischerweise 'queued'")
@@ -326,6 +354,23 @@ class AsyncJobStartResponse(BaseModel):
 
 class ReplayStartResponse(BaseModel):
     """Antwort nach dem Start eines snapshot-basierten Replay-Laufs."""
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "execution_id": "exec-replay-123",
+                "request_id": "req-replay-123",
+                "execution_kind": "replay",
+                "status": "queued",
+                "snapshot_id": 42,
+                "snapshot_stage": "final",
+                "source_execution_id": "exec-123",
+                "source_batch_id": None,
+                "source_batch_item_id": None,
+                "status_path": "/v1/executions/exec-replay-123",
+                "result_path": "/v1/executions/exec-replay-123/result",
+            }
+        }
+    )
     execution_id: str = Field(..., description="Kanonische ID des Replay-Ausführungslaufs")
     request_id: str = Field(..., description="Stabile Request-ID des Replay-Ausführungslaufs")
     execution_kind: str = Field(..., description="Art des Laufs; für diesen Endpoint immer 'replay'")
@@ -341,6 +386,17 @@ class ReplayStartResponse(BaseModel):
 
 class BatchStartResponse(BaseModel):
     """Antwort nach dem Start eines persistierten Batch-Auftrags."""
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "batch_id": "batch-123",
+                "status": "queued",
+                "item_count": 2,
+                "batch_ref": "case-2026-04",
+                "queue_name": "default",
+            }
+        }
+    )
     batch_id: str = Field(..., description="Kanonische ID des gestarteten Batch-Auftrags")
     status: str = Field(..., description="Initialer Batch-Status, typischerweise 'queued'")
     item_count: int = Field(..., description="Anzahl der im Batch persistierten Items")
@@ -360,6 +416,37 @@ class BatchActiveItemResponse(BaseModel):
 
 class BatchStatusResponse(BaseModel):
     """Leichtgewichtiger, pollbarer Status eines persistierten Batch-Auftrags."""
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "batch_id": "batch-123",
+                "batch_ref": "case-2026-04",
+                "queue_name": "default",
+                "status": "partial",
+                "item_count": 3,
+                "queued_count": 0,
+                "processing_count": 1,
+                "completed_count": 1,
+                "failed_count": 0,
+                "cancelled_count": 1,
+                "created_at": "2026-04-15T10:00:00Z",
+                "updated_at": "2026-04-15T10:05:00Z",
+                "started_at": "2026-04-15T10:00:05Z",
+                "finished_at": None,
+                "metadata": {"source_system": "ops"},
+                "active_items": [
+                    {
+                        "batch_item_id": "item-2",
+                        "item_index": 1,
+                        "execution_id": "exec-batch-2",
+                        "filename": "invoice-2.pdf",
+                        "status": "processing",
+                        "current_stage": "extract",
+                    }
+                ],
+            }
+        }
+    )
     batch_id: str = Field(..., description="Kanonische ID des Batch-Auftrags")
     batch_ref: Optional[str] = Field(None, description="Optionale fachliche Batch-Referenz")
     queue_name: str = Field(..., description="Ziel-Queue des Batch-Auftrags")
@@ -385,6 +472,29 @@ class BatchListResponse(BaseModel):
 
 class BatchItemResponse(BaseModel):
     """Leichtgewichtige, aber stabile Sicht auf ein einzelnes persistiertes Batch-Item."""
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "batch_item_id": "item-2",
+                "batch_id": "batch-123",
+                "item_index": 1,
+                "execution_id": "exec-batch-2",
+                "request_id": "req-batch-2",
+                "filename": "invoice-2.pdf",
+                "source_type": "file",
+                "source_ref": "/data/invoice-2.pdf",
+                "status": "completed",
+                "current_stage": "done",
+                "metadata": {"source_system": "ops"},
+                "result_artifact_refs": {"enriched_pdf": "/data/out/invoice-2.searchable.pdf"},
+                "document_identity": {"sha256": "abc"},
+                "input_snapshot": {"filename": "invoice-2.pdf"},
+                "created_at": "2026-04-15T10:00:00Z",
+                "updated_at": "2026-04-15T10:05:00Z",
+                "final_result_available": True,
+            }
+        }
+    )
     batch_item_id: str = Field(..., description="Kanonische ID des Batch-Items")
     batch_id: str = Field(..., description="Kanonische ID des zugehörigen Batchs")
     item_index: int = Field(..., description="Stabile Position des Items im Batch")
@@ -444,6 +554,29 @@ class BatchCreateRequest(BaseModel):
 
 class JobStatusResponse(BaseModel):
     """Pollbarer Status für asynchrone Convert-Jobs."""
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "job_id": "job-123",
+                "execution_id": "exec-123",
+                "status": "processing",
+                "created_at": "2026-04-15T10:00:00Z",
+                "updated_at": "2026-04-15T10:00:05Z",
+                "progress": {
+                    "status": "processing",
+                    "current_stage": "extract",
+                    "message": "Running structured extraction",
+                    "percent": 65,
+                    "request_id": "req-123",
+                    "job_id": "job-123",
+                    "attempt_number": 1,
+                    "attempt_count": 1,
+                    "attempt_mode": "default",
+                    "metadata": {"filename": "invoice.pdf"},
+                },
+            }
+        }
+    )
     job_id: str = Field(..., description="ID des Jobs")
     execution_id: Optional[str] = Field(None, description="Kanonische ID des zugehörigen Ausführungslaufs")
     status: str = Field(..., description="Aktueller Jobstatus")
@@ -491,6 +624,50 @@ class ExecutionSubjobResponse(BaseModel):
 
 class ExecutionStatusResponse(BaseModel):
     """Kanonische Statussicht für Direct-, Async- und spätere Batch-Executions."""
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "execution_id": "exec-123",
+                "request_id": "req-123",
+                "idempotency_key": "idem-123",
+                "execution_kind": "async",
+                "source_type": "file",
+                "source_ref": "/data/invoice.pdf",
+                "job_id": "job-123",
+                "batch_id": None,
+                "batch_item_id": None,
+                "status": "completed",
+                "current_stage": "done",
+                "progress": {
+                    "status": "completed",
+                    "current_stage": "done",
+                    "message": "Completed",
+                    "percent": 100,
+                    "request_id": "req-123",
+                    "job_id": "job-123",
+                },
+                "result_meta_summary": {
+                    "template_used": "invoice",
+                    "document_type": "invoice",
+                    "quality_score": 0.94,
+                    "warnings_count": 1,
+                },
+                "result_artifact_refs": {"enriched_pdf": "/data/out/invoice.searchable.pdf"},
+                "document_identity": {"sha256": "abc"},
+                "input_snapshot": {"filename": "invoice.pdf"},
+                "policy_context": {"preferred_dispatch_target": "sync"},
+                "warning_summary": {"codes": ["used_retry"]},
+                "error_summary": None,
+                "created_at": "2026-04-15T10:00:00Z",
+                "updated_at": "2026-04-15T10:00:05Z",
+                "started_at": "2026-04-15T10:00:01Z",
+                "finished_at": "2026-04-15T10:00:05Z",
+                "attempts": [],
+                "subjobs": [],
+                "final_result_available": True,
+            }
+        }
+    )
     execution_id: str = Field(..., description="Kanonische ID des Ausführungslaufs")
     request_id: str = Field(..., description="Stabile Request-ID des Ausführungslaufs")
     idempotency_key: Optional[str] = Field(None, description="Optionale stabile Deduplizierungs-ID für denselben logischen Auftrag")
@@ -526,6 +703,21 @@ class ExecutionListResponse(BaseModel):
 
 class ExecutionDiagnosticsResponse(BaseModel):
     """Operator-oriented diagnostics for active/stuck executions and normalization drift."""
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "active_count": 1,
+                "stuck_count": 0,
+                "stuck_threshold_seconds": 900,
+                "active_executions": [],
+                "stuck_executions": [],
+                "normalizer_drift": {
+                    "coverage_pct": 92.5,
+                    "templates_without_mapping": ["policy"],
+                },
+            }
+        }
+    )
     active_count: int = Field(..., description="Anzahl aktuell aktiver Executions")
     stuck_count: int = Field(..., description="Anzahl aktuell als stuck eingestufter Executions")
     stuck_threshold_seconds: int = Field(..., description="Schwellwert in Sekunden für stuck execution detection")
