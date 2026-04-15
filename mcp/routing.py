@@ -80,6 +80,7 @@ from settings import (
     QUALITY_RETRY_ENABLED,
     QUALITY_RETRY_THRESHOLD,
     QUALITY_RETRY_MODE,
+    CONTRACT_VERSION,
     EXECUTION_RESULT_RETENTION_DAYS,
     EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS,
     DEBUG_SNAPSHOTS_RETENTION_DAYS,
@@ -3127,10 +3128,15 @@ def _build_tips_dict() -> dict:
     data_dir = str(DATA_DIR)
     return {
         "service": f"Daigestr — Document Intelligence Service v{VERSION}",
+        "contract_version": _get("CONTRACT_VERSION", CONTRACT_VERSION),
+        "machine_truth": "This document is the normative machine-readable contract for Daigestr capabilities, routing rules, polling behavior, and operator boundaries.",
         "quick_reference": {
             "convert_file": {"endpoint": "POST /v1/convert", "mcp_tool": "convert", "params": {"path": f"{data_dir}/file.pdf"}},
             "convert_url": {"endpoint": "POST /v1/convert", "mcp_tool": "convert", "params": {"url": _EXAMPLE_URL}},
             "convert_base64": {"endpoint": "POST /v1/convert", "mcp_tool": "convert", "params": {"base64_data": "...", "filename": "file.pdf"}},
+            "convert_async": {"endpoint": "POST /v1/convert/async", "params": {"path": f"{data_dir}/large.pdf", "mode": "full"}},
+            "batch_create": {"endpoint": "POST /v1/batches", "params": {"batch_ref": "case-2026-04", "items": [{"path": f"{data_dir}/batch-a.pdf"}, {"path": f"{data_dir}/batch-b.pdf"}]}},
+            "execution_status": {"endpoint": "GET /v1/executions/{execution_id}", "note": "Canonical status view for direct, async, batch_item, and replay runs."},
             "extract_invoice": {"endpoint": "POST /v1/extract", "mcp_tool": "extract", "params": {"path": f"{data_dir}/invoice.pdf", "template": "invoice"}},
             "extract_custom": {"endpoint": "POST /v1/convert", "mcp_tool": "convert", "params": {"path": f"{data_dir}/doc.pdf", "extract_schema": {"type": "object", "properties": {"title": {"type": "string"}}}}},
         },
@@ -3287,7 +3293,7 @@ def _build_tips_dict() -> dict:
             "warnings": "Standardized contract warnings like used_retry or normalizer_missing_mapping. Null when none were materialized.",
             "extracted": "Present when extract_schema, template, or auto_extract produced structured JSON. Otherwise null.",
             "chunks": "Only present when chunk=true — list of text segments with metadata",
-            "meta": "Always present — processing metadata (quality_score, duration, pipeline_steps, etc.)",
+            "meta": "Always present — canonical processing metadata (request_id, execution_id, contract_version, quality_score, duration, pipeline_steps, etc.)",
             "html": "Only present when output_format='html' — standalone HTML page with CSS and Mermaid rendering",
         },
         "response_contract": {
@@ -3312,6 +3318,11 @@ def _build_tips_dict() -> dict:
                 "result": "GET /v1/executions/{id}/result returns the persisted final ConvertResponse for the execution.",
                 "audit": "GET /v1/audit/execution/{id} returns audit events correlated by execution_id.",
             },
+            "replay_endpoints": {
+                "execution": "POST /v1/executions/{id}/replay creates a new canonical replay execution from an existing snapshot.",
+                "batch_item": "POST /v1/batches/{id}/items/{item_id}/replay creates a new canonical replay execution from a batch-item snapshot.",
+                "status_and_result": "Replay responses expose status_path and result_path so callers poll the replay execution exactly like any other canonical run.",
+            },
             "batch_endpoints": {
                 "start": "POST /v1/batches persists a batch plus canonical batch_item executions and enqueues them for worker pickup.",
                 "start_response": "The start response is lightweight and returns {batch_id, status, item_count, batch_ref, queue_name}.",
@@ -3324,7 +3335,14 @@ def _build_tips_dict() -> dict:
                 "item_resume": "POST /v1/batches/{id}/items/{item_id}/resume requeues one cancelled batch item via its persisted queue payload.",
                 "item_retry": "POST /v1/batches/{id}/items/{item_id}/retry requeues one failed batch item on the same logical execution after demoting the old final result.",
                 "item_result": "GET /v1/batches/{id}/items/{item_id}/result returns the persisted final ConvertResponse for one batch item via its canonical execution.",
+                "item_history_shape": "GET /v1/batches/{id}/items returns lightweight items with execution linkage, input snapshot references, result_artifact_refs, and final_result_available.",
                 "linkage": "Each batch item owns one canonical execution; persisted batch_item executions carry execution_kind=batch_item and execution.batch_id/execution.batch_item_id.",
+            },
+            "polling_vs_result_retrieval": {
+                "direct": "POST /v1/convert and POST /v1/extract return the final ConvertResponse immediately.",
+                "async": "POST /v1/convert/async returns job_id plus execution_id; poll /v1/jobs/{id} or /v1/executions/{execution_id}, then read /result from the same surface.",
+                "batch": "POST /v1/batches returns batch_id; poll /v1/batches/{id} for aggregate state, inspect /items for per-item state, and fetch /items/{item_id}/result for final payloads.",
+                "replay": "Replay endpoints return a new replay execution. Poll the returned status_path and read the returned result_path for the final payload.",
             },
             "idempotency": {
                 "request_meta_key": "meta.idempotency_key optionally pins repeated requests to the same canonical execution instead of creating a duplicate logical run.",

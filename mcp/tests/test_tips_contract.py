@@ -44,6 +44,8 @@ def test_tips_document_response_contract_and_null_semantics(monkeypatch):
     result = _server._build_tips_dict()
 
     contract = result["response_contract"]
+    assert result["contract_version"] == _server.CONTRACT_VERSION
+    assert "normative machine-readable contract" in result["machine_truth"]
     assert "markdown" in contract["success_response_fields"]
     assert "warnings" in contract["success_response_fields"]
     assert "normalized" in contract["success_response_fields"]
@@ -54,6 +56,8 @@ def test_tips_document_response_contract_and_null_semantics(monkeypatch):
     assert contract["error_semantics"]["success_false"]
     assert contract["job_progress_endpoints"]["status"] == "GET /v1/jobs/{id} returns canonical progress under progress."
     assert "execution_id" in contract["job_progress_endpoints"]["start"]
+    assert "status_path" in contract["replay_endpoints"]["status_and_result"]
+    assert "/v1/batches/{id}" in contract["polling_vs_result_retrieval"]["batch"]
 
 
 def test_tips_document_job_progress_fields(monkeypatch):
@@ -162,6 +166,7 @@ def test_tips_document_batch_creation_contract(monkeypatch):
     assert "GET /v1/batches" in batch_endpoints["list"]
     assert "GET /v1/batches/{id}/items" in batch_endpoints["items"]
     assert "GET /v1/batches/{id}/items/{item_id}/result" in batch_endpoints["item_result"]
+    assert "result_artifact_refs" in batch_endpoints["item_history_shape"]
     assert "execution_kind=batch_item" in batch_endpoints["linkage"]
 
 
