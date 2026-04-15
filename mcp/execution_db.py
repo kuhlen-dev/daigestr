@@ -979,6 +979,71 @@ def execution_batch_item_list(batch_id: str) -> list[dict[str, Any]]:
         _return_conn(conn)
 
 
+def execution_batch_item_get(batch_id: str, batch_item_id: str) -> Optional[dict[str, Any]]:
+    """Return one persisted batch item plus lightweight execution/result state."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT
+                i.*,
+                COALESCE(e.status, i.status) AS effective_status,
+                e.current_stage,
+                (er.id IS NOT NULL) AS final_result_available
+            FROM execution_batch_item i
+            LEFT JOIN execution e ON e.id = i.execution_id
+            LEFT JOIN execution_result er
+                ON er.execution_id = i.execution_id
+               AND er.is_final = TRUE
+            WHERE i.batch_id = %s AND i.id = %s
+            """,
+            (batch_id, batch_item_id),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        _return_conn(conn)
+
+
+def execution_batch_item_list_paginated(batch_id: str, *, limit: int = 50, offset: int = 0) -> dict[str, Any]:
+    """Return a paginated lightweight batch-item list enriched with execution/result state."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS total_count FROM execution_batch_item WHERE batch_id = %s", (batch_id,))
+        total_row = cur.fetchone()
+        total_count = int((dict(total_row) if total_row else {}).get("total_count") or 0)
+        cur.execute(
+            """
+            SELECT
+                i.*,
+                COALESCE(e.status, i.status) AS effective_status,
+                e.current_stage,
+                (er.id IS NOT NULL) AS final_result_available
+            FROM execution_batch_item i
+            LEFT JOIN execution e ON e.id = i.execution_id
+            LEFT JOIN execution_result er
+                ON er.execution_id = i.execution_id
+               AND er.is_final = TRUE
+            WHERE i.batch_id = %s
+            ORDER BY i.item_index ASC
+            LIMIT %s OFFSET %s
+            """,
+            (batch_id, limit, offset),
+        )
+        items = [dict(r) for r in cur.fetchall()]
+        return {
+            "batch_id": batch_id,
+            "limit": limit,
+            "offset": offset,
+            "total_count": total_count,
+            "items": items,
+        }
+    finally:
+        _return_conn(conn)
+
+
 def execution_batch_list(limit: int = 50) -> list[dict[str, Any]]:
     """List persisted execution batches, newest first."""
     conn = get_db_connection()

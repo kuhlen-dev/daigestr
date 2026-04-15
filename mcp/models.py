@@ -366,6 +366,35 @@ class BatchListResponse(BaseModel):
     batches: list[BatchStatusResponse] = Field(default_factory=list, description="Neueste Batch-Aufträge zuerst")
 
 
+class BatchItemResponse(BaseModel):
+    """Leichtgewichtige, aber stabile Sicht auf ein einzelnes persistiertes Batch-Item."""
+    batch_item_id: str = Field(..., description="Kanonische ID des Batch-Items")
+    batch_id: str = Field(..., description="Kanonische ID des zugehörigen Batchs")
+    item_index: int = Field(..., description="Stabile Position des Items im Batch")
+    execution_id: Optional[str] = Field(None, description="Verknüpfte kanonische execution des Items")
+    request_id: str = Field(..., description="Stabile Request-ID des Batch-Items")
+    filename: Optional[str] = Field(None, description="Dateiname oder Quellbezeichner des Items")
+    source_type: Optional[str] = Field(None, description="Art der Quelle des Items")
+    source_ref: Optional[str] = Field(None, description="Referenz auf die Quelle des Items")
+    status: str = Field(..., description="Aktueller Status des Items")
+    current_stage: Optional[str] = Field(None, description="Aktuelle Stage der verknüpften execution sofern bekannt")
+    metadata: Optional[dict[str, Any]] = Field(None, description="Persistierte Item-Metadaten")
+    document_identity: Optional[dict[str, Any]] = Field(None, description="Persistierte Identität des Eingangsdokuments")
+    input_snapshot: Optional[dict[str, Any]] = Field(None, description="Persistierter eingefrorener Input-Snapshot")
+    created_at: Any = Field(..., description="Erstellungszeitpunkt des Batch-Items")
+    updated_at: Any = Field(..., description="Letzte Aktualisierung des Batch-Items")
+    final_result_available: bool = Field(..., description="Ob für die verknüpfte execution bereits ein finales Result persistiert wurde")
+
+
+class BatchItemListResponse(BaseModel):
+    """Paginierte Liste persistierter Batch-Items eines Batch-Auftrags."""
+    batch_id: str = Field(..., description="Kanonische ID des Batch-Auftrags")
+    limit: int = Field(..., description="Tatsächlich verwendetes Limit der Antwort")
+    offset: int = Field(..., description="Verwendeter Offset der Antwort")
+    total_count: int = Field(..., description="Gesamtzahl persistierter Items des Batch-Auftrags")
+    items: list[BatchItemResponse] = Field(default_factory=list, description="Paginierte Items in stabiler item_index-Reihenfolge")
+
+
 class BatchItemRequest(BaseModel):
     """Ein einzelnes Batch-Item. Nutzt denselben Eingabemodus wie ConvertRequest."""
     model_config = ConfigDict(str_strip_whitespace=True)

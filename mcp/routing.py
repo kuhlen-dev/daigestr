@@ -3241,6 +3241,8 @@ def _build_tips_dict() -> dict:
                 "start_response": "The start response is lightweight and returns {batch_id, status, item_count, batch_ref, queue_name}.",
                 "status": "GET /v1/batches/{id} returns lightweight aggregated counters plus active_items without inlining full document results.",
                 "list": "GET /v1/batches returns the same lightweight batch status shape for recent persisted batches.",
+                "items": "GET /v1/batches/{id}/items returns a paginated lightweight item list with execution linkage and final_result_available flags.",
+                "item_result": "GET /v1/batches/{id}/items/{item_id}/result returns the persisted final ConvertResponse for one batch item via its canonical execution.",
                 "linkage": "Each batch item owns one canonical execution; persisted batch_item executions carry execution_kind=batch_item and execution.batch_id/execution.batch_item_id.",
             },
             "idempotency": {

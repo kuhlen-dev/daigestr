@@ -27,6 +27,8 @@ from fastapi.responses import JSONResponse
 from models import (
     BatchActiveItemResponse,
     BatchCreateRequest,
+    BatchItemListResponse,
+    BatchItemResponse,
     BatchListResponse,
     BatchStartResponse,
     BatchStatusResponse,
@@ -99,8 +101,10 @@ from templates_db import (
 from execution_db import (
     execution_batch_create,
     execution_batch_get_by_idempotency_key,
+    execution_batch_item_get,
     execution_batch_item_create,
     execution_batch_list,
+    execution_batch_item_list_paginated,
     execution_batch_status_summary,
     execution_create,
     execution_get,
@@ -485,6 +489,59 @@ def _get_batch_status_payload(batch_id: str, *, active_item_limit: int = BATCH_S
     if not row:
         raise HTTPException(status_code=404, detail=f"Batch '{batch_id}' not found")
     return _build_batch_status_response(row)
+
+
+def _build_batch_item_response(row: dict[str, Any]) -> BatchItemResponse:
+    return BatchItemResponse(
+        batch_item_id=row["id"],
+        batch_id=row["batch_id"],
+        item_index=row["item_index"],
+        execution_id=row.get("execution_id"),
+        request_id=row["request_id"],
+        filename=row.get("filename"),
+        source_type=row.get("source_type"),
+        source_ref=row.get("source_ref"),
+        status=row.get("effective_status") or row["status"],
+        current_stage=row.get("current_stage"),
+        metadata=row.get("metadata"),
+        document_identity=row.get("document_identity"),
+        input_snapshot=row.get("input_snapshot"),
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        final_result_available=bool(row.get("final_result_available")),
+    )
+
+
+def _get_batch_items_payload(batch_id: str, *, limit: int = 50, offset: int = 0) -> BatchItemListResponse:
+    if limit < 1:
+        raise HTTPException(status_code=400, detail="limit must be >= 1")
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="offset must be >= 0")
+    batch = _get("execution_batch_status_summary", execution_batch_status_summary)(batch_id, active_item_limit=0)
+    if not batch:
+        raise HTTPException(status_code=404, detail=f"Batch '{batch_id}' not found")
+    page = _get("execution_batch_item_list_paginated", execution_batch_item_list_paginated)(
+        batch_id,
+        limit=limit,
+        offset=offset,
+    )
+    return BatchItemListResponse(
+        batch_id=batch_id,
+        limit=page["limit"],
+        offset=page["offset"],
+        total_count=page["total_count"],
+        items=[_build_batch_item_response(item) for item in page["items"]],
+    )
+
+
+def _get_batch_item_result_payload(batch_id: str, batch_item_id: str) -> ConvertResponse:
+    batch_item = _get("execution_batch_item_get", execution_batch_item_get)(batch_id, batch_item_id)
+    if not batch_item:
+        raise HTTPException(status_code=404, detail=f"Batch item '{batch_item_id}' not found in batch '{batch_id}'")
+    execution_id = batch_item.get("execution_id")
+    if not execution_id:
+        raise HTTPException(status_code=404, detail=f"Batch item '{batch_item_id}' has no linked execution")
+    return _get_execution_result_payload(execution_id)
 
 
 def _get_execution_diagnostics_payload(
@@ -1818,6 +1875,25 @@ async def api_get_batch(
 ) -> BatchStatusResponse:
     """Leichtgewichtiger pollbarer Status eines persistierten Batch-Auftrags."""
     return _get_batch_status_payload(batch_id, active_item_limit=active_item_limit)
+
+
+@app.get("/v1/batches/{batch_id}/items", response_model=BatchItemListResponse)
+async def api_list_batch_items(
+    batch_id: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> BatchItemListResponse:
+    """Paginierte Liste persistierter Batch-Items ohne Inlining voller Dokumentresultate."""
+    return _get_batch_items_payload(batch_id, limit=limit, offset=offset)
+
+
+@app.get("/v1/batches/{batch_id}/items/{batch_item_id}/result", response_model=ConvertResponse)
+async def api_get_batch_item_result(
+    batch_id: str,
+    batch_item_id: str,
+) -> ConvertResponse:
+    """Persistiertes finales ConvertResult eines einzelnen Batch-Items."""
+    return _get_batch_item_result_payload(batch_id, batch_item_id)
 
 
 @app.get("/v1/jobs", response_model=JobListResponse)

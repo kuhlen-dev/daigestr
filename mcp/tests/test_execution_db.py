@@ -178,10 +178,13 @@ def test_execution_batch_create_and_item_linkage(execution_record):
         execution_batch_create,
         execution_batch_get,
         execution_batch_get_by_idempotency_key,
+        execution_batch_item_get,
         execution_batch_item_create,
         execution_batch_item_list,
+        execution_batch_item_list_paginated,
         execution_batch_list,
         execution_batch_status_summary,
+        execution_result_upsert,
         execution_update,
     )
 
@@ -230,6 +233,17 @@ def test_execution_batch_create_and_item_linkage(execution_record):
     assert len(items) == 1
     assert items[0]["id"] == batch_item_id
 
+    paged = execution_batch_item_list_paginated(batch_id, limit=10, offset=0)
+    assert paged["batch_id"] == batch_id
+    assert paged["total_count"] == 1
+    assert paged["items"][0]["id"] == batch_item_id
+    assert paged["items"][0]["final_result_available"] is False
+
+    looked_up = execution_batch_item_get(batch_id, batch_item_id)
+    assert looked_up is not None
+    assert looked_up["id"] == batch_item_id
+    assert looked_up["effective_status"] == "queued"
+
     listed = execution_batch_list(limit=10)
     assert any(row["id"] == batch_id for row in listed)
 
@@ -240,10 +254,25 @@ def test_execution_batch_create_and_item_linkage(execution_record):
     assert summary["status"] == "queued"
 
     execution_update(execution_record["id"], status="completed", current_stage="done", finished_at_now=True)
+    execution_result_upsert(
+        result_id=f"result-{uuid.uuid4()}",
+        execution_id=execution_record["id"],
+        attempt_id=None,
+        is_final=True,
+        result_status="completed",
+        success=True,
+        response_json={"success": True, "markdown": "# ok", "meta": {"execution_id": execution_record["id"]}},
+        meta={"execution_id": execution_record["id"]},
+    )
     refreshed = execution_batch_status_summary(batch_id, active_item_limit=10)
     assert refreshed is not None
     assert refreshed["completed_count"] == 1
     assert refreshed["status"] == "completed"
+
+    looked_up_completed = execution_batch_item_get(batch_id, batch_item_id)
+    assert looked_up_completed is not None
+    assert looked_up_completed["effective_status"] == "completed"
+    assert looked_up_completed["final_result_available"] is True
 
 
 def test_execution_attempt_upsert_and_list(execution_record):

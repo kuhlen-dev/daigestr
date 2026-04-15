@@ -707,6 +707,96 @@ def test_list_batches_returns_lightweight_status_entries(monkeypatch):
     assert any(batch.batch_id == created.batch_id for batch in batches)
 
 
+def test_list_batch_items_returns_paginated_execution_linked_entries(monkeypatch):
+    from execution_db import execution_batch_item_list_paginated
+    from models import BatchCreateRequest, ConvertRequest
+
+    api_rest = _load_api_rest_module()
+    monkeypatch.setattr(api_rest, "_get", lambda name, default: getattr(api_rest, name, default))
+    monkeypatch.setattr(api_rest, "QUEUE_ENABLED", True)
+    monkeypatch.setattr(api_rest, "BATCH_DEFAULT_QUEUE_NAME", "default")
+    monkeypatch.setattr(api_rest, "execution_batch_item_list_paginated", execution_batch_item_list_paginated)
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "QUEUE_ENABLED", True)
+        monkeypatch.setitem(server_module.__dict__, "BATCH_DEFAULT_QUEUE_NAME", "default")
+        monkeypatch.setitem(server_module.__dict__, "execution_batch_item_list_paginated", execution_batch_item_list_paginated)
+
+    created = api_rest._start_batch_execution(
+        BatchCreateRequest(
+            batch_ref=f"items-batch-{uuid.uuid4()}",
+            items=[
+                ConvertRequest(base64="aGVsbG8=", filename="hello.txt", meta={"document_id": 1}),
+                ConvertRequest(base64="d29ybGQ=", filename="world.txt", meta={"document_id": 2}),
+            ],
+        )
+    )
+
+    page = api_rest._get_batch_items_payload(created.batch_id, limit=1, offset=0)
+    assert page.batch_id == created.batch_id
+    assert page.limit == 1
+    assert page.offset == 0
+    assert page.total_count == 2
+    assert len(page.items) == 1
+    assert page.items[0].execution_id is not None
+    assert page.items[0].metadata["document_id"] == 1
+    assert page.items[0].final_result_available is False
+
+
+def test_get_batch_item_result_reuses_execution_result_payload(monkeypatch):
+    from execution_db import execution_result_get_final, execution_result_upsert, execution_update
+    from models import BatchCreateRequest, ConvertRequest, create_success_response
+
+    api_rest = _load_api_rest_module()
+    monkeypatch.setattr(api_rest, "QUEUE_ENABLED", True)
+    monkeypatch.setattr(api_rest, "BATCH_DEFAULT_QUEUE_NAME", "default")
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "QUEUE_ENABLED", True)
+        monkeypatch.setitem(server_module.__dict__, "BATCH_DEFAULT_QUEUE_NAME", "default")
+
+    created = api_rest._start_batch_execution(
+        BatchCreateRequest(
+            batch_ref=f"item-result-batch-{uuid.uuid4()}",
+            items=[ConvertRequest(base64="aGVsbG8=", filename="hello.txt")],
+        )
+    )
+    batch_page = api_rest._get_batch_items_payload(created.batch_id, limit=10, offset=0)
+    batch_item = batch_page.items[0]
+    result = create_success_response(
+        "# batch item result",
+        meta={
+            "execution_id": batch_item.execution_id,
+            "quality_score": 0.93,
+            "template_used": "invoice",
+            "template_version": 1,
+        },
+    )
+    result.extracted = {"invoice_number": "INV-1"}
+    execution_result_upsert(
+        result_id=f"result-{uuid.uuid4()}",
+        execution_id=batch_item.execution_id,
+        is_final=True,
+        result_status="completed",
+        success=True,
+        response_json=result.model_dump(mode="json"),
+        meta=result.meta.model_dump(mode="json"),
+        extracted=result.extracted,
+        normalized=result.normalized,
+        warnings=[warning.model_dump(mode="json") for warning in result.warnings] if result.warnings else None,
+        error=result.error.model_dump(mode="json") if result.error else None,
+    )
+    execution_update(batch_item.execution_id, status="completed", current_stage="done", finished_at_now=True)
+
+    stored = execution_result_get_final(batch_item.execution_id)
+    assert stored is not None
+
+    restored = api_rest._get_batch_item_result_payload(created.batch_id, batch_item.batch_item_id)
+    assert restored.success is True
+    assert restored.markdown == "# batch item result"
+    assert restored.meta.execution_id == batch_item.execution_id
+
+
 def test_async_failed_convert_response_marks_job_failed(monkeypatch):
     import routing
     from execution_db import init_execution_db
