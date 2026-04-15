@@ -11,6 +11,8 @@ from __future__ import annotations
 import copy
 from typing import Any, Optional
 
+from models import ConvertResponse, ErrorCode, create_error_response, create_success_response
+
 from settings import (
     DEBUG_SNAPSHOTS_ENABLED,
     DEBUG_SNAPSHOTS_INCLUDE_ERRORS,
@@ -128,3 +130,38 @@ async def replay_normalization_from_snapshot(
         "template_name": effective_template,
         **result,
     }
+
+
+def build_convert_response_from_snapshot(
+    snapshot: dict[str, Any],
+    *,
+    replay_meta: Optional[dict[str, Any]] = None,
+) -> ConvertResponse:
+    """Materialize a canonical ConvertResponse from one stored debug snapshot."""
+    payload = snapshot.get("payload_json")
+    if not isinstance(payload, dict):
+        raise ValueError("Snapshot payload is missing or invalid")
+
+    snapshot_meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+    merged_meta = {**snapshot_meta, **(replay_meta or {})}
+    merged_meta["replay_snapshot_id"] = snapshot.get("id")
+    merged_meta["replay_snapshot_stage"] = snapshot.get("stage")
+
+    markdown = payload.get("markdown")
+    extracted = payload.get("extracted") if isinstance(payload.get("extracted"), dict) else payload.get("extracted")
+    normalized = payload.get("normalized") if isinstance(payload.get("normalized"), dict) else payload.get("normalized")
+    error_message = payload.get("error")
+
+    if snapshot.get("stage") == "error_result" or error_message:
+        response = create_error_response(
+            ErrorCode.INTERNAL_ERROR,
+            str(error_message or "Replay snapshot captured a failed result"),
+            meta=merged_meta,
+        )
+    else:
+        response = create_success_response(markdown or "", meta=merged_meta)
+
+    response.markdown = markdown
+    response.extracted = extracted if isinstance(extracted, dict) else None
+    response.normalized = normalized if isinstance(normalized, dict) else None
+    return response

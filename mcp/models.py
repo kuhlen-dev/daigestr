@@ -324,6 +324,21 @@ class AsyncJobStartResponse(BaseModel):
     status: str = Field(..., description="Initialer Jobstatus, typischerweise 'queued'")
 
 
+class ReplayStartResponse(BaseModel):
+    """Antwort nach dem Start eines snapshot-basierten Replay-Laufs."""
+    execution_id: str = Field(..., description="Kanonische ID des Replay-Ausführungslaufs")
+    request_id: str = Field(..., description="Stabile Request-ID des Replay-Ausführungslaufs")
+    execution_kind: str = Field(..., description="Art des Laufs; für diesen Endpoint immer 'replay'")
+    status: str = Field(..., description="Initialer oder terminaler Status des Replay-Laufs")
+    snapshot_id: int = Field(..., description="Verwendete Snapshot-ID")
+    snapshot_stage: str = Field(..., description="Verwendete Snapshot-Stage")
+    source_execution_id: str = Field(..., description="Kanonische ID der Ursprungs-Execution")
+    source_batch_id: Optional[str] = Field(None, description="Ursprungs-Batch falls das Replay von einem Batch-Item ausgelöst wurde")
+    source_batch_item_id: Optional[str] = Field(None, description="Ursprungs-Batch-Item falls das Replay von einem Batch-Item ausgelöst wurde")
+    status_path: str = Field(..., description="Pfad zur kanonischen Statussicht des Replay-Laufs")
+    result_path: str = Field(..., description="Pfad zum finalen Ergebnis des Replay-Laufs")
+
+
 class BatchStartResponse(BaseModel):
     """Antwort nach dem Start eines persistierten Batch-Auftrags."""
     batch_id: str = Field(..., description="Kanonische ID des gestarteten Batch-Auftrags")

@@ -43,6 +43,7 @@ from models import (
     ExtractRequest,
     TemplateResponse,
     HealthResponse,
+    ReplayStartResponse,
     MetaData,
     ErrorCode,
     create_error_response,
@@ -166,6 +167,7 @@ from intelligence import (
 from debug_snapshots import (  # noqa: F401
     should_capture_debug_snapshot,
     build_debug_snapshot_payload,
+    build_convert_response_from_snapshot,
     replay_normalization_from_snapshot,
 )
 from progress_tracking import build_progress_payload, normalize_progress_payload  # noqa: F401
@@ -346,6 +348,8 @@ from api_rest import (  # noqa: F401
     api_get_job,
     api_get_job_result,
     api_delete_job,
+    api_replay_execution,
+    api_replay_batch_item,
     api_list_debug_snapshots,
     api_get_debug_snapshot,
     api_replay_debug_snapshot_normalize,

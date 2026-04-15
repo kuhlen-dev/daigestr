@@ -41,6 +41,7 @@ from models import (
     HealthResponse,
     ProgressState,
     AsyncJobStartResponse,
+    ReplayStartResponse,
     JobStatusResponse,
     JobListResponse,
     ExecutionAttemptResponse,
@@ -142,7 +143,7 @@ from execution_db import (
 )
 from normalizer_db import get_normalization_drift_summary
 from debug_snapshot_db import debug_snapshot_list, debug_snapshot_get
-from debug_snapshots import replay_normalization_from_snapshot
+from debug_snapshots import replay_normalization_from_snapshot, build_convert_response_from_snapshot
 from routing import (
     _build_document_identity,
     _build_input_snapshot,
@@ -536,6 +537,169 @@ def _get_execution_result_payload(execution_id: str) -> ConvertResponse:
     if not final_result or not final_result.get("response_json"):
         raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' has no final result")
     return ConvertResponse.model_validate(final_result["response_json"])
+
+
+def _pick_replay_snapshot_for_request(request_id: str, *, snapshot_id: Optional[int] = None) -> dict[str, Any]:
+    if snapshot_id is not None:
+        snapshot = _get("debug_snapshot_get", debug_snapshot_get)(snapshot_id)
+        if not snapshot:
+            raise HTTPException(status_code=404, detail=f"Snapshot '{snapshot_id}' not found")
+        if snapshot.get("request_id") != request_id:
+            raise HTTPException(status_code=409, detail=f"Snapshot '{snapshot_id}' does not belong to request '{request_id}'")
+        return snapshot
+
+    snapshots = _get("debug_snapshot_list", debug_snapshot_list)(request_id=request_id, limit=20)
+    if not snapshots:
+        raise HTTPException(status_code=404, detail=f"Execution request '{request_id}' has no stored replay snapshots")
+
+    preferred_stages = ("normalized_result", "extract_result", "convert_result", "error_result")
+    for stage in preferred_stages:
+        for snapshot in snapshots:
+            if snapshot.get("stage") == stage:
+                return snapshot
+    return snapshots[0]
+
+
+def _build_replay_start_response(
+    *,
+    replay_execution: dict[str, Any],
+    snapshot: dict[str, Any],
+    source_execution: dict[str, Any],
+    source_batch_id: Optional[str] = None,
+    source_batch_item_id: Optional[str] = None,
+) -> ReplayStartResponse:
+    replay_execution_id = replay_execution["id"]
+    return ReplayStartResponse(
+        execution_id=replay_execution_id,
+        request_id=replay_execution["request_id"],
+        execution_kind=replay_execution["execution_kind"],
+        status=replay_execution["status"],
+        snapshot_id=int(snapshot["id"]),
+        snapshot_stage=snapshot["stage"],
+        source_execution_id=source_execution["id"],
+        source_batch_id=source_batch_id,
+        source_batch_item_id=source_batch_item_id,
+        status_path=f"/v1/executions/{replay_execution_id}",
+        result_path=f"/v1/executions/{replay_execution_id}/result",
+    )
+
+
+def _run_execution_replay(
+    source_execution: dict[str, Any],
+    *,
+    snapshot_id: Optional[int] = None,
+    source_batch_id: Optional[str] = None,
+    source_batch_item_id: Optional[str] = None,
+) -> ReplayStartResponse:
+    snapshot = _pick_replay_snapshot_for_request(source_execution["request_id"], snapshot_id=snapshot_id)
+    replay_execution_id = str(uuid.uuid4())
+    replay_request_id = f"replay-{uuid.uuid4()}"
+    replay_progress = build_progress_payload(
+        status="processing",
+        current_stage="replay",
+        message="Replaying persisted snapshot",
+        percent=20,
+        request_id=replay_request_id,
+        attempt_number=1,
+        attempt_count=1,
+        attempt_mode="replay",
+    )
+    replay_policy_context = {
+        "replay": {
+            "source_execution_id": source_execution["id"],
+            "source_request_id": source_execution["request_id"],
+            "source_batch_id": source_batch_id,
+            "source_batch_item_id": source_batch_item_id,
+            "snapshot_id": snapshot["id"],
+            "snapshot_stage": snapshot.get("stage"),
+            "mode": "snapshot",
+        }
+    }
+    replay_execution = _get("execution_create", execution_create)(
+        execution_id=replay_execution_id,
+        request_id=replay_request_id,
+        execution_kind="replay",
+        source_type=source_execution.get("source_type"),
+        source_ref=source_execution.get("source_ref"),
+        document_identity=source_execution.get("document_identity"),
+        input_snapshot=source_execution.get("input_snapshot"),
+        policy_context=replay_policy_context,
+        status="processing",
+        current_stage="replay",
+        progress_json=replay_progress,
+    )
+    replay_meta = {
+        "request_id": replay_request_id,
+        "execution_id": replay_execution_id,
+        "attempt_number": 1,
+        "attempt_count": 1,
+        "attempt_mode": "replay",
+        "replayed_from_request_id": source_execution["request_id"],
+        "replayed_from_execution_id": source_execution["id"],
+    }
+    if source_batch_id:
+        replay_meta["replayed_from_batch_id"] = source_batch_id
+    if source_batch_item_id:
+        replay_meta["replayed_from_batch_item_id"] = source_batch_item_id
+
+    try:
+        response = _get("build_convert_response_from_snapshot", build_convert_response_from_snapshot)(
+            snapshot,
+            replay_meta=replay_meta,
+        )
+    except ValueError as exc:
+        response = create_error_response(
+            ErrorCode.INTERNAL_ERROR,
+            str(exc),
+            meta=replay_meta,
+            details={"snapshot_id": snapshot["id"]},
+        )
+
+    _get("execution_update", execution_update)(
+        replay_execution_id,
+        started_at_now=True,
+        current_stage="replay",
+        progress_json=replay_progress,
+    )
+    _persist_execution_attempt_result(
+        execution_id=replay_execution_id,
+        attempt_number=1,
+        response=response,
+        attempt_mode="replay",
+        attempt_reason=f"snapshot:{snapshot.get('stage')}",
+        is_final=True,
+        result_status="completed" if response.success else "failed",
+    )
+    refreshed = _get("execution_get", execution_get)(replay_execution_id)
+    if not refreshed:
+        raise HTTPException(status_code=500, detail=f"Replay execution '{replay_execution_id}' could not be reloaded")
+    return _build_replay_start_response(
+        replay_execution=refreshed,
+        snapshot=snapshot,
+        source_execution=source_execution,
+        source_batch_id=source_batch_id,
+        source_batch_item_id=source_batch_item_id,
+    )
+
+
+def _replay_execution(execution_id: str, *, snapshot_id: Optional[int] = None) -> ReplayStartResponse:
+    source_execution = _get("execution_get", execution_get)(execution_id)
+    if not source_execution:
+        raise HTTPException(status_code=404, detail=f"Execution '{execution_id}' not found")
+    return _run_execution_replay(source_execution, snapshot_id=snapshot_id)
+
+
+def _replay_batch_item(batch_id: str, batch_item_id: str, *, snapshot_id: Optional[int] = None) -> ReplayStartResponse:
+    batch_item = _require_batch_item_row(batch_id, batch_item_id)
+    source_execution = _get("execution_get", execution_get)(batch_item["execution_id"])
+    if not source_execution:
+        raise HTTPException(status_code=404, detail=f"Execution '{batch_item['execution_id']}' not found")
+    return _run_execution_replay(
+        source_execution,
+        snapshot_id=snapshot_id,
+        source_batch_id=batch_id,
+        source_batch_item_id=batch_item_id,
+    )
 
 
 def _get_job_result_payload(job_id: str) -> ConvertResponse:
@@ -2735,6 +2899,22 @@ async def api_get_execution(execution_id: str) -> ExecutionStatusResponse:
 async def api_get_execution_result(execution_id: str) -> ConvertResponse:
     """Gibt das persistierte finale Ergebnis eines Ausführungslaufs zurück."""
     return _get_execution_result_payload(execution_id)
+
+
+@app.post("/v1/executions/{execution_id}/replay", response_model=ReplayStartResponse)
+async def api_replay_execution(execution_id: str, snapshot_id: Optional[int] = None) -> ReplayStartResponse:
+    """Erzeugt einen kanonischen Replay-Lauf aus einem vorhandenen Snapshot der Execution."""
+    return _replay_execution(execution_id, snapshot_id=snapshot_id)
+
+
+@app.post("/v1/batches/{batch_id}/items/{batch_item_id}/replay", response_model=ReplayStartResponse)
+async def api_replay_batch_item(
+    batch_id: str,
+    batch_item_id: str,
+    snapshot_id: Optional[int] = None,
+) -> ReplayStartResponse:
+    """Erzeugt einen kanonischen Replay-Lauf aus einem vorhandenen Snapshot des Batch-Items."""
+    return _replay_batch_item(batch_id, batch_item_id, snapshot_id=snapshot_id)
 
 
 @app.get("/v1/diagnostics/executions", response_model=ExecutionDiagnosticsResponse)

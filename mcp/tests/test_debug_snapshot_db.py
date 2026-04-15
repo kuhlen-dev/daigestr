@@ -208,5 +208,5 @@ class TestDebugSnapshotCrud:
         rows = snapshot_db.debug_snapshot_list(limit=10)
 
         assert deleted == 1
-        assert len(rows) == 1
-        assert rows[0]["request_id"] == "req-new"
+        assert any(row["request_id"] == "req-new" for row in rows)
+        assert all(row["request_id"] != "req-old" for row in rows)

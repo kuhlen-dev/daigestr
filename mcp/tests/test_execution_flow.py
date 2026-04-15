@@ -822,6 +822,169 @@ def test_get_batch_item_result_reuses_execution_result_payload(monkeypatch):
     assert restored.meta.execution_id == batch_item.execution_id
 
 
+def test_replay_execution_creates_separate_replay_execution_from_latest_snapshot():
+    from debug_snapshot_db import debug_snapshot_store, init_debug_snapshot_db
+    from execution_db import execution_get, execution_result_get_final, init_execution_db
+    from models import create_success_response
+
+    api_rest = _load_api_rest_module()
+    init_execution_db()
+    init_debug_snapshot_db()
+
+    request_id = f"req-{uuid.uuid4()}"
+    original_response = create_success_response(
+        "# original markdown",
+        meta={
+            "request_id": request_id,
+            "execution_id": f"exec-{uuid.uuid4()}",
+            "template_used": "invoice",
+            "quality_score": 0.88,
+        },
+    )
+    original_response.extracted = {"invoice_number": "INV-100"}
+    debug_snapshot_store(
+        request_id=request_id,
+        stage="extract_result",
+        payload={
+            "meta": original_response.meta.model_dump(mode="json"),
+            "markdown": "# older",
+            "extracted": {"invoice_number": "INV-OLD"},
+        },
+    )
+    preferred_snapshot_id = debug_snapshot_store(
+        request_id=request_id,
+        stage="normalized_result",
+        payload={
+            "meta": original_response.meta.model_dump(mode="json"),
+            "markdown": original_response.markdown,
+            "extracted": original_response.extracted,
+            "normalized": {"invoice_number": "INV-100"},
+        },
+    )
+
+    from execution_db import execution_create
+
+    original_execution = execution_create(
+        execution_id=original_response.meta.execution_id,
+        request_id=request_id,
+        execution_kind="direct",
+        source_type="file",
+        source_ref="/data/original.pdf",
+        status="completed",
+        current_stage="done",
+        document_identity={"filename": "original.pdf"},
+        input_snapshot={"resolved_path": "/data/original.pdf"},
+    )
+
+    replay = api_rest._replay_execution(original_execution["id"])
+    assert replay.execution_kind == "replay"
+    assert replay.status == "completed"
+    assert replay.snapshot_id == preferred_snapshot_id
+    assert replay.source_execution_id == original_execution["id"]
+    assert replay.status_path == f"/v1/executions/{replay.execution_id}"
+    assert replay.result_path == f"/v1/executions/{replay.execution_id}/result"
+
+    replay_execution = execution_get(replay.execution_id)
+    assert replay_execution is not None
+    assert replay_execution["execution_kind"] == "replay"
+    assert replay_execution["status"] == "completed"
+    assert replay_execution["policy_context"]["replay"]["source_execution_id"] == original_execution["id"]
+    assert replay_execution["policy_context"]["replay"]["snapshot_id"] == preferred_snapshot_id
+
+    replay_result = execution_result_get_final(replay.execution_id)
+    assert replay_result is not None
+    assert replay_result["response_json"]["normalized"]["invoice_number"] == "INV-100"
+    assert replay_result["response_json"]["meta"]["replayed_from_execution_id"] == original_execution["id"]
+
+
+def test_replay_batch_item_creates_replay_execution_without_mutating_original_batch():
+    from debug_snapshot_db import debug_snapshot_store, init_debug_snapshot_db
+    from execution_db import execution_get, execution_result_get_final, init_execution_db
+    from models import BatchCreateRequest, ConvertRequest
+
+    api_rest = _load_api_rest_module()
+    init_execution_db()
+    init_debug_snapshot_db()
+    api_rest.QUEUE_ENABLED = True
+    api_rest.BATCH_DEFAULT_QUEUE_NAME = "default"
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        server_module.QUEUE_ENABLED = True
+        server_module.BATCH_DEFAULT_QUEUE_NAME = "default"
+
+    created = api_rest._start_batch_execution(
+        BatchCreateRequest(
+            batch_ref=f"replay-batch-{uuid.uuid4()}",
+            items=[ConvertRequest(base64="aGVsbG8=", filename="hello.txt")],
+        )
+    )
+    batch_page = api_rest._get_batch_items_payload(created.batch_id, limit=10, offset=0)
+    batch_item = batch_page.items[0]
+
+    snapshot_id = debug_snapshot_store(
+        request_id=batch_item.request_id,
+        stage="convert_result",
+        payload={
+            "meta": {
+                "request_id": batch_item.request_id,
+                "execution_id": batch_item.execution_id,
+                "quality_score": 0.67,
+            },
+            "markdown": "# replayed batch item",
+        },
+    )
+
+    replay = api_rest._replay_batch_item(created.batch_id, batch_item.batch_item_id)
+    assert replay.execution_kind == "replay"
+    assert replay.status == "completed"
+    assert replay.snapshot_id == snapshot_id
+    assert replay.source_batch_id == created.batch_id
+    assert replay.source_batch_item_id == batch_item.batch_item_id
+
+    original_execution = execution_get(batch_item.execution_id)
+    assert original_execution is not None
+    assert original_execution["execution_kind"] == "batch_item"
+    assert original_execution["status"] == "queued"
+
+    replay_result = execution_result_get_final(replay.execution_id)
+    assert replay_result is not None
+    assert replay_result["response_json"]["markdown"] == "# replayed batch item"
+    assert replay_result["response_json"]["meta"]["replayed_from_batch_item_id"] == batch_item.batch_item_id
+
+
+def test_replay_execution_raises_404_when_no_snapshot_exists():
+    from execution_db import execution_create, init_execution_db
+
+    api_rest = _load_api_rest_module()
+    init_execution_db()
+
+    class HTTPExceptionStub(Exception):
+        def __init__(self, status_code: int, detail: str):
+            super().__init__(detail)
+            self.status_code = status_code
+            self.detail = detail
+
+    api_rest.HTTPException = HTTPExceptionStub
+
+    execution = execution_create(
+        execution_id=f"exec-{uuid.uuid4()}",
+        request_id=f"req-{uuid.uuid4()}",
+        execution_kind="direct",
+        source_type="file",
+        source_ref="/data/missing.pdf",
+        status="completed",
+        current_stage="done",
+    )
+
+    try:
+        api_rest._replay_execution(execution["id"])
+    except Exception as exc:
+        assert getattr(exc, "status_code", None) == 404
+        assert "no stored replay snapshots" in getattr(exc, "detail", str(exc))
+    else:
+        raise AssertionError("Expected HTTPException for missing replay snapshot")
+
+
 def test_batch_item_cancel_resume_and_retry_orchestration(monkeypatch):
     from execution_db import execution_queue_get_by_execution_id, execution_result_get_final, execution_result_upsert, execution_update
     from fastapi import HTTPException
