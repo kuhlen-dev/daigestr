@@ -34,7 +34,7 @@ def setup_db():
 def test_execution_tables_exist():
     from templates_db import get_db_connection, _return_conn
 
-    expected = {"execution", "execution_attempt", "execution_result", "execution_batch", "execution_batch_item", "execution_queue"}
+    expected = {"execution", "execution_attempt", "execution_subjob", "execution_result", "execution_batch", "execution_batch_item", "execution_queue"}
     conn = get_db_connection()
     try:
         cur = conn.cursor()
@@ -53,12 +53,14 @@ def test_persistence_health_includes_execution_tables():
     health = check_persistence_health()
     assert "execution" in health["required_tables_checked"]
     assert "execution_attempt" in health["required_tables_checked"]
+    assert "execution_subjob" in health["required_tables_checked"]
     assert "execution_result" in health["required_tables_checked"]
     assert "execution_batch" in health["required_tables_checked"]
     assert "execution_batch_item" in health["required_tables_checked"]
     assert "execution_queue" in health["required_tables_checked"]
     assert "execution" in health["present_tables"]
     assert "execution_attempt" in health["present_tables"]
+    assert "execution_subjob" in health["present_tables"]
     assert "execution_result" in health["present_tables"]
     assert "execution_batch" in health["present_tables"]
     assert "execution_batch_item" in health["present_tables"]
@@ -446,6 +448,45 @@ def test_execution_result_upsert_and_fetch_final(execution_record):
     rows = execution_result_list(execution_record["id"])
     assert len(rows) >= 1
     assert rows[0]["execution_id"] == execution_record["id"]
+
+
+def test_execution_subjob_upsert_and_list(execution_record):
+    from execution_db import execution_subjob_list, execution_subjob_upsert
+
+    subjob = execution_subjob_upsert(
+        subjob_id=f"subjob-{uuid.uuid4()}",
+        execution_id=execution_record["id"],
+        provider="mistral",
+        subjob_type="mistral_batch",
+        upstream_batch_id="mbatch-1",
+        upstream_item_id="mitem-1",
+        subjob_status="submitted",
+        metadata={"pages": [1, 2]},
+        started_at_now=True,
+    )
+    assert subjob["provider"] == "mistral"
+    assert subjob["subjob_type"] == "mistral_batch"
+    assert subjob["upstream_batch_id"] == "mbatch-1"
+    assert subjob["subjob_status"] == "submitted"
+
+    updated = execution_subjob_upsert(
+        subjob_id=subjob["id"],
+        execution_id=execution_record["id"],
+        provider="mistral",
+        subjob_type="mistral_batch",
+        upstream_batch_id="mbatch-1",
+        upstream_item_id="mitem-1",
+        subjob_status="completed",
+        metadata={"pages": [1, 2], "result_count": 2},
+        finished_at_now=True,
+    )
+    assert updated["subjob_status"] == "completed"
+    assert updated["metadata"]["result_count"] == 2
+    assert updated["finished_at"] is not None
+
+    rows = execution_subjob_list(execution_record["id"])
+    assert len(rows) == 1
+    assert rows[0]["id"] == subjob["id"]
 
 
 def test_execution_list_contains_newest_execution(execution_record):

@@ -48,6 +48,7 @@ from models import (
     ExecutionListResponse,
     ExecutionDiagnosticsResponse,
     ErrorCode,
+    ExecutionSubjobResponse,
     create_error_response,
     create_success_response,
 )
@@ -387,6 +388,23 @@ def _build_execution_status_response(row: dict[str, Any]) -> ExecutionStatusResp
         )
         for attempt in row.get("attempts", [])
     ]
+    subjobs = [
+        ExecutionSubjobResponse(
+            subjob_id=subjob["id"],
+            provider=subjob["provider"],
+            subjob_type=subjob["subjob_type"],
+            upstream_batch_id=subjob.get("upstream_batch_id"),
+            upstream_item_id=subjob.get("upstream_item_id"),
+            subjob_status=subjob["subjob_status"],
+            metadata=subjob.get("metadata"),
+            error=subjob.get("error"),
+            created_at=subjob["created_at"],
+            updated_at=subjob["updated_at"],
+            started_at=subjob.get("started_at"),
+            finished_at=subjob.get("finished_at"),
+        )
+        for subjob in row.get("subjobs", [])
+    ]
     return ExecutionStatusResponse(
         execution_id=row["id"],
         request_id=row["request_id"],
@@ -411,6 +429,7 @@ def _build_execution_status_response(row: dict[str, Any]) -> ExecutionStatusResp
         started_at=row.get("started_at"),
         finished_at=row.get("finished_at"),
         attempts=attempts,
+        subjobs=subjobs,
         final_result_available=bool(row.get("final_result")),
     )
 

@@ -109,6 +109,7 @@ CANONICAL_EXECUTION_FIELDS: dict[str, str] = {
     "started_at": "Start timestamp of the execution when known.",
     "finished_at": "Finish timestamp of the execution when known.",
     "attempts": "Persisted attempts that belong to this execution.",
+    "subjobs": "Persisted upstream subjobs linked to this execution, e.g. provider batch jobs.",
     "final_result_available": "Whether a final result payload is persisted for the execution.",
 }
 
@@ -455,6 +456,22 @@ class ExecutionAttemptResponse(BaseModel):
     finished_at: Any = Field(None, description="Endzeit des Versuchs")
 
 
+class ExecutionSubjobResponse(BaseModel):
+    """Ein persistierter Upstream-Subjob, der an eine kanonische Execution gebunden ist."""
+    subjob_id: str = Field(..., description="ID des persistierten Upstream-Subjobs")
+    provider: str = Field(..., description="Upstream-Provider, z. B. mistral")
+    subjob_type: str = Field(..., description="Art des Subjobs, z. B. mistral_batch")
+    upstream_batch_id: Optional[str] = Field(None, description="Providerseitige Batch-ID")
+    upstream_item_id: Optional[str] = Field(None, description="Providerseitige Item-ID innerhalb eines Upstream-Batchs")
+    subjob_status: str = Field(..., description="Status des Upstream-Subjobs")
+    metadata: Optional[dict[str, Any]] = Field(None, description="Persistierter Metadatenkontext des Upstream-Subjobs")
+    error: Optional[dict[str, Any]] = Field(None, description="Persistierte Fehlerdaten des Upstream-Subjobs")
+    created_at: Any = Field(..., description="Erstellungszeitpunkt des Subjobs")
+    updated_at: Any = Field(..., description="Letzte Aktualisierung des Subjobs")
+    started_at: Any = Field(None, description="Startzeit des Subjobs")
+    finished_at: Any = Field(None, description="Endzeit des Subjobs")
+
+
 class ExecutionStatusResponse(BaseModel):
     """Kanonische Statussicht für Direct-, Async- und spätere Batch-Executions."""
     execution_id: str = Field(..., description="Kanonische ID des Ausführungslaufs")
@@ -480,6 +497,7 @@ class ExecutionStatusResponse(BaseModel):
     started_at: Any = Field(None, description="Startzeit")
     finished_at: Any = Field(None, description="Endzeit")
     attempts: list[ExecutionAttemptResponse] = Field(default_factory=list, description="Persistierte Versuche dieses Laufs")
+    subjobs: list[ExecutionSubjobResponse] = Field(default_factory=list, description="Persistierte Upstream-Subjobs dieses Laufs")
     final_result_available: bool = Field(False, description="Ob ein finales Ergebnis persistiert vorliegt")
 
 

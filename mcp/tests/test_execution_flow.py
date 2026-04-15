@@ -456,7 +456,7 @@ def test_ensure_execution_for_request_reuses_explicit_idempotency_key_for_async(
 
 def test_execution_status_response_includes_input_snapshot():
     import uuid
-    from execution_db import execution_create, execution_get_full, init_execution_db
+    from execution_db import execution_create, execution_get_full, execution_subjob_upsert, init_execution_db
 
     api_rest = _load_api_rest_module()
     init_execution_db()
@@ -471,9 +471,22 @@ def test_execution_status_response_includes_input_snapshot():
         status="completed",
         current_stage="done",
     )
+    execution_subjob_upsert(
+        subjob_id=f"subjob-{uuid.uuid4()}",
+        execution_id=execution["id"],
+        provider="mistral",
+        subjob_type="mistral_batch",
+        upstream_batch_id="mbatch-1",
+        upstream_item_id="mitem-1",
+        subjob_status="submitted",
+        metadata={"submission_mode": "provider_batch"},
+    )
     payload = api_rest._build_execution_status_response(execution_get_full(execution["id"]))
 
     assert payload.input_snapshot["resolved_path"] == "/data/doc.txt"
+    assert len(payload.subjobs) == 1
+    assert payload.subjobs[0].provider == "mistral"
+    assert payload.subjobs[0].subjob_type == "mistral_batch"
 
 
 def test_async_execution_status_matches_job_progress(monkeypatch):

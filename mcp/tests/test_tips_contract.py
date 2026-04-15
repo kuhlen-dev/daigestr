@@ -91,7 +91,8 @@ def test_tips_document_execution_status_fields(monkeypatch):
     assert "progress" in execution_fields
     assert "result_meta_summary" in execution_fields
     assert "attempts" in execution_fields
-    assert result["response_contract"]["execution_endpoints"]["status"] == "GET /v1/executions/{id} returns the canonical execution status including attempts and canonical progress."
+    assert "subjobs" in execution_fields
+    assert result["response_contract"]["execution_endpoints"]["status"] == "GET /v1/executions/{id} returns the canonical execution status including attempts, upstream subjobs, and canonical progress."
     assert result["response_contract"]["idempotency"]["request_meta_key"] == "meta.idempotency_key optionally pins repeated requests to the same canonical execution instead of creating a duplicate logical run."
     assert result["response_contract"]["diagnostics_endpoints"]["executions"] == "GET /v1/diagnostics/executions returns active executions, stuck executions, and normalization drift diagnostics for operators."
     diagnostics_fields = result["response_contract"]["diagnostics_fields"]

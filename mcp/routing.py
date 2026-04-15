@@ -3239,7 +3239,7 @@ def _build_tips_dict() -> dict:
             },
             "execution_endpoints": {
                 "list": "GET /v1/executions returns the canonical history view for direct, async, and later batch-item executions.",
-                "status": "GET /v1/executions/{id} returns the canonical execution status including attempts and canonical progress.",
+                "status": "GET /v1/executions/{id} returns the canonical execution status including attempts, upstream subjobs, and canonical progress.",
                 "result": "GET /v1/executions/{id}/result returns the persisted final ConvertResponse for the execution.",
                 "audit": "GET /v1/audit/execution/{id} returns audit events correlated by execution_id.",
             },

@@ -124,6 +124,42 @@ def init_execution_db() -> None:
 
         cur.execute(
             """
+            CREATE TABLE IF NOT EXISTS execution_subjob (
+                id TEXT PRIMARY KEY,
+                execution_id TEXT NOT NULL REFERENCES execution(id) ON DELETE CASCADE,
+                batch_id TEXT,
+                batch_item_id TEXT,
+                provider TEXT NOT NULL DEFAULT 'mistral',
+                subjob_type TEXT NOT NULL,
+                upstream_batch_id TEXT,
+                upstream_item_id TEXT,
+                subjob_status TEXT NOT NULL DEFAULT 'queued'
+                    CHECK (subjob_status IN ('queued', 'submitted', 'processing', 'completed', 'failed', 'cancelled')),
+                metadata JSONB,
+                error JSONB,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                updated_at TIMESTAMPTZ DEFAULT now(),
+                started_at TIMESTAMPTZ,
+                finished_at TIMESTAMPTZ,
+                UNIQUE (execution_id)
+            )
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_execution_subjob_execution "
+            "ON execution_subjob(execution_id)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_execution_subjob_upstream_batch "
+            "ON execution_subjob(provider, upstream_batch_id)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_execution_subjob_status "
+            "ON execution_subjob(subjob_status, created_at DESC)"
+        )
+
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS execution_result (
                 id TEXT PRIMARY KEY,
                 execution_id TEXT NOT NULL REFERENCES execution(id) ON DELETE CASCADE,
@@ -503,6 +539,7 @@ def execution_get_full(execution_id: str) -> Optional[dict[str, Any]]:
     if not execution:
         return None
     execution["attempts"] = execution_attempt_list(execution_id)
+    execution["subjobs"] = execution_subjob_list(execution_id)
     execution["final_result"] = execution_result_get_final(execution_id)
     return execution
 
@@ -578,6 +615,92 @@ def execution_attempt_list(execution_id: str) -> list[dict[str, Any]]:
         cur = conn.cursor()
         cur.execute(
             "SELECT * FROM execution_attempt WHERE execution_id = %s ORDER BY attempt_number ASC",
+            (execution_id,),
+        )
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        _return_conn(conn)
+
+
+def execution_subjob_upsert(
+    subjob_id: str,
+    execution_id: str,
+    *,
+    batch_id: Optional[str] = None,
+    batch_item_id: Optional[str] = None,
+    provider: str = "mistral",
+    subjob_type: str,
+    upstream_batch_id: Optional[str] = None,
+    upstream_item_id: Optional[str] = None,
+    subjob_status: str = "queued",
+    metadata: Optional[dict[str, Any]] = None,
+    error: Optional[dict[str, Any]] = None,
+    started_at_now: bool = False,
+    finished_at_now: bool = False,
+) -> dict[str, Any]:
+    """Insert or update one upstream subjob row linked to a canonical execution."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO execution_subjob (
+                id, execution_id, batch_id, batch_item_id, provider, subjob_type,
+                upstream_batch_id, upstream_item_id, subjob_status, metadata, error,
+                started_at, finished_at
+            )
+            VALUES (
+                %s, %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s,
+                CASE WHEN %s THEN now() ELSE NULL END,
+                CASE WHEN %s THEN now() ELSE NULL END
+            )
+            ON CONFLICT (execution_id) DO UPDATE SET
+                id = EXCLUDED.id,
+                batch_id = EXCLUDED.batch_id,
+                batch_item_id = EXCLUDED.batch_item_id,
+                provider = EXCLUDED.provider,
+                subjob_type = EXCLUDED.subjob_type,
+                upstream_batch_id = EXCLUDED.upstream_batch_id,
+                upstream_item_id = EXCLUDED.upstream_item_id,
+                subjob_status = EXCLUDED.subjob_status,
+                metadata = EXCLUDED.metadata,
+                error = EXCLUDED.error,
+                started_at = COALESCE(execution_subjob.started_at, EXCLUDED.started_at),
+                finished_at = COALESCE(EXCLUDED.finished_at, execution_subjob.finished_at),
+                updated_at = now()
+            RETURNING *
+            """,
+            (
+                subjob_id,
+                execution_id,
+                batch_id,
+                batch_item_id,
+                provider,
+                subjob_type,
+                upstream_batch_id,
+                upstream_item_id,
+                subjob_status,
+                psycopg2.extras.Json(metadata) if metadata is not None else None,
+                psycopg2.extras.Json(error) if error is not None else None,
+                started_at_now,
+                finished_at_now,
+            ),
+        )
+        row = dict(cur.fetchone())
+        conn.commit()
+        return row
+    finally:
+        _return_conn(conn)
+
+
+def execution_subjob_list(execution_id: str) -> list[dict[str, Any]]:
+    """Return all upstream subjobs for one execution."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM execution_subjob WHERE execution_id = %s ORDER BY created_at ASC, id ASC",
             (execution_id,),
         )
         return [dict(r) for r in cur.fetchall()]

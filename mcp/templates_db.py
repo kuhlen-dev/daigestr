@@ -92,6 +92,7 @@ def check_persistence_health() -> dict:
         "job",
         "execution",
         "execution_attempt",
+        "execution_subjob",
         "execution_result",
         "execution_batch",
         "execution_batch_item",

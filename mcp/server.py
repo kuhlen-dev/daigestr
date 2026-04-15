@@ -257,6 +257,8 @@ from execution_db import (  # noqa: F401
     execution_batch_status_summary,
     execution_attempt_upsert,
     execution_attempt_list,
+    execution_subjob_upsert,
+    execution_subjob_list,
     execution_result_upsert,
     execution_result_get_final,
     execution_result_clear_final,
