@@ -73,6 +73,7 @@ class TestCheckPersistenceHealth:
             {"tablename": "job"},
             {"tablename": "execution"},
             {"tablename": "execution_attempt"},
+            {"tablename": "execution_subjob"},
             {"tablename": "execution_result"},
             {"tablename": "execution_batch"},
             {"tablename": "execution_batch_item"},
@@ -117,6 +118,9 @@ class TestApiHealthPersistence:
         assert response.status == "ok"
         assert response.meta["persistence_ready"] is True
         assert response.meta["database_connection_ok"] is True
+        assert response.meta["execution_result_retention_days"] == _server_api.EXECUTION_RESULT_RETENTION_DAYS
+        assert response.meta["execution_result_artifact_retention_days"] == _server_api.EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS
+        assert response.meta["debug_snapshot_retention_days"] == _server_api.DEBUG_SNAPSHOTS_RETENTION_DAYS
 
     def test_api_health_reports_error_when_persistence_not_ready(self):
         with patch.object(_server_api, "check_persistence_health", return_value={

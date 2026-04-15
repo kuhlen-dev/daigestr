@@ -985,6 +985,50 @@ def test_replay_execution_raises_404_when_no_snapshot_exists():
         raise AssertionError("Expected HTTPException for missing replay snapshot")
 
 
+def test_execution_result_cleanup_removes_result_from_execution_and_batch_views():
+    from execution_db import execution_result_cleanup, init_execution_db
+    from models import BatchCreateRequest, ConvertRequest, create_success_response
+
+    api_rest = _load_api_rest_module()
+    init_execution_db()
+    api_rest.QUEUE_ENABLED = True
+    api_rest.BATCH_DEFAULT_QUEUE_NAME = "default"
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        server_module.QUEUE_ENABLED = True
+        server_module.BATCH_DEFAULT_QUEUE_NAME = "default"
+
+    created = api_rest._start_batch_execution(
+        BatchCreateRequest(
+            batch_ref=f"cleanup-batch-{uuid.uuid4()}",
+            items=[ConvertRequest(base64="aGVsbG8=", filename="hello.txt")],
+        )
+    )
+    batch_item = api_rest._get_batch_items_payload(created.batch_id, limit=10, offset=0).items[0]
+    response = create_success_response(
+        "# retained",
+        meta={"request_id": batch_item.request_id, "execution_id": batch_item.execution_id},
+    )
+    api_rest._persist_execution_attempt_result(
+        execution_id=batch_item.execution_id,
+        attempt_number=1,
+        response=response,
+        attempt_mode="default",
+        attempt_reason="initial",
+        is_final=True,
+        result_status="completed",
+    )
+
+    assert api_rest._get_execution_result_payload(batch_item.execution_id).markdown == "# retained"
+    assert api_rest._get_batch_items_payload(created.batch_id, limit=10, offset=0).items[0].final_result_available is True
+
+    execution_result_cleanup(retention_days=0)
+
+    with pytest.raises(Exception):
+        api_rest._get_execution_result_payload(batch_item.execution_id)
+    assert api_rest._get_batch_items_payload(created.batch_id, limit=10, offset=0).items[0].final_result_available is False
+
+
 def test_batch_item_cancel_resume_and_retry_orchestration(monkeypatch):
     from execution_db import execution_queue_get_by_execution_id, execution_result_get_final, execution_result_upsert, execution_update
     from fastapi import HTTPException

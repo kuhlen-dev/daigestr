@@ -19,6 +19,10 @@ import psycopg2
 import psycopg2.extras
 import structlog
 
+from settings import (
+    EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS,
+    EXECUTION_RESULT_RETENTION_DAYS,
+)
 from templates_db import get_db_connection, _return_conn
 
 log = structlog.get_logger()
@@ -174,6 +178,8 @@ def init_execution_db() -> None:
                 artifact_refs JSONB,
                 warnings JSONB,
                 error JSONB,
+                expires_at TIMESTAMPTZ,
+                artifact_expires_at TIMESTAMPTZ,
                 created_at TIMESTAMPTZ DEFAULT now(),
                 updated_at TIMESTAMPTZ DEFAULT now()
             )
@@ -186,6 +192,22 @@ def init_execution_db() -> None:
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_execution_result_execution "
             "ON execution_result(execution_id, created_at DESC)"
+        )
+        cur.execute(
+            "ALTER TABLE execution_result "
+            "ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ"
+        )
+        cur.execute(
+            "ALTER TABLE execution_result "
+            "ADD COLUMN IF NOT EXISTS artifact_expires_at TIMESTAMPTZ"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_execution_result_expires_at "
+            "ON execution_result(expires_at)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_execution_result_artifact_expires_at "
+            "ON execution_result(artifact_expires_at)"
         )
         cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_execution_result_attempt "
@@ -785,18 +807,38 @@ def execution_result_upsert(
     artifact_refs: Optional[dict[str, Any]] = None,
     warnings: Optional[list[Any]] = None,
     error: Optional[dict[str, Any]] = None,
+    retention_days: Optional[int] = None,
+    artifact_retention_days: Optional[int] = None,
 ) -> dict[str, Any]:
     """Insert or update one execution result row."""
     conn = get_db_connection()
     try:
         cur = conn.cursor()
+        effective_retention_days = (
+            EXECUTION_RESULT_RETENTION_DAYS if retention_days is None else retention_days
+        )
+        effective_artifact_retention_days = (
+            EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS
+            if artifact_retention_days is None
+            else artifact_retention_days
+        )
         cur.execute(
             """
             INSERT INTO execution_result (
                 id, execution_id, attempt_id, is_final, result_status,
-                success, response_json, meta, extracted, normalized, artifact_refs, warnings, error
+                success, response_json, meta, extracted, normalized, artifact_refs, warnings, error,
+                expires_at, artifact_expires_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (
+                %s, %s, %s, %s, %s,
+                %s, %s, %s, %s, %s,
+                %s, %s, %s,
+                now() + (interval '1 day' * %s),
+                CASE
+                    WHEN %s IS NULL THEN NULL
+                    ELSE now() + (interval '1 day' * %s)
+                END
+            )
             ON CONFLICT (id) DO UPDATE SET
                 execution_id = EXCLUDED.execution_id,
                 attempt_id = EXCLUDED.attempt_id,
@@ -810,6 +852,8 @@ def execution_result_upsert(
                 artifact_refs = EXCLUDED.artifact_refs,
                 warnings = EXCLUDED.warnings,
                 error = EXCLUDED.error,
+                expires_at = EXCLUDED.expires_at,
+                artifact_expires_at = EXCLUDED.artifact_expires_at,
                 updated_at = now()
             RETURNING *
             """,
@@ -827,6 +871,9 @@ def execution_result_upsert(
                 psycopg2.extras.Json(artifact_refs) if artifact_refs is not None else None,
                 psycopg2.extras.Json(warnings) if warnings is not None else None,
                 psycopg2.extras.Json(error) if error is not None else None,
+                effective_retention_days,
+                psycopg2.extras.Json(artifact_refs) if artifact_refs is not None else None,
+                effective_artifact_retention_days,
             ),
         )
         row = dict(cur.fetchone())
@@ -869,6 +916,8 @@ def execution_result_get_final_summary(execution_id: str) -> Optional[dict[str, 
                 artifact_refs,
                 warnings,
                 error,
+                expires_at,
+                artifact_expires_at,
                 created_at,
                 updated_at
             FROM execution_result
@@ -914,6 +963,58 @@ def execution_result_clear_final(execution_id: str) -> int:
         cleared = cur.rowcount or 0
         conn.commit()
         return int(cleared)
+    finally:
+        _return_conn(conn)
+
+
+def execution_result_cleanup(
+    *,
+    retention_days: Optional[int] = None,
+    artifact_retention_days: Optional[int] = None,
+) -> dict[str, int]:
+    """Delete expired result rows and clear expired artifact references."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        if artifact_retention_days is None:
+            cur.execute(
+                """
+                UPDATE execution_result
+                SET artifact_refs = NULL,
+                    artifact_expires_at = NULL,
+                    updated_at = now()
+                WHERE artifact_refs IS NOT NULL
+                  AND artifact_expires_at IS NOT NULL
+                  AND artifact_expires_at < now()
+                """
+            )
+        else:
+            cur.execute(
+                """
+                UPDATE execution_result
+                SET artifact_refs = NULL,
+                    artifact_expires_at = NULL,
+                    updated_at = now()
+                WHERE artifact_refs IS NOT NULL
+                  AND created_at < now() - (interval '1 day' * %s)
+                """,
+                (artifact_retention_days,),
+            )
+        cleared_artifacts = cur.rowcount
+
+        if retention_days is None:
+            cur.execute("DELETE FROM execution_result WHERE expires_at IS NOT NULL AND expires_at < now()")
+        else:
+            cur.execute(
+                "DELETE FROM execution_result WHERE created_at < now() - (interval '1 day' * %s)",
+                (retention_days,),
+            )
+        deleted_results = cur.rowcount
+        conn.commit()
+        return {
+            "deleted_results": deleted_results,
+            "cleared_artifacts": cleared_artifacts,
+        }
     finally:
         _return_conn(conn)
 

@@ -403,6 +403,7 @@ def test_execution_attempt_upsert_and_list(execution_record):
 def test_execution_result_upsert_and_fetch_final(execution_record):
     from execution_db import (
         execution_attempt_upsert,
+        execution_result_cleanup,
         execution_get_full,
         execution_result_upsert,
         execution_result_get_final,
@@ -463,6 +464,16 @@ def test_execution_result_upsert_and_fetch_final(execution_record):
     rows = execution_result_list(execution_record["id"])
     assert len(rows) >= 1
     assert rows[0]["execution_id"] == execution_record["id"]
+
+    cleanup = execution_result_cleanup(artifact_retention_days=0)
+    assert cleanup["cleared_artifacts"] >= 1
+    cleaned_summary = execution_result_get_final_summary(execution_record["id"])
+    assert cleaned_summary is not None
+    assert cleaned_summary["artifact_refs"] is None
+
+    cleanup = execution_result_cleanup(retention_days=0)
+    assert cleanup["deleted_results"] >= 1
+    assert execution_result_get_final(execution_record["id"]) is None
 
 
 def test_execution_subjob_upsert_and_list(execution_record):

@@ -253,7 +253,7 @@ MERMAID_CDN_URL = os.getenv("MERMAID_CDN_URL", "https://cdn.jsdelivr.net/npm/mer
 HIGHLIGHTJS_CDN_URL = os.getenv("HIGHLIGHTJS_CDN_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js")
 HIGHLIGHTJS_CSS_URL = os.getenv("HIGHLIGHTJS_CSS_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css")
 
-VERSION = os.getenv("DAIGESTR_VERSION", "16.7.2")
+VERSION = os.getenv("DAIGESTR_VERSION", "16.7.3")
 START_TIME = time.time()
 
 # =============================================================================
@@ -303,6 +303,8 @@ NORMALIZE_PLAUSIBILITY_TOLERANCE = float(os.getenv("NORMALIZE_PLAUSIBILITY_TOLER
 
 DEBUG_SNAPSHOTS_ENABLED = os.getenv("DEBUG_SNAPSHOTS_ENABLED", "false").lower() == "true"
 DEBUG_SNAPSHOTS_RETENTION_DAYS = int(os.getenv("DEBUG_SNAPSHOTS_RETENTION_DAYS", "14"))
+EXECUTION_RESULT_RETENTION_DAYS = int(os.getenv("EXECUTION_RESULT_RETENTION_DAYS", "30"))
+EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS = int(os.getenv("EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS", "14"))
 DEBUG_SNAPSHOTS_POLICIES = tuple(
     part.strip()
     for part in os.getenv(
