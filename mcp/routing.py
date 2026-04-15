@@ -3211,7 +3211,7 @@ def _build_tips_dict() -> dict:
                     "enabled": bool(_get("MISTRAL_BATCH_ENABLED", MISTRAL_BATCH_ENABLED)),
                     "min_items": int(_get("MISTRAL_BATCH_MIN_ITEMS", MISTRAL_BATCH_MIN_ITEMS)),
                     "allowed_source_types": list(_get("MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", MISTRAL_BATCH_ALLOWED_SOURCE_TYPES)),
-                    "decision_note": "Dispatch policy records preferred_dispatch_target and effective_dispatch_target per execution; provider batch submission lands in later W16.6 tasks.",
+                    "decision_note": "Dispatch policy records preferred_dispatch_target and effective_dispatch_target per execution; provider-compatible batch items can be submitted to Mistral batch, polled back into canonical execution_result rows, and leave mixed-success batches in partial status.",
                 },
                 "control_actions": {
                     "batch_cancel": "POST /v1/batches/{id}/cancel cancels queued or claimed batch items without introducing a second batch state model.",

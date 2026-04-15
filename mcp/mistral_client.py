@@ -9,6 +9,7 @@ Enthält alle Funktionen für Mistral API-Calls:
 
 import asyncio
 import base64
+import json
 import time
 from typing import Any, Optional
 
@@ -35,6 +36,133 @@ from settings import (
 from utils import _get, _LOADED_BY_SERVER  # noqa: F401
 
 log = structlog.get_logger()
+
+
+def _mistral_headers() -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {MISTRAL_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+
+def _encode_data_url(file_data: bytes, mime_type: str) -> str:
+    b64 = base64.b64encode(file_data).decode("utf-8")
+    return f"data:{mime_type};base64,{b64}"
+
+
+def build_mistral_batch_ocr_request(
+    file_data: bytes,
+    filename: str,
+    *,
+    custom_id: str,
+    mime_type: Optional[str] = None,
+) -> dict[str, Any]:
+    from utils import detect_mimetype_from_bytes  # noqa: PLC0415
+
+    resolved_mime_type = mime_type or detect_mimetype_from_bytes(file_data) or "application/octet-stream"
+    data_url = _encode_data_url(file_data, resolved_mime_type)
+    payload: dict[str, Any] = {
+        "model": _get("MISTRAL_OCR_MODEL", MISTRAL_OCR_MODEL),
+        "include_image_base64": _get("MISTRAL_OCR_INCLUDE_IMAGE_BASE64", MISTRAL_OCR_INCLUDE_IMAGE_BASE64),
+        "table_format": _get("MISTRAL_OCR_TABLE_FORMAT", MISTRAL_OCR_TABLE_FORMAT),
+    }
+    if resolved_mime_type.startswith("image/"):
+        payload["document"] = {"type": "image_url", "image_url": data_url}
+    else:
+        payload["document"] = {"type": "document_url", "document_url": data_url}
+    document_annotation_format = _get(
+        "MISTRAL_OCR_DOCUMENT_ANNOTATION_FORMAT",
+        MISTRAL_OCR_DOCUMENT_ANNOTATION_FORMAT,
+    )
+    if document_annotation_format:
+        payload["document_annotation_format"] = {"type": document_annotation_format}
+    bbox_annotation_format = _get(
+        "MISTRAL_OCR_BBOX_ANNOTATION_FORMAT",
+        MISTRAL_OCR_BBOX_ANNOTATION_FORMAT,
+    )
+    if bbox_annotation_format:
+        payload["bbox_annotation_format"] = {"type": bbox_annotation_format}
+    return {"custom_id": custom_id, "body": payload}
+
+
+async def submit_mistral_batch_job(
+    requests: list[dict[str, Any]],
+    *,
+    endpoint: str = "/v1/ocr",
+    model: Optional[str] = None,
+    metadata: Optional[dict[str, Any]] = None,
+    timeout_hours: int = 24,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "requests": requests,
+        "endpoint": endpoint,
+        "model": model or _get("MISTRAL_OCR_MODEL", MISTRAL_OCR_MODEL),
+        "timeout_hours": timeout_hours,
+    }
+    if metadata:
+        payload["metadata"] = metadata
+    async with httpx.AsyncClient(timeout=float(MISTRAL_TIMEOUT)) as client:
+        response = await client.post(
+            f"{MISTRAL_API_URL}/batch/jobs",
+            headers=_mistral_headers(),
+            json=payload,
+        )
+        if response.status_code == 429:
+            await _handle_rate_limit(response)
+        response.raise_for_status()
+        return response.json()
+
+
+async def get_mistral_batch_job(job_id: str, *, inline: bool = False) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=float(MISTRAL_TIMEOUT)) as client:
+        response = await client.get(
+            f"{MISTRAL_API_URL}/batch/jobs/{job_id}",
+            headers={"Authorization": f"Bearer {MISTRAL_API_KEY}"},
+            params={"inline": "true"} if inline else None,
+        )
+        if response.status_code == 429:
+            await _handle_rate_limit(response)
+        response.raise_for_status()
+        return response.json()
+
+
+async def cancel_mistral_batch_job(job_id: str) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=float(MISTRAL_TIMEOUT)) as client:
+        response = await client.post(
+            f"{MISTRAL_API_URL}/batch/jobs/{job_id}/cancel",
+            headers=_mistral_headers(),
+            json={},
+        )
+        if response.status_code == 429:
+            await _handle_rate_limit(response)
+        response.raise_for_status()
+        return response.json()
+
+
+async def download_mistral_file(file_id: str) -> str:
+    async with httpx.AsyncClient(timeout=float(MISTRAL_TIMEOUT)) as client:
+        response = await client.get(
+            f"{MISTRAL_API_URL}/files/{file_id}/content",
+            headers={"Authorization": f"Bearer {MISTRAL_API_KEY}"},
+        )
+        if response.status_code == 429:
+            await _handle_rate_limit(response)
+        response.raise_for_status()
+        return response.text
+
+
+def parse_mistral_batch_output(content: str) -> dict[str, dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    for line in content.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parsed = json.loads(line)
+        custom_id = parsed.get("custom_id")
+        if custom_id is None:
+            continue
+        rows[str(custom_id)] = parsed
+    return rows
 
 
 def _build_mistral_ocr_payload(file_data: bytes, *, page_indices: Optional[list[int]] = None) -> dict[str, Any]:

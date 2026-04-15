@@ -708,6 +708,68 @@ def execution_subjob_list(execution_id: str) -> list[dict[str, Any]]:
         _return_conn(conn)
 
 
+def execution_subjob_get(execution_id: str) -> Optional[dict[str, Any]]:
+    """Return the first upstream subjob for one execution, if present."""
+    rows = execution_subjob_list(execution_id)
+    return rows[0] if rows else None
+
+
+def execution_subjob_list_by_status(
+    *,
+    statuses: list[str],
+    provider: Optional[str] = None,
+    subjob_type: Optional[str] = None,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """Return upstream subjobs filtered by status and optional provider/type."""
+    if not statuses:
+        return []
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        clauses = ["subjob_status = ANY(%s)"]
+        params: list[Any] = [statuses]
+        if provider is not None:
+            clauses.append("provider = %s")
+            params.append(provider)
+        if subjob_type is not None:
+            clauses.append("subjob_type = %s")
+            params.append(subjob_type)
+        params.append(limit)
+        cur.execute(
+            f"""
+            SELECT *
+            FROM execution_subjob
+            WHERE {' AND '.join(clauses)}
+            ORDER BY updated_at ASC, created_at ASC
+            LIMIT %s
+            """,
+            tuple(params),
+        )
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        _return_conn(conn)
+
+
+def execution_subjob_list_by_upstream_batch_id(upstream_batch_id: str) -> list[dict[str, Any]]:
+    """Return all upstream subjobs linked to one provider batch id."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT *
+            FROM execution_subjob
+            WHERE upstream_batch_id = %s
+            ORDER BY created_at ASC, id ASC
+            """,
+            (upstream_batch_id,),
+        )
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        _return_conn(conn)
+
+
 def execution_result_upsert(
     result_id: str,
     execution_id: str,

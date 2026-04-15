@@ -451,7 +451,13 @@ def test_execution_result_upsert_and_fetch_final(execution_record):
 
 
 def test_execution_subjob_upsert_and_list(execution_record):
-    from execution_db import execution_subjob_list, execution_subjob_upsert
+    from execution_db import (
+        execution_subjob_get,
+        execution_subjob_list,
+        execution_subjob_list_by_status,
+        execution_subjob_list_by_upstream_batch_id,
+        execution_subjob_upsert,
+    )
 
     subjob = execution_subjob_upsert(
         subjob_id=f"subjob-{uuid.uuid4()}",
@@ -487,6 +493,12 @@ def test_execution_subjob_upsert_and_list(execution_record):
     rows = execution_subjob_list(execution_record["id"])
     assert len(rows) == 1
     assert rows[0]["id"] == subjob["id"]
+    assert execution_subjob_get(execution_record["id"])["id"] == subjob["id"]
+    assert any(
+        row["id"] == subjob["id"]
+        for row in execution_subjob_list_by_status(statuses=["completed"], provider="mistral", subjob_type="mistral_batch")
+    )
+    assert any(row["id"] == subjob["id"] for row in execution_subjob_list_by_upstream_batch_id("mbatch-1"))
 
 
 def test_execution_list_contains_newest_execution(execution_record):

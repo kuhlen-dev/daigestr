@@ -132,7 +132,10 @@ from execution_db import (
     execution_result_clear_final,
     execution_result_upsert,
     execution_result_get_final,
+    execution_subjob_get,
     execution_subjob_upsert,
+    execution_subjob_list_by_status,
+    execution_subjob_list_by_upstream_batch_id,
 )
 from normalizer_db import get_normalization_drift_summary
 from debug_snapshot_db import debug_snapshot_list, debug_snapshot_get
@@ -140,16 +143,27 @@ from debug_snapshots import replay_normalization_from_snapshot
 from routing import (
     _build_document_identity,
     _build_input_snapshot,
+    _persist_execution_attempt_result,
     convert_auto,
     convert_url,
     convert_folder_contents,
     _build_tips_dict,
     finalize_url_markdown_response,
 )
+from mistral_client import (
+    build_mistral_batch_ocr_request,
+    cancel_mistral_batch_job,
+    download_mistral_file,
+    extract_mistral_ocr_metadata,
+    get_mistral_batch_job,
+    parse_mistral_batch_output,
+    submit_mistral_batch_job,
+)
 from api_rest_audit import audit_router
 from api_rest_normalize import normalize_router, corrections_router, batch_router
 
 log = structlog.get_logger()
+_MISTRAL_BATCH_POLL_TASKS: list[asyncio.Task] = []
 
 
 def _infer_execution_source(request: ConvertRequest) -> tuple[str, Optional[str]]:
@@ -615,6 +629,296 @@ def _build_queued_progress_payload(
     )
 
 
+def _run_coro_blocking(coro: Any) -> Any:
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+def _next_attempt_number(execution_id: str) -> int:
+    execution = _get("execution_get_full", execution_get_full)(execution_id)
+    attempts = execution.get("attempts") if execution else []
+    return len(attempts or []) + 1
+
+
+def _resolve_request_bytes(request: ConvertRequest) -> tuple[bytes, str]:
+    if request.path:
+        file_path = resolve_path(request.path)
+        return file_path.read_bytes(), file_path.name
+    if request.base64:
+        return base64.b64decode(request.base64), request.filename or "upload"
+    raise ValueError("Provider batch submission requires file or base64 inputs")
+
+
+def _batch_request_is_provider_compatible(request: ConvertRequest) -> bool:
+    if request.url:
+        return False
+    if request.output_format and request.output_format != "markdown":
+        return False
+    if request.classify or request.extract_schema or request.auto_extract or request.template:
+        return False
+    if request.chunk or request.ocr_correct or request.describe_images or request.prompt:
+        return False
+    return True
+
+
+def _apply_dispatch_fallback(execution_id: str, reason: str) -> None:
+    execution = _get("execution_get", execution_get)(execution_id)
+    policy_context = dict((execution or {}).get("policy_context") or {})
+    dispatch_policy = dict(policy_context.get("dispatch_policy") or {})
+    dispatch_policy["effective_dispatch_target"] = "queued"
+    dispatch_policy["fallback_reason"] = reason
+    _merge_execution_policy_context(execution_id, dispatch_policy=dispatch_policy)
+
+
+def _build_mistral_success_response(
+    *,
+    execution_id: str,
+    request: ConvertRequest,
+    ocr_result: dict[str, Any],
+) -> ConvertResponse:
+    pages = ocr_result.get("pages") or []
+    markdown_parts: list[str] = []
+    for index, page in enumerate(pages):
+        page_index = int(page.get("index", index)) + 1
+        markdown_parts.append(f"## Seite {page_index}\n\n{page.get('markdown', '')}")
+    execution = _get("execution_get", execution_get)(execution_id) or {}
+    meta = {
+        "request_id": execution.get("request_id"),
+        "execution_id": execution_id,
+        "source": execution.get("source_ref"),
+        "source_type": execution.get("source_type"),
+        "ocr_model": _get("MISTRAL_OCR_MODEL", MISTRAL_OCR_MODEL),
+        "pipeline_steps": ["mistral_batch_ocr"],
+        "accuracy_mode": request.accuracy,
+        "pages": len(pages) or None,
+        **_get("extract_mistral_ocr_metadata", extract_mistral_ocr_metadata)(ocr_result),
+    }
+    return create_success_response("\n\n".join(markdown_parts).strip(), meta=meta)
+
+
+def _build_mistral_error_response(
+    *,
+    execution_id: str,
+    message: str,
+    code: str = ErrorCode.API_ERROR,
+    details: Optional[dict[str, Any]] = None,
+) -> ConvertResponse:
+    execution = _get("execution_get", execution_get)(execution_id) or {}
+    meta = {
+        "request_id": execution.get("request_id"),
+        "execution_id": execution_id,
+        "source": execution.get("source_ref"),
+        "source_type": execution.get("source_type"),
+        "pipeline_steps": ["mistral_batch_ocr"],
+    }
+    return create_error_response(code, message, meta=meta, details=details)
+
+
+async def _submit_mistral_provider_batch(
+    *,
+    batch_id: str,
+    items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    requests: list[dict[str, Any]] = []
+    for item in items:
+        file_data, filename = _resolve_request_bytes(item["request"])
+        requests.append(
+            _get("build_mistral_batch_ocr_request", build_mistral_batch_ocr_request)(
+                file_data,
+                filename,
+                custom_id=item["batch_item_id"],
+            )
+        )
+    provider_job = await _get("submit_mistral_batch_job", submit_mistral_batch_job)(
+        requests,
+        endpoint="/v1/ocr",
+        model=_get("MISTRAL_OCR_MODEL", MISTRAL_OCR_MODEL),
+        metadata={
+            "daigestr_batch_id": batch_id,
+            "provider": "mistral",
+            "subjob_type": "mistral_batch",
+        },
+    )
+    upstream_batch_id = provider_job["id"]
+    for item in items:
+        execution_id = item["execution_id"]
+        request = item["request"]
+        metadata = {
+            "decision_only": False,
+            "dispatch_policy": item["dispatch_policy"],
+            "request_payload": request.model_dump(mode="json"),
+            "provider_job": provider_job,
+        }
+        _get("execution_subjob_upsert", execution_subjob_upsert)(
+            subjob_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{execution_id}:{upstream_batch_id}")),
+            execution_id=execution_id,
+            batch_id=batch_id,
+            batch_item_id=item["batch_item_id"],
+            provider="mistral",
+            subjob_type="mistral_batch",
+            upstream_batch_id=upstream_batch_id,
+            upstream_item_id=item["batch_item_id"],
+            subjob_status="submitted",
+            metadata=metadata,
+        )
+        dispatch_policy = dict(item["dispatch_policy"])
+        dispatch_policy["effective_dispatch_target"] = "mistral_batch"
+        dispatch_policy["fallback_reason"] = None
+        _merge_execution_policy_context(execution_id, dispatch_policy=dispatch_policy)
+        _get("execution_update", execution_update)(
+            execution_id,
+            status="processing",
+            current_stage="provider_batch_submitted",
+            progress_json=build_progress_payload(
+                status="processing",
+                current_stage="provider_batch_submitted",
+                message="Submitted to provider batch",
+                percent=5,
+                request_id=request.meta.get("_request_id"),
+            ),
+            error_summary=None,
+        )
+    return provider_job
+
+
+async def _poll_mistral_batch_job(upstream_batch_id: str) -> None:
+    subjobs = _get("execution_subjob_list_by_upstream_batch_id", execution_subjob_list_by_upstream_batch_id)(upstream_batch_id)
+    if not subjobs:
+        return
+    provider_job = await _get("get_mistral_batch_job", get_mistral_batch_job)(upstream_batch_id)
+    provider_status = str(provider_job.get("status") or "").upper()
+    provider_meta = {"provider_job": provider_job, "provider_status": provider_status}
+
+    if provider_status in {"QUEUED", "RUNNING", "CANCELLATION_REQUESTED"}:
+        subjob_status = "processing" if provider_status == "RUNNING" else "submitted"
+        for subjob in subjobs:
+            metadata = dict(subjob.get("metadata") or {})
+            metadata.update(provider_meta)
+            _get("execution_subjob_upsert", execution_subjob_upsert)(
+                subjob_id=subjob["id"],
+                execution_id=subjob["execution_id"],
+                batch_id=subjob.get("batch_id"),
+                batch_item_id=subjob.get("batch_item_id"),
+                provider=subjob["provider"],
+                subjob_type=subjob["subjob_type"],
+                upstream_batch_id=upstream_batch_id,
+                upstream_item_id=subjob.get("upstream_item_id"),
+                subjob_status=subjob_status,
+                metadata=metadata,
+                error=subjob.get("error"),
+                started_at_now=(provider_status == "RUNNING"),
+            )
+        return
+
+    output_rows: dict[str, dict[str, Any]] = {}
+    error_rows: dict[str, dict[str, Any]] = {}
+    if provider_job.get("output_file"):
+        output_rows = _get("parse_mistral_batch_output", parse_mistral_batch_output)(
+            await _get("download_mistral_file", download_mistral_file)(provider_job["output_file"])
+        )
+    if provider_job.get("error_file"):
+        error_rows = _get("parse_mistral_batch_output", parse_mistral_batch_output)(
+            await _get("download_mistral_file", download_mistral_file)(provider_job["error_file"])
+        )
+
+    for subjob in subjobs:
+        execution_id = subjob["execution_id"]
+        custom_id = str(subjob.get("upstream_item_id") or subjob.get("batch_item_id"))
+        metadata = dict(subjob.get("metadata") or {})
+        metadata.update(provider_meta)
+        request = ConvertRequest.model_validate((metadata.get("request_payload") or {}))
+        attempt_number = _next_attempt_number(execution_id)
+        attempt_reason = "initial" if attempt_number == 1 else "retry"
+        output_entry = output_rows.get(custom_id)
+        error_entry = error_rows.get(custom_id)
+        if output_entry:
+            response = _build_mistral_success_response(
+                execution_id=execution_id,
+                request=request,
+                ocr_result=((output_entry.get("response") or {}).get("body") or {}),
+            )
+            _persist_execution_attempt_result(
+                execution_id=execution_id,
+                attempt_number=attempt_number,
+                attempt_mode=request.mode,
+                attempt_reason=attempt_reason,
+                response=response,
+                is_final=True,
+                result_status="completed",
+            )
+            _get("execution_subjob_upsert", execution_subjob_upsert)(
+                subjob_id=subjob["id"],
+                execution_id=execution_id,
+                batch_id=subjob.get("batch_id"),
+                batch_item_id=subjob.get("batch_item_id"),
+                provider=subjob["provider"],
+                subjob_type=subjob["subjob_type"],
+                upstream_batch_id=upstream_batch_id,
+                upstream_item_id=subjob.get("upstream_item_id"),
+                subjob_status="completed",
+                metadata=metadata,
+                finished_at_now=True,
+            )
+            continue
+
+        message = (
+            ((error_entry or {}).get("error") or {}).get("message")
+            or (error_entry or {}).get("message")
+            or f"Provider batch ended with status {provider_status}"
+        )
+        error_response = _build_mistral_error_response(
+            execution_id=execution_id,
+            message=message,
+            details={"provider_status": provider_status, "provider_error": error_entry},
+        )
+        _persist_execution_attempt_result(
+            execution_id=execution_id,
+            attempt_number=attempt_number,
+            attempt_mode=request.mode,
+            attempt_reason=attempt_reason,
+            response=error_response,
+            is_final=True,
+            result_status="failed" if provider_status != "CANCELLED" else "cancelled",
+        )
+        _get("execution_subjob_upsert", execution_subjob_upsert)(
+            subjob_id=subjob["id"],
+            execution_id=execution_id,
+            batch_id=subjob.get("batch_id"),
+            batch_item_id=subjob.get("batch_item_id"),
+            provider=subjob["provider"],
+            subjob_type=subjob["subjob_type"],
+            upstream_batch_id=upstream_batch_id,
+            upstream_item_id=subjob.get("upstream_item_id"),
+            subjob_status="failed" if provider_status != "CANCELLED" else "cancelled",
+            metadata=metadata,
+            error={"message": message, "provider_status": provider_status},
+            finished_at_now=True,
+        )
+
+
+async def _mistral_batch_poll_loop(worker_id: str) -> None:
+    while True:
+        try:
+            subjobs = _get("execution_subjob_list_by_status", execution_subjob_list_by_status)(
+                statuses=["submitted", "processing"],
+                provider="mistral",
+                subjob_type="mistral_batch",
+                limit=200,
+            )
+            upstream_batch_ids = sorted({row.get("upstream_batch_id") for row in subjobs if row.get("upstream_batch_id")})
+            for upstream_batch_id in upstream_batch_ids:
+                await _poll_mistral_batch_job(upstream_batch_id)
+            await asyncio.sleep(float(_get("QUEUE_POLL_INTERVAL_SECONDS", QUEUE_POLL_INTERVAL_SECONDS)))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.error("mistral_batch_poller_error", worker_id=worker_id, error=str(exc))
+            await asyncio.sleep(float(_get("QUEUE_POLL_INTERVAL_SECONDS", QUEUE_POLL_INTERVAL_SECONDS)))
+
+
 def _requeue_execution(
     *,
     execution_id: str,
@@ -713,22 +1017,45 @@ def _retry_batch_item(batch_id: str, batch_item_id: str) -> BatchItemResponse:
         raise HTTPException(status_code=409, detail=f"Batch item '{batch_item_id}' is not failed")
 
     execution_id = batch_item["execution_id"]
-    queue_row = _get("execution_queue_get_by_execution_id", execution_queue_get_by_execution_id)(execution_id)
-    if not queue_row or not isinstance(queue_row.get("payload"), dict):
-        raise HTTPException(status_code=409, detail=f"Batch item '{batch_item_id}' has no persisted queue payload to retry")
+    subjob = _get("execution_subjob_get", execution_subjob_get)(execution_id)
+    if subjob and subjob.get("subjob_type") == "mistral_batch":
+        request_payload = (subjob.get("metadata") or {}).get("request_payload")
+        if not isinstance(request_payload, dict):
+            raise HTTPException(status_code=409, detail=f"Batch item '{batch_item_id}' has no persisted provider request payload")
+        request = ConvertRequest(**request_payload)
+        _get("execution_result_clear_final", execution_result_clear_final)(execution_id)
+        coro = _submit_mistral_provider_batch(
+            batch_id=batch_id,
+            items=[{
+                "batch_item_id": batch_item_id,
+                "execution_id": execution_id,
+                "request": request,
+                "dispatch_policy": (((_get("execution_get", execution_get)(execution_id) or {}).get("policy_context") or {}).get("dispatch_policy") or {}),
+            }],
+        )
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            _run_coro_blocking(coro)
+        else:
+            loop.create_task(coro)
+    else:
+        queue_row = _get("execution_queue_get_by_execution_id", execution_queue_get_by_execution_id)(execution_id)
+        if not queue_row or not isinstance(queue_row.get("payload"), dict):
+            raise HTTPException(status_code=409, detail=f"Batch item '{batch_item_id}' has no persisted queue payload to retry")
 
-    request_payload = queue_row["payload"].get("request")
-    if not isinstance(request_payload, dict):
-        raise HTTPException(status_code=409, detail=f"Batch item '{batch_item_id}' has no valid persisted request payload")
+        request_payload = queue_row["payload"].get("request")
+        if not isinstance(request_payload, dict):
+            raise HTTPException(status_code=409, detail=f"Batch item '{batch_item_id}' has no valid persisted request payload")
 
-    request = ConvertRequest(**request_payload)
-    _requeue_execution(
-        execution_id=execution_id,
-        request=request,
-        queue_name=queue_row.get("queue_name") or "default",
-        payload=queue_row["payload"],
-        message="Batch item retry queued for worker execution",
-    )
+        request = ConvertRequest(**request_payload)
+        _requeue_execution(
+            execution_id=execution_id,
+            request=request,
+            queue_name=queue_row.get("queue_name") or "default",
+            payload=queue_row["payload"],
+            message="Batch item retry queued for worker execution",
+        )
     refreshed = _require_batch_item_row(batch_id, batch_item_id)
     return _build_batch_item_response(refreshed)
 
@@ -895,6 +1222,8 @@ async def startup_queue_workers() -> None:
     worker_count = max(1, int(_get("QUEUE_WORKER_COUNT", QUEUE_WORKER_COUNT)))
     for idx in range(worker_count):
         _QUEUE_WORKER_TASKS.append(asyncio.create_task(_queue_worker_loop(f"queue-worker-{idx + 1}")))
+    if _get("MISTRAL_BATCH_ENABLED", MISTRAL_BATCH_ENABLED) and not _MISTRAL_BATCH_POLL_TASKS:
+        _MISTRAL_BATCH_POLL_TASKS.append(asyncio.create_task(_mistral_batch_poll_loop("mistral-batch-poller-1")))
 
 
 @app.on_event("shutdown")
@@ -906,6 +1235,12 @@ async def shutdown_queue_workers() -> None:
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
+    if _MISTRAL_BATCH_POLL_TASKS:
+        poll_tasks = list(_MISTRAL_BATCH_POLL_TASKS)
+        _MISTRAL_BATCH_POLL_TASKS.clear()
+        for task in poll_tasks:
+            task.cancel()
+        await asyncio.gather(*poll_tasks, return_exceptions=True)
 
 
 @app.exception_handler(Exception)
@@ -2052,6 +2387,9 @@ def _start_batch_execution(body: BatchCreateRequest) -> BatchStartResponse:
         metadata={**(body.meta or {}), "dispatch_policy": batch_dispatch_policy},
     )
 
+    provider_candidates: list[dict[str, Any]] = []
+    queued_candidates: list[dict[str, Any]] = []
+
     for item_index, item_request in enumerate(body.items):
         item_meta = dict(item_request.meta or {})
         item_key = _build_batch_item_key(item_request, item_index)
@@ -2117,14 +2455,57 @@ def _start_batch_execution(body: BatchCreateRequest) -> BatchStartResponse:
                     "dispatch_policy": dispatch_policy,
                 },
             )
+            if _batch_request_is_provider_compatible(item_request):
+                provider_candidates.append(
+                    {
+                        "batch_item_id": batch_item_id,
+                        "execution_id": execution_id,
+                        "request": item_request,
+                        "dispatch_policy": dispatch_policy,
+                    }
+                )
+            else:
+                _apply_dispatch_fallback(execution_id, "provider_batch_request_not_compatible")
+                queued_candidates.append(
+                    {
+                        "batch_item_id": batch_item_id,
+                        "execution_id": execution_id,
+                        "request": item_request,
+                    }
+                )
+        else:
+            queued_candidates.append(
+                {
+                    "batch_item_id": batch_item_id,
+                    "execution_id": execution_id,
+                    "request": item_request,
+                }
+            )
+
+    if provider_candidates:
+        submit_coro = _submit_mistral_provider_batch(batch_id=batch_id, items=provider_candidates)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            try:
+                _run_coro_blocking(submit_coro)
+            except Exception as exc:
+                log.warning("mistral_batch_submit_failed", batch_id=batch_id, error=str(exc))
+                for item in provider_candidates:
+                    _apply_dispatch_fallback(item["execution_id"], "provider_batch_submission_failed")
+                    queued_candidates.append(item)
+        else:
+            loop.create_task(submit_coro)
+
+    for item in queued_candidates:
         _get("execution_queue_enqueue", execution_queue_enqueue)(
             queue_id=str(uuid.uuid4()),
-            execution_id=execution_id,
+            execution_id=item["execution_id"],
             job_id=None,
             payload={
-                "request": item_request.model_dump(mode="json"),
+                "request": item["request"].model_dump(mode="json"),
                 "batch_id": batch_id,
-                "batch_item_id": batch_item_id,
+                "batch_item_id": item["batch_item_id"],
             },
             queue_name=queue_name,
         )

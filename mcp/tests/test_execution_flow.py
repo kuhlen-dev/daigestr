@@ -1,4 +1,5 @@
 import asyncio
+import json
 import sys
 import uuid
 from pathlib import Path
@@ -920,7 +921,7 @@ def test_batch_resume_requeues_only_cancelled_items(monkeypatch):
 
 
 def test_batch_execution_records_mistral_batch_dispatch_policy(monkeypatch):
-    from execution_db import execution_get_full
+    from execution_db import execution_get_full, execution_queue_get_by_execution_id
     from models import BatchCreateRequest, ConvertRequest
 
     api_rest = _load_api_rest_module()
@@ -937,12 +938,20 @@ def test_batch_execution_records_mistral_batch_dispatch_policy(monkeypatch):
         monkeypatch.setitem(server_module.__dict__, "MISTRAL_BATCH_MIN_ITEMS", 2)
         monkeypatch.setitem(server_module.__dict__, "MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", ("file", "base64", "url"))
 
+    async def fake_submit(requests, **kwargs):
+        assert len(requests) == 2
+        return {"id": "mistral-job-1", "status": "QUEUED"}
+
+    monkeypatch.setattr(api_rest, "submit_mistral_batch_job", fake_submit)
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "submit_mistral_batch_job", fake_submit)
+
     created = api_rest._start_batch_execution(
         BatchCreateRequest(
             batch_ref=f"dispatch-batch-{uuid.uuid4()}",
             items=[
-                ConvertRequest(base64="aGVsbG8=", filename="hello.txt"),
-                ConvertRequest(base64="d29ybGQ=", filename="world.txt"),
+                ConvertRequest(base64="aGVsbG8=", filename="hello.pdf", classify=False),
+                ConvertRequest(base64="d29ybGQ=", filename="world.pdf", classify=False),
             ],
         )
     )
@@ -952,10 +961,192 @@ def test_batch_execution_records_mistral_batch_dispatch_policy(monkeypatch):
     assert execution is not None
     dispatch_policy = execution["policy_context"]["dispatch_policy"]
     assert dispatch_policy["preferred_dispatch_target"] == "mistral_batch"
-    assert dispatch_policy["effective_dispatch_target"] == "queued"
-    assert dispatch_policy["fallback_reason"] == "provider_batch_submission_lands_in_later_wave"
+    assert dispatch_policy["effective_dispatch_target"] == "mistral_batch"
+    assert dispatch_policy["fallback_reason"] is None
     assert execution["subjobs"][0]["subjob_type"] == "mistral_batch"
-    assert execution["subjobs"][0]["metadata"]["decision_only"] is True
+    assert execution["subjobs"][0]["metadata"]["decision_only"] is False
+    assert execution["subjobs"][0]["upstream_batch_id"] == "mistral-job-1"
+    assert execution["subjobs"][0]["subjob_status"] == "submitted"
+    assert execution_queue_get_by_execution_id(batch_items[0].execution_id) is None
+
+
+def test_mistral_batch_polling_maps_partial_results(monkeypatch):
+    from execution_db import execution_get, execution_result_get_final, execution_subjob_get, execution_subjob_upsert
+    from models import BatchCreateRequest, ConvertRequest
+
+    api_rest = _load_api_rest_module()
+    monkeypatch.setattr(api_rest, "QUEUE_ENABLED", True)
+    monkeypatch.setattr(api_rest, "BATCH_DEFAULT_QUEUE_NAME", "default")
+    monkeypatch.setattr(api_rest, "MISTRAL_BATCH_ENABLED", True)
+    monkeypatch.setattr(api_rest, "MISTRAL_BATCH_MIN_ITEMS", 2)
+    monkeypatch.setattr(api_rest, "MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", ("file", "base64"))
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "QUEUE_ENABLED", True)
+        monkeypatch.setitem(server_module.__dict__, "BATCH_DEFAULT_QUEUE_NAME", "default")
+        monkeypatch.setitem(server_module.__dict__, "MISTRAL_BATCH_ENABLED", True)
+        monkeypatch.setitem(server_module.__dict__, "MISTRAL_BATCH_MIN_ITEMS", 2)
+        monkeypatch.setitem(server_module.__dict__, "MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", ("file", "base64"))
+
+    async def fake_submit(requests, **kwargs):
+        return {"id": "mistral-job-2", "status": "QUEUED"}
+
+    async def fake_get(job_id, **kwargs):
+        assert job_id == "mistral-job-2"
+        return {
+            "id": "mistral-job-2",
+            "status": "SUCCESS",
+            "output_file": "output-file-1",
+            "error_file": "error-file-1",
+        }
+
+    async def fake_download(file_id):
+        if file_id == "output-file-1":
+            return json.dumps(
+                {
+                    "custom_id": "ITEM_SUCCESS",
+                    "response": {
+                        "body": {
+                            "pages": [{"index": 0, "markdown": "# success"}],
+                        }
+                    },
+                }
+            )
+        return json.dumps(
+            {
+                "custom_id": "ITEM_FAILED",
+                "error": {"message": "ocr failed"},
+            }
+        )
+
+    monkeypatch.setattr(api_rest, "submit_mistral_batch_job", fake_submit)
+    monkeypatch.setattr(api_rest, "get_mistral_batch_job", fake_get)
+    monkeypatch.setattr(api_rest, "download_mistral_file", fake_download)
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "submit_mistral_batch_job", fake_submit)
+        monkeypatch.setitem(server_module.__dict__, "get_mistral_batch_job", fake_get)
+        monkeypatch.setitem(server_module.__dict__, "download_mistral_file", fake_download)
+
+    created = api_rest._start_batch_execution(
+        BatchCreateRequest(
+            batch_ref=f"provider-batch-{uuid.uuid4()}",
+            items=[
+                ConvertRequest(base64="aGVsbG8=", filename="hello.pdf", classify=False, meta={"item_id": "success"}),
+                ConvertRequest(base64="d29ybGQ=", filename="world.pdf", classify=False, meta={"item_id": "failed"}),
+            ],
+        )
+    )
+    items = api_rest._get_batch_items_payload(created.batch_id, limit=10, offset=0).items
+    success_item, failed_item = items
+
+    # Patch custom IDs in the stored subjob metadata to make output matching deterministic.
+    for batch_item, custom_id in ((success_item, "ITEM_SUCCESS"), (failed_item, "ITEM_FAILED")):
+        subjob = execution_subjob_get(batch_item.execution_id)
+        metadata = dict(subjob["metadata"] or {})
+        execution_subjob_upsert(
+            subjob_id=subjob["id"],
+            execution_id=batch_item.execution_id,
+            batch_id=created.batch_id,
+            batch_item_id=batch_item.batch_item_id,
+            provider="mistral",
+            subjob_type="mistral_batch",
+            upstream_batch_id="mistral-job-2",
+            upstream_item_id=custom_id,
+            subjob_status="submitted",
+            metadata=metadata,
+        )
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(api_rest._poll_mistral_batch_job("mistral-job-2"))
+    finally:
+        loop.close()
+
+    success_result = execution_result_get_final(success_item.execution_id)
+    failed_result = execution_result_get_final(failed_item.execution_id)
+    assert success_result is not None and success_result["success"] is True
+    assert failed_result is not None and failed_result["success"] is False
+    assert execution_get(success_item.execution_id)["status"] == "completed"
+    assert execution_get(failed_item.execution_id)["status"] == "failed"
+
+    batch_status = api_rest._get_batch_status_payload(created.batch_id)
+    assert batch_status.status == "partial"
+    assert batch_status.completed_count == 1
+    assert batch_status.failed_count == 1
+
+
+def test_retry_batch_item_resubmits_failed_mistral_subjob(monkeypatch):
+    from execution_db import execution_result_get_final, execution_subjob_get
+    from models import BatchCreateRequest, ConvertRequest
+
+    api_rest = _load_api_rest_module()
+    monkeypatch.setattr(api_rest, "QUEUE_ENABLED", True)
+    monkeypatch.setattr(api_rest, "BATCH_DEFAULT_QUEUE_NAME", "default")
+    monkeypatch.setattr(api_rest, "MISTRAL_BATCH_ENABLED", True)
+    monkeypatch.setattr(api_rest, "MISTRAL_BATCH_MIN_ITEMS", 1)
+    monkeypatch.setattr(api_rest, "MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", ("file", "base64"))
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "QUEUE_ENABLED", True)
+        monkeypatch.setitem(server_module.__dict__, "BATCH_DEFAULT_QUEUE_NAME", "default")
+        monkeypatch.setitem(server_module.__dict__, "MISTRAL_BATCH_ENABLED", True)
+        monkeypatch.setitem(server_module.__dict__, "MISTRAL_BATCH_MIN_ITEMS", 1)
+        monkeypatch.setitem(server_module.__dict__, "MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", ("file", "base64"))
+
+    submit_calls: list[str] = []
+
+    async def fake_submit(requests, **kwargs):
+        submit_calls.append(kwargs["metadata"]["daigestr_batch_id"])
+        return {"id": f"mistral-job-{len(submit_calls)}", "status": "QUEUED"}
+
+    async def fake_get(job_id, **kwargs):
+        return {"id": job_id, "status": "FAILED", "error_file": "error-file-2"}
+
+    async def fake_download(file_id):
+        return json.dumps({"custom_id": "RETRY_ITEM", "error": {"message": "provider failed"}})
+
+    monkeypatch.setattr(api_rest, "submit_mistral_batch_job", fake_submit)
+    monkeypatch.setattr(api_rest, "get_mistral_batch_job", fake_get)
+    monkeypatch.setattr(api_rest, "download_mistral_file", fake_download)
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "submit_mistral_batch_job", fake_submit)
+        monkeypatch.setitem(server_module.__dict__, "get_mistral_batch_job", fake_get)
+        monkeypatch.setitem(server_module.__dict__, "download_mistral_file", fake_download)
+
+    created = api_rest._start_batch_execution(
+        BatchCreateRequest(
+            batch_ref=f"retry-provider-{uuid.uuid4()}",
+            items=[ConvertRequest(base64="aGVsbG8=", filename="hello.pdf", classify=False)],
+        )
+    )
+    item = api_rest._get_batch_items_payload(created.batch_id, limit=10, offset=0).items[0]
+    from execution_db import execution_subjob_upsert
+
+    subjob = execution_subjob_get(item.execution_id)
+    execution_subjob_upsert(
+        subjob_id=subjob["id"],
+        execution_id=item.execution_id,
+        batch_id=created.batch_id,
+        batch_item_id=item.batch_item_id,
+        provider="mistral",
+        subjob_type="mistral_batch",
+        upstream_batch_id="mistral-job-1",
+        upstream_item_id="RETRY_ITEM",
+        subjob_status="submitted",
+        metadata=dict(subjob["metadata"] or {}),
+    )
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(api_rest._poll_mistral_batch_job("mistral-job-1"))
+    finally:
+        loop.close()
+    assert execution_result_get_final(item.execution_id)["success"] is False
+
+    retried = api_rest._retry_batch_item(created.batch_id, item.batch_item_id)
+    updated_subjob = execution_subjob_get(item.execution_id)
+    assert retried.status == "processing"
+    assert updated_subjob["upstream_batch_id"] == "mistral-job-2"
+    assert updated_subjob["subjob_status"] == "submitted"
 
 
 def test_queue_worker_skips_cancelled_batch_item_before_execution(monkeypatch):
