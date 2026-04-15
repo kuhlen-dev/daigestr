@@ -640,3 +640,53 @@ class TestApiGetJobResult:
         assert restored.extracted == original.extracted
         assert restored.meta.quality_score == original.meta.quality_score
         assert restored.meta.quality_grade == original.meta.quality_grade
+
+
+class TestCanonicalJobResultConsistency:
+    def test_prefers_canonical_execution_result_over_stale_job_result(self):
+        stale_job = {
+            "id": "job-stale",
+            "status": "completed",
+            "result_json": ConvertResponse(
+                success=True,
+                markdown="# stale",
+                meta=MetaData(source="stale.pdf", format="pdf"),
+            ).model_dump_json(),
+        }
+        canonical_result = ConvertResponse(
+            success=True,
+            markdown="# canonical",
+            extracted={"document_type": "invoice"},
+            meta=MetaData(source="canonical.pdf", format="pdf"),
+        ).model_dump()
+
+        with patch.object(_server, "job_get", return_value=stale_job), \
+             patch.object(_server, "execution_get_by_job_id", return_value={"id": "exec-1", "status": "completed"}), \
+             patch.object(_server, "execution_result_get_final", return_value={"response_json": canonical_result}):
+            response = _api_rest_module._get_job_result_payload("job-stale")
+
+        assert response.markdown == "# canonical"
+        assert response.extracted["document_type"] == "invoice"
+
+    def test_uses_canonical_execution_status_for_processing_jobs(self):
+        pending_job = {
+            "id": "job-processing",
+            "status": "completed",
+            "result_json": None,
+        }
+        class _FakeHTTPException(Exception):
+            def __init__(self, status_code, detail):
+                super().__init__(detail)
+                self.status_code = status_code
+                self.detail = detail
+
+        with patch.object(_server, "job_get", return_value=pending_job), \
+             patch.object(_server, "execution_get_by_job_id", return_value={"id": "exec-1", "status": "processing"}), \
+             patch.object(_server, "execution_result_get_final", return_value=None), \
+             patch.object(_api_rest_module, "HTTPException", _FakeHTTPException):
+            with pytest.raises(_FakeHTTPException) as exc_info:
+                _api_rest_module._get_job_result_payload("job-processing")
+
+        assert exc_info.value.status_code == 202
+        assert "not completed yet" in exc_info.value.detail
+        assert "processing" in exc_info.value.detail

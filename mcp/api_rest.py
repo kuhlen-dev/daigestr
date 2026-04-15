@@ -736,20 +736,22 @@ def _get_job_result_payload(job_id: str) -> ConvertResponse:
     job = _job_get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
-    if job["status"] != "completed":
-        if job["status"] == "failed" and job.get("result_json"):
-            return ConvertResponse.model_validate_json(job["result_json"])
-        raise HTTPException(
-            status_code=202,
-            detail=f"Job '{job_id}' is not completed yet (status: {job['status']})"
-        )
-    if job.get("result_json"):
-        return ConvertResponse.model_validate_json(job["result_json"])
     execution = _get("execution_get_by_job_id", execution_get_by_job_id)(job_id)
+    final_result = None
     if execution:
         final_result = _get("execution_result_get_final", execution_result_get_final)(execution["id"])
     if final_result and final_result.get("response_json"):
         return ConvertResponse.model_validate(final_result["response_json"])
+    effective_status = execution["status"] if execution else job["status"]
+    if effective_status != "completed":
+        if effective_status == "failed" and job.get("result_json"):
+            return ConvertResponse.model_validate_json(job["result_json"])
+        raise HTTPException(
+            status_code=202,
+            detail=f"Job '{job_id}' is not completed yet (status: {effective_status})"
+        )
+    if job.get("result_json"):
+        return ConvertResponse.model_validate_json(job["result_json"])
     raise HTTPException(status_code=500, detail=f"Job '{job_id}' has no result data")
 
 
