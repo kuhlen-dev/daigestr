@@ -524,6 +524,32 @@ def test_async_execution_status_matches_job_progress(monkeypatch):
     assert execution_status.progress.attempt_mode == "default"
 
 
+def test_api_convert_async_enqueues_when_queue_enabled(monkeypatch):
+    from execution_db import execution_queue_list, init_execution_db
+    from models import ConvertRequest
+
+    api_rest = _load_api_rest_module()
+    init_execution_db()
+    captured = {"scheduled": False}
+
+    def fail_if_scheduled(_coro):
+        captured["scheduled"] = True
+        raise AssertionError("asyncio.create_task must not be used when QUEUE_ENABLED=true")
+
+    monkeypatch.setattr(api_rest.asyncio, "create_task", fail_if_scheduled)
+    monkeypatch.setattr(api_rest, "QUEUE_ENABLED", True)
+    server_module = sys.modules.get("server")
+    if server_module is not None:
+        monkeypatch.setitem(server_module.__dict__, "QUEUE_ENABLED", True)
+
+    response = run_async(api_rest._start_async_execution(ConvertRequest(base64="aGVsbG8=", filename="hello.txt")))
+
+    assert response.status == "queued"
+    assert captured["scheduled"] is False
+    queue_rows = execution_queue_list(limit=20)
+    assert any(row["job_id"] == response.job_id and row["execution_id"] == response.execution_id for row in queue_rows)
+
+
 def test_async_failed_convert_response_marks_job_failed(monkeypatch):
     import routing
     from execution_db import init_execution_db

@@ -66,6 +66,10 @@ from settings import (
     DEFAULT_CLASSIFY,
     ALLOWED_PATH_ROOTS,
     ALLOW_SYMLINK_PATHS,
+    QUEUE_ENABLED,
+    QUEUE_WORKER_COUNT,
+    QUEUE_POLL_INTERVAL_SECONDS,
+    QUEUE_LEASE_SECONDS,
     QUALITY_RETRY_ENABLED,
     QUALITY_RETRY_THRESHOLD,
     QUALITY_RETRY_MODE,
@@ -3188,6 +3192,13 @@ def _build_tips_dict() -> dict:
                 "relative_path_behavior": "Relative request.path values are anchored below DATA_DIR before root and symlink checks are evaluated.",
                 "violation_error_code": "PATH_NOT_ALLOWED",
             },
+            "async_queue_policy": {
+                "enabled": bool(_get("QUEUE_ENABLED", QUEUE_ENABLED)),
+                "worker_count": int(_get("QUEUE_WORKER_COUNT", QUEUE_WORKER_COUNT)),
+                "poll_interval_seconds": float(_get("QUEUE_POLL_INTERVAL_SECONDS", QUEUE_POLL_INTERVAL_SECONDS)),
+                "lease_seconds": int(_get("QUEUE_LEASE_SECONDS", QUEUE_LEASE_SECONDS)),
+                "note": "When enabled, POST /v1/convert/async queues canonical executions for worker pickup instead of spawning an unbounded background task per request.",
+            },
         },
         "response_fields": {
             "markdown": "Always present — the converted document as Markdown",
@@ -3208,7 +3219,7 @@ def _build_tips_dict() -> dict:
             "null_semantics": CANONICAL_NULL_SEMANTICS,
             "error_semantics": CANONICAL_ERROR_SEMANTICS,
             "job_progress_endpoints": {
-                "start": "POST /v1/convert/async returns {job_id, status}.",
+                "start": "POST /v1/convert/async returns {job_id, execution_id, status}. When QUEUE_ENABLED=true the job remains queued until a worker claims it.",
                 "status": "GET /v1/jobs/{id} returns canonical progress under progress.",
                 "list": "GET /v1/jobs returns the same canonical progress shape per entry.",
                 "result": "GET /v1/jobs/{id}/result returns the final ConvertResponse after completion.",

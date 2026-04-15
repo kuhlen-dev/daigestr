@@ -102,6 +102,10 @@ CONVERT_TIMEOUT_SECONDS = _optional_positive_float_env("CONVERT_TIMEOUT_SECONDS"
 
 # Timeout für Background-Jobs in Sekunden (BUG 3 — Job-Timeout)
 JOB_TIMEOUT_SECONDS = int(os.getenv("JOB_TIMEOUT_SECONDS", "900"))  # 15 Minuten
+QUEUE_ENABLED = os.getenv("QUEUE_ENABLED", "true").lower() == "true"
+QUEUE_WORKER_COUNT = int(os.getenv("QUEUE_WORKER_COUNT", "2"))
+QUEUE_POLL_INTERVAL_SECONDS = float(os.getenv("QUEUE_POLL_INTERVAL_SECONDS", "1"))
+QUEUE_LEASE_SECONDS = int(os.getenv("QUEUE_LEASE_SECONDS", "300"))
 
 # Retry
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
@@ -227,7 +231,7 @@ MERMAID_CDN_URL = os.getenv("MERMAID_CDN_URL", "https://cdn.jsdelivr.net/npm/mer
 HIGHLIGHTJS_CDN_URL = os.getenv("HIGHLIGHTJS_CDN_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js")
 HIGHLIGHTJS_CSS_URL = os.getenv("HIGHLIGHTJS_CSS_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css")
 
-VERSION = os.getenv("DAIGESTR_VERSION", "16.4.4")
+VERSION = os.getenv("DAIGESTR_VERSION", "16.5.1")
 START_TIME = time.time()
 
 # =============================================================================

@@ -8,9 +8,7 @@ _server = load_server_module(use_real_pil=False)
 api_rest = importlib.import_module("api_rest")
 
 
-def test_async_job_passes_retry_parameters(tmp_path):
-    pdf_path = tmp_path / "sample.pdf"
-    pdf_path.write_bytes(b"%PDF-1.4 fake")
+def test_async_job_passes_retry_parameters():
     captured = {}
 
     async def fake_convert_auto(**kwargs):
@@ -18,7 +16,8 @@ def test_async_job_passes_retry_parameters(tmp_path):
         return _server.create_success_response("ok", meta={})
 
     request = _server.ConvertRequest(
-        path=str(pdf_path),
+        base64="JVBERi0xLjQgZmFrZQ==",
+        filename="sample.pdf",
         meta={},
         auto_extract=True,
         retry_on_low_quality=True,

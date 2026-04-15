@@ -53,6 +53,7 @@ def test_tips_document_response_contract_and_null_semantics(monkeypatch):
     assert contract["null_semantics"]["null"]
     assert contract["error_semantics"]["success_false"]
     assert contract["job_progress_endpoints"]["status"] == "GET /v1/jobs/{id} returns canonical progress under progress."
+    assert "execution_id" in contract["job_progress_endpoints"]["start"]
 
 
 def test_tips_document_job_progress_fields(monkeypatch):
@@ -104,6 +105,10 @@ def test_tips_document_policy_resolution(monkeypatch):
     monkeypatch.setattr(_server, "DEFAULT_CLASSIFY", True)
     monkeypatch.setattr(_server, "ALLOWED_PATH_ROOTS", ["/data", "/shared"])
     monkeypatch.setattr(_server, "ALLOW_SYMLINK_PATHS", False)
+    monkeypatch.setattr(_server, "QUEUE_ENABLED", True)
+    monkeypatch.setattr(_server, "QUEUE_WORKER_COUNT", 2)
+    monkeypatch.setattr(_server, "QUEUE_POLL_INTERVAL_SECONDS", 1.0)
+    monkeypatch.setattr(_server, "QUEUE_LEASE_SECONDS", 300)
     monkeypatch.setattr(_server, "QUALITY_RETRY_ENABLED", True)
     monkeypatch.setattr(_server, "QUALITY_RETRY_THRESHOLD", 0.75)
     monkeypatch.setattr(_server, "QUALITY_RETRY_MODE", "full")
@@ -122,6 +127,9 @@ def test_tips_document_policy_resolution(monkeypatch):
     assert policy["storage_policy"]["allowed_path_roots"] == ["/data", "/shared"]
     assert policy["storage_policy"]["allow_symlink_paths"] is False
     assert policy["storage_policy"]["violation_error_code"] == "PATH_NOT_ALLOWED"
+    assert policy["async_queue_policy"]["enabled"] is True
+    assert policy["async_queue_policy"]["worker_count"] == 2
+    assert policy["async_queue_policy"]["lease_seconds"] == 300
     assert "warnings" in result["response_fields"]
     assert "meta.contract_version" in result["canonical_meta_fields"]
 

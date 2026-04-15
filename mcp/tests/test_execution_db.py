@@ -34,7 +34,7 @@ def setup_db():
 def test_execution_tables_exist():
     from templates_db import get_db_connection, _return_conn
 
-    expected = {"execution", "execution_attempt", "execution_result"}
+    expected = {"execution", "execution_attempt", "execution_result", "execution_queue"}
     conn = get_db_connection()
     try:
         cur = conn.cursor()
@@ -132,6 +132,39 @@ def test_execution_update(execution_record):
     assert updated["current_stage"] == "ocr"
     assert updated["warning_summary"]["warnings"] == ["used_retry"]
     assert updated["started_at"] is not None
+
+
+def test_execution_queue_enqueue_claim_and_complete(execution_record):
+    from execution_db import (
+        execution_queue_enqueue,
+        execution_queue_claim_next,
+        execution_queue_complete,
+        execution_queue_list,
+    )
+
+    queue_name = f"queue-{uuid.uuid4()}"
+    queued = execution_queue_enqueue(
+        queue_id=f"queue-{uuid.uuid4()}",
+        execution_id=execution_record["id"],
+        job_id="job-queue-test",
+        payload={"request": {"path": "/data/test.pdf"}},
+        queue_name=queue_name,
+    )
+    assert queued["status"] == "queued"
+    assert queued["job_id"] == "job-queue-test"
+
+    claimed = execution_queue_claim_next(worker_id="worker-a", lease_seconds=30, queue_name=queue_name)
+    assert claimed is not None
+    assert claimed["id"] == queued["id"]
+    assert claimed["status"] == "claimed"
+    assert claimed["claimed_by"] == "worker-a"
+
+    completed = execution_queue_complete(claimed["id"])
+    assert completed is not None
+    assert completed["status"] == "completed"
+
+    rows = execution_queue_list(limit=10)
+    assert any(row["id"] == queued["id"] for row in rows)
 
 
 def test_execution_attempt_upsert_and_list(execution_record):

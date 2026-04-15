@@ -65,6 +65,10 @@ from settings import (
     MISTRAL_TIMEOUT,
     WEBHOOK_TIMEOUT_SECONDS,
     JOB_TIMEOUT_SECONDS,
+    QUEUE_ENABLED,
+    QUEUE_WORKER_COUNT,
+    QUEUE_POLL_INTERVAL_SECONDS,
+    QUEUE_LEASE_SECONDS,
     EXECUTION_DIAGNOSTICS_LIMIT,
     EXECUTION_STUCK_THRESHOLD_SECONDS,
     NORMALIZATION_DRIFT_SAMPLE_LIMIT,
@@ -95,6 +99,11 @@ from execution_db import (
     execution_list,
     execution_list_active,
     execution_list_stuck,
+    execution_queue_enqueue,
+    execution_queue_claim_next,
+    execution_queue_complete,
+    execution_queue_fail,
+    execution_queue_list,
     execution_update,
     execution_result_upsert,
     execution_result_get_final,
@@ -369,6 +378,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+_QUEUE_WORKER_TASKS: list[asyncio.Task] = []
 
 
 def _safe_encode(obj: Any) -> Any:
@@ -383,6 +393,59 @@ def _safe_encode(obj: Any) -> Any:
     if isinstance(obj, list):
         return [_safe_encode(v) for v in obj]
     return obj
+
+
+async def _queue_worker_loop(worker_id: str) -> None:
+    """Poll and execute queued async conversion work."""
+    while True:
+        queue_item: Optional[dict[str, Any]] = None
+        try:
+            queue_item = _get("execution_queue_claim_next", execution_queue_claim_next)(
+                worker_id=worker_id,
+                lease_seconds=int(_get("QUEUE_LEASE_SECONDS", QUEUE_LEASE_SECONDS)),
+            )
+            if not queue_item:
+                await asyncio.sleep(float(_get("QUEUE_POLL_INTERVAL_SECONDS", QUEUE_POLL_INTERVAL_SECONDS)))
+                continue
+
+            payload = queue_item.get("payload") or {}
+            request_payload = payload.get("request") or {}
+            request = ConvertRequest(**request_payload)
+            await _run_async_job(queue_item.get("job_id"), request)
+            job = _get("job_get", job_get)(queue_item.get("job_id"))
+            if job and job.get("status") == "completed":
+                _get("execution_queue_complete", execution_queue_complete)(queue_item["id"])
+            else:
+                _get("execution_queue_fail", execution_queue_fail)(queue_item["id"])
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.error("queue_worker_error", worker_id=worker_id, queue_item_id=queue_item["id"] if queue_item else None, error=str(exc))
+            if queue_item is not None:
+                _get("execution_queue_fail", execution_queue_fail)(queue_item["id"])
+            await asyncio.sleep(float(_get("QUEUE_POLL_INTERVAL_SECONDS", QUEUE_POLL_INTERVAL_SECONDS)))
+
+
+@app.on_event("startup")
+async def startup_queue_workers() -> None:
+    if not _get("QUEUE_ENABLED", QUEUE_ENABLED):
+        return
+    if _QUEUE_WORKER_TASKS:
+        return
+    worker_count = max(1, int(_get("QUEUE_WORKER_COUNT", QUEUE_WORKER_COUNT)))
+    for idx in range(worker_count):
+        _QUEUE_WORKER_TASKS.append(asyncio.create_task(_queue_worker_loop(f"queue-worker-{idx + 1}")))
+
+
+@app.on_event("shutdown")
+async def shutdown_queue_workers() -> None:
+    if not _QUEUE_WORKER_TASKS:
+        return
+    tasks = list(_QUEUE_WORKER_TASKS)
+    _QUEUE_WORKER_TASKS.clear()
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 @app.exception_handler(Exception)
@@ -1449,6 +1512,37 @@ async def _run_async_job(job_id: str, request: "ConvertRequest") -> None:
             temp_path.unlink(missing_ok=True)
 
 
+async def _start_async_execution(request: ConvertRequest) -> AsyncJobStartResponse:
+    """Start one async execution, either via persisted queue or direct task scheduling."""
+    _job_create = _get("job_create", job_create)
+    job_id = str(uuid.uuid4())
+    _, execution_id = _ensure_execution_for_request(request, execution_kind="async", job_id=job_id)
+    _job_create(job_id)
+    if _get("QUEUE_ENABLED", QUEUE_ENABLED):
+        _get("execution_queue_enqueue", execution_queue_enqueue)(
+            queue_id=str(uuid.uuid4()),
+            execution_id=execution_id,
+            job_id=job_id,
+            payload={"request": request.model_dump(mode="json")},
+        )
+        _get("execution_update", execution_update)(
+            execution_id,
+            status="queued",
+            current_stage="queued",
+            progress_json=build_progress_payload(
+                status="queued",
+                current_stage="queued",
+                message="Queued for worker execution",
+                percent=0,
+                request_id=request.meta.get("_request_id"),
+                job_id=job_id,
+            ),
+        )
+    else:
+        asyncio.create_task(_run_async_job(job_id, request))
+    return AsyncJobStartResponse(job_id=job_id, execution_id=execution_id, status="queued")
+
+
 @app.post("/v1/convert/async", response_model=AsyncJobStartResponse)
 async def api_convert_async(request: ConvertRequest) -> AsyncJobStartResponse:
     """
@@ -1457,12 +1551,7 @@ async def api_convert_async(request: ConvertRequest) -> AsyncJobStartResponse:
     Gibt sofort eine Job-ID zurück. Der Fortschritt kann über GET /v1/jobs/{id}
     abgefragt werden. Das Ergebnis ist über GET /v1/jobs/{id}/result abrufbar.
     """
-    _job_create = _get("job_create", job_create)
-    job_id = str(uuid.uuid4())
-    _, execution_id = _ensure_execution_for_request(request, execution_kind="async", job_id=job_id)
-    _job_create(job_id)
-    asyncio.create_task(_run_async_job(job_id, request))
-    return AsyncJobStartResponse(job_id=job_id, execution_id=execution_id, status="queued")
+    return await _start_async_execution(request)
 
 
 @app.get("/v1/jobs", response_model=JobListResponse)

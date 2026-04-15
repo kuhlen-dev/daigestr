@@ -159,6 +159,33 @@ def init_execution_db() -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_execution_result_one_final "
             "ON execution_result(execution_id) WHERE is_final = true"
         )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS execution_queue (
+                id TEXT PRIMARY KEY,
+                execution_id TEXT NOT NULL UNIQUE REFERENCES execution(id) ON DELETE CASCADE,
+                job_id TEXT,
+                queue_name TEXT NOT NULL DEFAULT 'default',
+                status TEXT NOT NULL DEFAULT 'queued'
+                    CHECK (status IN ('queued', 'claimed', 'completed', 'failed', 'cancelled')),
+                payload JSONB,
+                available_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                claimed_by TEXT,
+                claimed_at TIMESTAMPTZ,
+                lease_expires_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ DEFAULT now(),
+                updated_at TIMESTAMPTZ DEFAULT now()
+            )
+            """
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_execution_queue_claim "
+            "ON execution_queue(queue_name, status, available_at, created_at)"
+        )
+        cur.execute(
+            "CREATE INDEX IF NOT EXISTS idx_execution_queue_job_id "
+            "ON execution_queue(job_id)"
+        )
 
         conn.commit()
         log.info("execution_db_initialized")
@@ -574,6 +601,164 @@ def execution_result_list(execution_id: str) -> list[dict[str, Any]]:
             "SELECT * FROM execution_result WHERE execution_id = %s ORDER BY created_at DESC, id DESC",
             (execution_id,),
         )
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        _return_conn(conn)
+
+
+def execution_queue_enqueue(
+    *,
+    queue_id: str,
+    execution_id: str,
+    job_id: Optional[str],
+    payload: dict[str, Any],
+    queue_name: str = "default",
+) -> dict[str, Any]:
+    """Insert or refresh one queued execution item."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO execution_queue (
+                id, execution_id, job_id, queue_name, status, payload, available_at
+            )
+            VALUES (%s, %s, %s, %s, 'queued', %s, now())
+            ON CONFLICT (execution_id) DO UPDATE SET
+                job_id = EXCLUDED.job_id,
+                queue_name = EXCLUDED.queue_name,
+                status = 'queued',
+                payload = EXCLUDED.payload,
+                available_at = now(),
+                claimed_by = NULL,
+                claimed_at = NULL,
+                lease_expires_at = NULL,
+                updated_at = now()
+            RETURNING *
+            """,
+            (
+                queue_id,
+                execution_id,
+                job_id,
+                queue_name,
+                psycopg2.extras.Json(payload),
+            ),
+        )
+        row = dict(cur.fetchone())
+        conn.commit()
+        return row
+    finally:
+        _return_conn(conn)
+
+
+def execution_queue_claim_next(
+    *,
+    worker_id: str,
+    lease_seconds: int,
+    queue_name: str = "default",
+) -> Optional[dict[str, Any]]:
+    """Claim the next queued execution item with a lease."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            WITH next_item AS (
+                SELECT id
+                FROM execution_queue
+                WHERE queue_name = %s
+                  AND (
+                        (status = 'queued' AND available_at <= now())
+                     OR (status = 'claimed' AND lease_expires_at IS NOT NULL AND lease_expires_at <= now())
+                  )
+                ORDER BY created_at ASC
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
+            UPDATE execution_queue q
+            SET status = 'claimed',
+                claimed_by = %s,
+                claimed_at = now(),
+                lease_expires_at = now() + (%s * interval '1 second'),
+                updated_at = now()
+            FROM next_item
+            WHERE q.id = next_item.id
+            RETURNING q.*
+            """,
+            (queue_name, worker_id, lease_seconds),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return dict(row) if row else None
+    finally:
+        _return_conn(conn)
+
+
+def execution_queue_complete(queue_id: str) -> Optional[dict[str, Any]]:
+    """Mark a claimed queue item as completed."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE execution_queue
+            SET status = 'completed',
+                claimed_by = NULL,
+                claimed_at = NULL,
+                lease_expires_at = NULL,
+                updated_at = now()
+            WHERE id = %s
+            RETURNING *
+            """,
+            (queue_id,),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return dict(row) if row else None
+    finally:
+        _return_conn(conn)
+
+
+def execution_queue_fail(queue_id: str) -> Optional[dict[str, Any]]:
+    """Mark a claimed queue item as failed."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE execution_queue
+            SET status = 'failed',
+                claimed_by = NULL,
+                claimed_at = NULL,
+                lease_expires_at = NULL,
+                updated_at = now()
+            WHERE id = %s
+            RETURNING *
+            """,
+            (queue_id,),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return dict(row) if row else None
+    finally:
+        _return_conn(conn)
+
+
+def execution_queue_list(*, status: Optional[str] = None, limit: int = 100) -> list[dict[str, Any]]:
+    """List queue items, newest first."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        if status:
+            cur.execute(
+                "SELECT * FROM execution_queue WHERE status = %s ORDER BY created_at DESC LIMIT %s",
+                (status, limit),
+            )
+        else:
+            cur.execute(
+                "SELECT * FROM execution_queue ORDER BY created_at DESC LIMIT %s",
+                (limit,),
+            )
         return [dict(r) for r in cur.fetchall()]
     finally:
         _return_conn(conn)
