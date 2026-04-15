@@ -191,6 +191,12 @@ def test_api_get_execution_and_result(monkeypatch):
     assert execution_status.result_meta_summary is not None
     assert execution_status.result_meta_summary["template_used"] == "invoice"
     assert execution_status.result_meta_summary["quality_score"] == 0.91
+    assert execution_status.result_artifact_refs == {
+        "has_markdown": True,
+        "has_html": False,
+        "has_chunks": False,
+        "has_enriched_pdf": False,
+    }
     assert len(execution_status.attempts) == 1
 
     execution_result = api_rest._get_execution_result_payload(response.meta.execution_id)
@@ -360,7 +366,7 @@ def test_api_execution_diagnostics_returns_active_stuck_and_drift(monkeypatch):
         "started_at": "2026-04-14T00:00:01Z",
         "finished_at": None,
         "attempts": [],
-        "final_result": None,
+        "final_result_summary": None,
     }
     stuck_row = {
         **active_row,
@@ -797,6 +803,7 @@ def test_get_batch_item_result_reuses_execution_result_payload(monkeypatch):
         meta=result.meta.model_dump(mode="json"),
         extracted=result.extracted,
         normalized=result.normalized,
+        artifact_refs={"markdown_path": "/tmp/batch-item.md"},
         warnings=[warning.model_dump(mode="json") for warning in result.warnings] if result.warnings else None,
         error=result.error.model_dump(mode="json") if result.error else None,
     )
@@ -804,6 +811,10 @@ def test_get_batch_item_result_reuses_execution_result_payload(monkeypatch):
 
     stored = execution_result_get_final(batch_item.execution_id)
     assert stored is not None
+
+    refreshed_page = api_rest._get_batch_items_payload(created.batch_id, limit=10, offset=0)
+    assert refreshed_page.items[0].final_result_available is True
+    assert refreshed_page.items[0].result_artifact_refs == {"markdown_path": "/tmp/batch-item.md"}
 
     restored = api_rest._get_batch_item_result_payload(created.batch_id, batch_item.batch_item_id)
     assert restored.success is True

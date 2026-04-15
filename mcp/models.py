@@ -99,6 +99,7 @@ CANONICAL_EXECUTION_FIELDS: dict[str, str] = {
     "current_stage": "Current or final stage of the execution pipeline.",
     "progress": "Canonical persisted progress snapshot shared by direct and async status views.",
     "result_meta_summary": "Condensed final result metadata for history and reporting.",
+    "result_artifact_refs": "Artifact references persisted alongside the final result; kept separate from the product response payload and debug snapshots.",
     "document_identity": "Persisted identity and fingerprint of the input document when known.",
     "input_snapshot": "Frozen snapshot of the logical input at execution start; later batch-items build on the same structure.",
     "policy_context": "Persisted policy resolution used for the run.",
@@ -380,6 +381,7 @@ class BatchItemResponse(BaseModel):
     status: str = Field(..., description="Aktueller Status des Items")
     current_stage: Optional[str] = Field(None, description="Aktuelle Stage der verknüpften execution sofern bekannt")
     metadata: Optional[dict[str, Any]] = Field(None, description="Persistierte Item-Metadaten")
+    result_artifact_refs: Optional[dict[str, Any]] = Field(None, description="Leichtgewichtige Artefakt-Referenzen des finalen Resultats, getrennt vom eigentlichen Produkt-Output")
     document_identity: Optional[dict[str, Any]] = Field(None, description="Persistierte Identität des Eingangsdokuments")
     input_snapshot: Optional[dict[str, Any]] = Field(None, description="Persistierter eingefrorener Input-Snapshot")
     created_at: Any = Field(..., description="Erstellungszeitpunkt des Batch-Items")
@@ -487,6 +489,7 @@ class ExecutionStatusResponse(BaseModel):
     current_stage: Optional[str] = Field(None, description="Aktueller Verarbeitungsschritt")
     progress: Optional[ProgressState] = Field(None, description="Kanonischer persistierter Progress-Snapshot dieses Laufs")
     result_meta_summary: Optional[dict[str, Any]] = Field(None, description="Verdichtete finale Result-Metadaten für History und Reporting")
+    result_artifact_refs: Optional[dict[str, Any]] = Field(None, description="Leichtgewichtige Artefakt-Referenzen des finalen Resultats, getrennt von Produkt-Output und Debug-Snapshots")
     document_identity: Optional[dict[str, Any]] = Field(None, description="Persistierte Identität des Eingangsdokuments")
     input_snapshot: Optional[dict[str, Any]] = Field(None, description="Eingefrorener Input-Snapshot des logischen Auftrags")
     policy_context: Optional[dict[str, Any]] = Field(None, description="Persistierter Policy-Kontext des Laufs")

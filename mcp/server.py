@@ -270,6 +270,7 @@ from execution_db import (  # noqa: F401
     execution_subjob_list_by_upstream_batch_id,
     execution_result_upsert,
     execution_result_get_final,
+    execution_result_get_final_summary,
     execution_result_clear_final,
     execution_result_list,
 )

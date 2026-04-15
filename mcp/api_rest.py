@@ -440,8 +440,8 @@ def _build_execution_status_response(row: dict[str, Any]) -> ExecutionStatusResp
         except Exception:
             progress = None
     result_meta_summary = None
-    final_result = row.get("final_result")
-    final_meta = final_result.get("meta") if isinstance(final_result, dict) else None
+    final_result_summary = row.get("final_result_summary")
+    final_meta = final_result_summary.get("meta") if isinstance(final_result_summary, dict) else None
     if isinstance(final_meta, dict):
         result_meta_summary = {
             "document_type": final_meta.get("document_type"),
@@ -505,6 +505,7 @@ def _build_execution_status_response(row: dict[str, Any]) -> ExecutionStatusResp
         current_stage=row.get("current_stage"),
         progress=progress,
         result_meta_summary=result_meta_summary,
+        result_artifact_refs=final_result_summary.get("artifact_refs") if isinstance(final_result_summary, dict) else None,
         document_identity=row.get("document_identity"),
         input_snapshot=row.get("input_snapshot"),
         policy_context=row.get("policy_context"),
@@ -516,7 +517,7 @@ def _build_execution_status_response(row: dict[str, Any]) -> ExecutionStatusResp
         finished_at=row.get("finished_at"),
         attempts=attempts,
         subjobs=subjobs,
-        final_result_available=bool(row.get("final_result")),
+        final_result_available=bool(final_result_summary),
     )
 
 
@@ -614,6 +615,7 @@ def _build_batch_item_response(row: dict[str, Any]) -> BatchItemResponse:
         status=row.get("effective_status") or row["status"],
         current_stage=row.get("current_stage"),
         metadata=row.get("metadata"),
+        result_artifact_refs=row.get("result_artifact_refs"),
         document_identity=row.get("document_identity"),
         input_snapshot=row.get("input_snapshot"),
         created_at=row["created_at"],

@@ -534,13 +534,13 @@ def execution_list_stuck(stuck_after_seconds: int, limit: int = 50) -> list[dict
 
 
 def execution_get_full(execution_id: str) -> Optional[dict[str, Any]]:
-    """Return one execution enriched with attempts and the final result."""
+    """Return one execution enriched with attempts and lightweight final-result state."""
     execution = execution_get(execution_id)
     if not execution:
         return None
     execution["attempts"] = execution_attempt_list(execution_id)
     execution["subjobs"] = execution_subjob_list(execution_id)
-    execution["final_result"] = execution_result_get_final(execution_id)
+    execution["final_result_summary"] = execution_result_get_final_summary(execution_id)
     return execution
 
 
@@ -843,6 +843,37 @@ def execution_result_get_final(execution_id: str) -> Optional[dict[str, Any]]:
         cur = conn.cursor()
         cur.execute(
             "SELECT * FROM execution_result WHERE execution_id = %s AND is_final = true",
+            (execution_id,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    finally:
+        _return_conn(conn)
+
+
+def execution_result_get_final_summary(execution_id: str) -> Optional[dict[str, Any]]:
+    """Fetch the final result row without heavy product payload fields."""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT
+                id,
+                execution_id,
+                attempt_id,
+                is_final,
+                result_status,
+                success,
+                meta,
+                artifact_refs,
+                warnings,
+                error,
+                created_at,
+                updated_at
+            FROM execution_result
+            WHERE execution_id = %s AND is_final = true
+            """,
             (execution_id,),
         )
         row = cur.fetchone()
@@ -1237,6 +1268,7 @@ def execution_batch_item_get(batch_id: str, batch_item_id: str) -> Optional[dict
                 i.*,
                 COALESCE(e.status, i.status) AS effective_status,
                 e.current_stage,
+                er.artifact_refs AS result_artifact_refs,
                 (er.id IS NOT NULL) AS final_result_available
             FROM execution_batch_item i
             LEFT JOIN execution e ON e.id = i.execution_id
@@ -1267,6 +1299,7 @@ def execution_batch_item_list_paginated(batch_id: str, *, limit: int = 50, offse
                 i.*,
                 COALESCE(e.status, i.status) AS effective_status,
                 e.current_stage,
+                er.artifact_refs AS result_artifact_refs,
                 (er.id IS NOT NULL) AS final_result_available
             FROM execution_batch_item i
             LEFT JOIN execution e ON e.id = i.execution_id

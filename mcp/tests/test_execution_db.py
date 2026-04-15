@@ -403,8 +403,10 @@ def test_execution_attempt_upsert_and_list(execution_record):
 def test_execution_result_upsert_and_fetch_final(execution_record):
     from execution_db import (
         execution_attempt_upsert,
+        execution_get_full,
         execution_result_upsert,
         execution_result_get_final,
+        execution_result_get_final_summary,
         execution_result_list,
     )
 
@@ -444,6 +446,19 @@ def test_execution_result_upsert_and_fetch_final(execution_record):
     assert final_row["response_json"]["markdown"] == "# ok"
     assert final_row["meta"]["document_type"] == "invoice"
     assert final_row["artifact_refs"]["markdown_path"] == "/tmp/x.md"
+
+    final_summary = execution_result_get_final_summary(execution_record["id"])
+    assert final_summary is not None
+    assert final_summary["id"] == result["id"]
+    assert final_summary["meta"]["quality_score"] == pytest.approx(0.91)
+    assert final_summary["artifact_refs"]["markdown_path"] == "/tmp/x.md"
+    assert "response_json" not in final_summary
+
+    full_execution = execution_get_full(execution_record["id"])
+    assert full_execution is not None
+    assert full_execution["final_result_summary"]["id"] == result["id"]
+    assert full_execution["final_result_summary"]["artifact_refs"]["markdown_path"] == "/tmp/x.md"
+    assert "final_result" not in full_execution
 
     rows = execution_result_list(execution_record["id"])
     assert len(rows) >= 1
