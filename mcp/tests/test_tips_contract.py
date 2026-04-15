@@ -169,6 +169,9 @@ def test_tips_document_mistral_batch_policy(monkeypatch):
     monkeypatch.setattr(_routing, "get_all_template_ids", lambda: ["invoice"])
     monkeypatch.setattr(_server, "MISTRAL_BATCH_ENABLED", True)
     monkeypatch.setattr(_server, "MISTRAL_BATCH_MIN_ITEMS", 10)
+    monkeypatch.setattr(_server, "MISTRAL_BATCH_POLL_INTERVAL_SECONDS", 5)
+    monkeypatch.setattr(_server, "MISTRAL_BATCH_MAX_ACTIVE", 25)
+    monkeypatch.setattr(_server, "MISTRAL_BATCH_TIMEOUT_HOURS", 24)
     monkeypatch.setattr(_server, "MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", ("file", "base64"))
 
     result = _server._build_tips_dict()
@@ -176,5 +179,9 @@ def test_tips_document_mistral_batch_policy(monkeypatch):
     mistral_batch_policy = result["policy_resolution"]["batch_queue_policy"]["mistral_batch_policy"]
     assert mistral_batch_policy["enabled"] is True
     assert mistral_batch_policy["min_items"] == 10
+    assert mistral_batch_policy["poll_interval_seconds"] == 5
+    assert mistral_batch_policy["max_active"] == 25
+    assert mistral_batch_policy["timeout_hours"] == 24
     assert mistral_batch_policy["allowed_source_types"] == ["file", "base64"]
     assert "preferred_dispatch_target" in mistral_batch_policy["decision_note"]
+    assert "MISTRAL_BATCH_ENABLED" in mistral_batch_policy["decision_note"]

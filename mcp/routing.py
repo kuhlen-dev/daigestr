@@ -74,6 +74,9 @@ from settings import (
     MISTRAL_BATCH_ALLOWED_SOURCE_TYPES,
     MISTRAL_BATCH_ENABLED,
     MISTRAL_BATCH_MIN_ITEMS,
+    MISTRAL_BATCH_POLL_INTERVAL_SECONDS,
+    MISTRAL_BATCH_MAX_ACTIVE,
+    MISTRAL_BATCH_TIMEOUT_HOURS,
     QUALITY_RETRY_ENABLED,
     QUALITY_RETRY_THRESHOLD,
     QUALITY_RETRY_MODE,
@@ -3210,8 +3213,11 @@ def _build_tips_dict() -> dict:
                 "mistral_batch_policy": {
                     "enabled": bool(_get("MISTRAL_BATCH_ENABLED", MISTRAL_BATCH_ENABLED)),
                     "min_items": int(_get("MISTRAL_BATCH_MIN_ITEMS", MISTRAL_BATCH_MIN_ITEMS)),
+                    "poll_interval_seconds": float(_get("MISTRAL_BATCH_POLL_INTERVAL_SECONDS", MISTRAL_BATCH_POLL_INTERVAL_SECONDS)),
+                    "max_active": int(_get("MISTRAL_BATCH_MAX_ACTIVE", MISTRAL_BATCH_MAX_ACTIVE)),
+                    "timeout_hours": int(_get("MISTRAL_BATCH_TIMEOUT_HOURS", MISTRAL_BATCH_TIMEOUT_HOURS)),
                     "allowed_source_types": list(_get("MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", MISTRAL_BATCH_ALLOWED_SOURCE_TYPES)),
-                    "decision_note": "Dispatch policy records preferred_dispatch_target and effective_dispatch_target per execution; provider-compatible batch items can be submitted to Mistral batch, polled back into canonical execution_result rows, and leave mixed-success batches in partial status.",
+                    "decision_note": "Dispatch policy records preferred_dispatch_target and effective_dispatch_target per execution; provider-compatible batch items can be submitted to Mistral batch, polled back into canonical execution_result rows, and leave mixed-success batches in partial status. Activation remains explicit via MISTRAL_BATCH_ENABLED.",
                 },
                 "control_actions": {
                     "batch_cancel": "POST /v1/batches/{id}/cancel cancels queued or claimed batch items without introducing a second batch state model.",

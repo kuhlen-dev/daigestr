@@ -929,6 +929,9 @@ def test_batch_execution_records_mistral_batch_dispatch_policy(monkeypatch):
     monkeypatch.setattr(api_rest, "BATCH_DEFAULT_QUEUE_NAME", "default")
     monkeypatch.setattr(api_rest, "MISTRAL_BATCH_ENABLED", True)
     monkeypatch.setattr(api_rest, "MISTRAL_BATCH_MIN_ITEMS", 2)
+    monkeypatch.setattr(api_rest, "MISTRAL_BATCH_POLL_INTERVAL_SECONDS", 5)
+    monkeypatch.setattr(api_rest, "MISTRAL_BATCH_MAX_ACTIVE", 25)
+    monkeypatch.setattr(api_rest, "MISTRAL_BATCH_TIMEOUT_HOURS", 24)
     monkeypatch.setattr(api_rest, "MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", ("file", "base64", "url"))
     server_module = sys.modules.get("server")
     if server_module is not None:
@@ -936,6 +939,9 @@ def test_batch_execution_records_mistral_batch_dispatch_policy(monkeypatch):
         monkeypatch.setitem(server_module.__dict__, "BATCH_DEFAULT_QUEUE_NAME", "default")
         monkeypatch.setitem(server_module.__dict__, "MISTRAL_BATCH_ENABLED", True)
         monkeypatch.setitem(server_module.__dict__, "MISTRAL_BATCH_MIN_ITEMS", 2)
+        monkeypatch.setitem(server_module.__dict__, "MISTRAL_BATCH_POLL_INTERVAL_SECONDS", 5)
+        monkeypatch.setitem(server_module.__dict__, "MISTRAL_BATCH_MAX_ACTIVE", 25)
+        monkeypatch.setitem(server_module.__dict__, "MISTRAL_BATCH_TIMEOUT_HOURS", 24)
         monkeypatch.setitem(server_module.__dict__, "MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", ("file", "base64", "url"))
 
     async def fake_submit(requests, **kwargs):
@@ -963,6 +969,9 @@ def test_batch_execution_records_mistral_batch_dispatch_policy(monkeypatch):
     assert dispatch_policy["preferred_dispatch_target"] == "mistral_batch"
     assert dispatch_policy["effective_dispatch_target"] == "mistral_batch"
     assert dispatch_policy["fallback_reason"] is None
+    assert dispatch_policy["mistral_batch_poll_interval_seconds"] == 5
+    assert dispatch_policy["mistral_batch_max_active"] == 25
+    assert dispatch_policy["mistral_batch_timeout_hours"] == 24
     assert execution["subjobs"][0]["subjob_type"] == "mistral_batch"
     assert execution["subjobs"][0]["metadata"]["decision_only"] is False
     assert execution["subjobs"][0]["upstream_batch_id"] == "mistral-job-1"

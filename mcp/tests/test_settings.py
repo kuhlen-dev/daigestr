@@ -141,6 +141,13 @@ class TestSettingsDefaults:
         assert settings.QUALITY_RETRY_THRESHOLD == 0.75
         assert settings.QUALITY_RETRY_MODE == "full"
 
+    def test_mistral_batch_defaults(self, settings):
+        assert settings.MISTRAL_BATCH_ENABLED is False
+        assert settings.MISTRAL_BATCH_MIN_ITEMS == 10
+        assert settings.MISTRAL_BATCH_POLL_INTERVAL_SECONDS == 5
+        assert settings.MISTRAL_BATCH_MAX_ACTIVE == 25
+        assert settings.MISTRAL_BATCH_TIMEOUT_HOURS == 24
+
     def test_long_document_threshold_default(self, settings):
         assert settings.LONG_DOCUMENT_PAGE_THRESHOLD == 25
         assert isinstance(settings.LONG_DOCUMENT_PAGE_THRESHOLD, int)

@@ -70,6 +70,15 @@ MISTRAL_BATCH_ENABLED = os.getenv("MISTRAL_BATCH_ENABLED", "false").lower() == "
 MISTRAL_BATCH_MIN_ITEMS = int(os.getenv("MISTRAL_BATCH_MIN_ITEMS", "10"))
 if MISTRAL_BATCH_MIN_ITEMS < 1:
     raise ValueError("MISTRAL_BATCH_MIN_ITEMS must be >= 1")
+MISTRAL_BATCH_POLL_INTERVAL_SECONDS = float(os.getenv("MISTRAL_BATCH_POLL_INTERVAL_SECONDS", "5"))
+if MISTRAL_BATCH_POLL_INTERVAL_SECONDS <= 0:
+    raise ValueError("MISTRAL_BATCH_POLL_INTERVAL_SECONDS must be > 0")
+MISTRAL_BATCH_MAX_ACTIVE = int(os.getenv("MISTRAL_BATCH_MAX_ACTIVE", "25"))
+if MISTRAL_BATCH_MAX_ACTIVE < 1:
+    raise ValueError("MISTRAL_BATCH_MAX_ACTIVE must be >= 1")
+MISTRAL_BATCH_TIMEOUT_HOURS = int(os.getenv("MISTRAL_BATCH_TIMEOUT_HOURS", "24"))
+if MISTRAL_BATCH_TIMEOUT_HOURS < 1:
+    raise ValueError("MISTRAL_BATCH_TIMEOUT_HOURS must be >= 1")
 MISTRAL_BATCH_ALLOWED_SOURCE_TYPES = tuple(
     raw.strip().lower()
     for raw in os.getenv("MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", "file,base64,url").split(",")
@@ -244,7 +253,7 @@ MERMAID_CDN_URL = os.getenv("MERMAID_CDN_URL", "https://cdn.jsdelivr.net/npm/mer
 HIGHLIGHTJS_CDN_URL = os.getenv("HIGHLIGHTJS_CDN_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js")
 HIGHLIGHTJS_CSS_URL = os.getenv("HIGHLIGHTJS_CSS_URL", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css")
 
-VERSION = os.getenv("DAIGESTR_VERSION", "16.6.3")
+VERSION = os.getenv("DAIGESTR_VERSION", "16.6.4")
 START_TIME = time.time()
 
 # =============================================================================

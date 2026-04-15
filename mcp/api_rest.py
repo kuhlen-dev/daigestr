@@ -65,6 +65,9 @@ from settings import (
     MISTRAL_BATCH_ALLOWED_SOURCE_TYPES,
     MISTRAL_BATCH_ENABLED,
     MISTRAL_BATCH_MIN_ITEMS,
+    MISTRAL_BATCH_MAX_ACTIVE,
+    MISTRAL_BATCH_POLL_INTERVAL_SECONDS,
+    MISTRAL_BATCH_TIMEOUT_HOURS,
     MAX_FILE_SIZE_MB,
     IMAGE_MAX_WIDTH,
     MAX_RETRIES,
@@ -344,6 +347,9 @@ def _resolve_dispatch_policy(
     item_count = int(batch_item_count or 0)
     enabled = bool(_get("MISTRAL_BATCH_ENABLED", MISTRAL_BATCH_ENABLED))
     min_items = int(_get("MISTRAL_BATCH_MIN_ITEMS", MISTRAL_BATCH_MIN_ITEMS))
+    poll_interval_seconds = float(_get("MISTRAL_BATCH_POLL_INTERVAL_SECONDS", MISTRAL_BATCH_POLL_INTERVAL_SECONDS))
+    max_active = int(_get("MISTRAL_BATCH_MAX_ACTIVE", MISTRAL_BATCH_MAX_ACTIVE))
+    timeout_hours = int(_get("MISTRAL_BATCH_TIMEOUT_HOURS", MISTRAL_BATCH_TIMEOUT_HOURS))
     allowed_source_types = tuple(_get("MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", MISTRAL_BATCH_ALLOWED_SOURCE_TYPES))
     eligible = enabled and item_count >= min_items and (source_type or "") in allowed_source_types
     preferred_target = "mistral_batch" if eligible else "queued"
@@ -359,6 +365,9 @@ def _resolve_dispatch_policy(
         "batch_item_count": item_count,
         "mistral_batch_enabled": enabled,
         "mistral_batch_min_items": min_items,
+        "mistral_batch_poll_interval_seconds": poll_interval_seconds,
+        "mistral_batch_max_active": max_active,
+        "mistral_batch_timeout_hours": timeout_hours,
         "mistral_batch_allowed_source_types": list(allowed_source_types),
     }
 
@@ -741,6 +750,7 @@ async def _submit_mistral_provider_batch(
             "provider": "mistral",
             "subjob_type": "mistral_batch",
         },
+        timeout_hours=int(_get("MISTRAL_BATCH_TIMEOUT_HOURS", MISTRAL_BATCH_TIMEOUT_HOURS)),
     )
     upstream_batch_id = provider_job["id"]
     for item in items:
@@ -906,17 +916,17 @@ async def _mistral_batch_poll_loop(worker_id: str) -> None:
                 statuses=["submitted", "processing"],
                 provider="mistral",
                 subjob_type="mistral_batch",
-                limit=200,
+                limit=int(_get("MISTRAL_BATCH_MAX_ACTIVE", MISTRAL_BATCH_MAX_ACTIVE)),
             )
             upstream_batch_ids = sorted({row.get("upstream_batch_id") for row in subjobs if row.get("upstream_batch_id")})
             for upstream_batch_id in upstream_batch_ids:
                 await _poll_mistral_batch_job(upstream_batch_id)
-            await asyncio.sleep(float(_get("QUEUE_POLL_INTERVAL_SECONDS", QUEUE_POLL_INTERVAL_SECONDS)))
+            await asyncio.sleep(float(_get("MISTRAL_BATCH_POLL_INTERVAL_SECONDS", MISTRAL_BATCH_POLL_INTERVAL_SECONDS)))
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             log.error("mistral_batch_poller_error", worker_id=worker_id, error=str(exc))
-            await asyncio.sleep(float(_get("QUEUE_POLL_INTERVAL_SECONDS", QUEUE_POLL_INTERVAL_SECONDS)))
+            await asyncio.sleep(float(_get("MISTRAL_BATCH_POLL_INTERVAL_SECONDS", MISTRAL_BATCH_POLL_INTERVAL_SECONDS)))
 
 
 def _requeue_execution(
@@ -2362,6 +2372,9 @@ def _start_batch_execution(body: BatchCreateRequest) -> BatchStartResponse:
         "queue_name": queue_name,
         "mistral_batch_enabled": bool(_get("MISTRAL_BATCH_ENABLED", MISTRAL_BATCH_ENABLED)),
         "mistral_batch_min_items": int(_get("MISTRAL_BATCH_MIN_ITEMS", MISTRAL_BATCH_MIN_ITEMS)),
+        "mistral_batch_poll_interval_seconds": float(_get("MISTRAL_BATCH_POLL_INTERVAL_SECONDS", MISTRAL_BATCH_POLL_INTERVAL_SECONDS)),
+        "mistral_batch_max_active": int(_get("MISTRAL_BATCH_MAX_ACTIVE", MISTRAL_BATCH_MAX_ACTIVE)),
+        "mistral_batch_timeout_hours": int(_get("MISTRAL_BATCH_TIMEOUT_HOURS", MISTRAL_BATCH_TIMEOUT_HOURS)),
         "mistral_batch_allowed_source_types": list(_get("MISTRAL_BATCH_ALLOWED_SOURCE_TYPES", MISTRAL_BATCH_ALLOWED_SOURCE_TYPES)),
         "batch_item_count": len(body.items),
     }
