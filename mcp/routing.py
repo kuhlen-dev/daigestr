@@ -80,6 +80,9 @@ from settings import (
     QUALITY_RETRY_ENABLED,
     QUALITY_RETRY_THRESHOLD,
     QUALITY_RETRY_MODE,
+    EXECUTION_RESULT_RETENTION_DAYS,
+    EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS,
+    DEBUG_SNAPSHOTS_RETENTION_DAYS,
 )
 from utils import (
     _get,
@@ -3225,6 +3228,28 @@ def _build_tips_dict() -> dict:
                     "item_cancel": "POST /v1/batches/{id}/items/{item_id}/cancel cancels one batch item on its canonical execution.",
                     "item_resume": "POST /v1/batches/{id}/items/{item_id}/resume requeues one cancelled batch item on the same canonical execution.",
                     "item_retry": "POST /v1/batches/{id}/items/{item_id}/retry requeues one failed batch item on the same canonical execution after clearing the prior final result flag.",
+                },
+            },
+            "retention_policy": {
+                "execution_metadata": {
+                    "retention_days": None,
+                    "scope": "execution, execution_attempt, execution_batch, execution_batch_item, execution_queue lineage metadata",
+                    "cleanup_behavior": "Execution metadata stays available after result payload cleanup until a later explicit governance rule removes it.",
+                },
+                "result_payload": {
+                    "retention_days": int(_get("EXECUTION_RESULT_RETENTION_DAYS", EXECUTION_RESULT_RETENTION_DAYS)),
+                    "scope": "execution_result.response_json plus structured payload branches",
+                    "cleanup_behavior": "Expired result rows are deleted by execution_result_cleanup, making canonical result endpoints return no final result.",
+                },
+                "debug_snapshot": {
+                    "retention_days": int(_get("DEBUG_SNAPSHOTS_RETENTION_DAYS", DEBUG_SNAPSHOTS_RETENTION_DAYS)),
+                    "scope": "debug_snapshot.payload_json for replay and engineering diagnosis",
+                    "cleanup_behavior": "Expired snapshots are deleted by debug_snapshot_cleanup based on expires_at.",
+                },
+                "replay_artifact": {
+                    "retention_days": int(_get("EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS", EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS)),
+                    "scope": "execution_result.artifact_refs including replay-visible artifact references",
+                    "cleanup_behavior": "Expired artifact references are cleared before full result-row deletion.",
                 },
             },
         },

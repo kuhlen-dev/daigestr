@@ -185,3 +185,19 @@ def test_tips_document_mistral_batch_policy(monkeypatch):
     assert mistral_batch_policy["allowed_source_types"] == ["file", "base64"]
     assert "preferred_dispatch_target" in mistral_batch_policy["decision_note"]
     assert "MISTRAL_BATCH_ENABLED" in mistral_batch_policy["decision_note"]
+
+
+def test_tips_document_retention_policy(monkeypatch):
+    monkeypatch.setattr(_routing, "get_all_template_ids", lambda: ["invoice"])
+    monkeypatch.setattr(_server, "EXECUTION_RESULT_RETENTION_DAYS", 30)
+    monkeypatch.setattr(_server, "EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS", 14)
+    monkeypatch.setattr(_server, "DEBUG_SNAPSHOTS_RETENTION_DAYS", 5)
+
+    result = _server._build_tips_dict()
+
+    retention = result["policy_resolution"]["retention_policy"]
+    assert retention["execution_metadata"]["retention_days"] is None
+    assert retention["result_payload"]["retention_days"] == 30
+    assert retention["debug_snapshot"]["retention_days"] == 5
+    assert retention["replay_artifact"]["retention_days"] == 14
+    assert "execution_result_cleanup" in retention["result_payload"]["cleanup_behavior"]

@@ -2128,6 +2128,24 @@ async def api_health() -> HealthResponse:
     _check_persistence = _get("check_persistence_health", check_persistence_health)
     persistence = _check_persistence()
     status = "ok" if persistence.get("ready") else "error"
+    retention_policy = {
+        "execution_metadata": {
+            "retention_days": None,
+            "scope": "execution lineage metadata",
+        },
+        "result_payload": {
+            "retention_days": EXECUTION_RESULT_RETENTION_DAYS,
+            "scope": "execution_result payload rows",
+        },
+        "debug_snapshot": {
+            "retention_days": DEBUG_SNAPSHOTS_RETENTION_DAYS,
+            "scope": "debug_snapshot payloads",
+        },
+        "replay_artifact": {
+            "retention_days": EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS,
+            "scope": "execution_result artifact_refs",
+        },
+    }
 
     return HealthResponse(
         status=status,
@@ -2148,6 +2166,7 @@ async def api_health() -> HealthResponse:
             "execution_result_retention_days": EXECUTION_RESULT_RETENTION_DAYS,
             "execution_result_artifact_retention_days": EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS,
             "debug_snapshot_retention_days": DEBUG_SNAPSHOTS_RETENTION_DAYS,
+            "retention_policy": retention_policy,
             "uptime_seconds": uptime,
             "mcp_port": MCP_PORT,
             "rest_port": REST_PORT,

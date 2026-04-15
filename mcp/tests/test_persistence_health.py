@@ -121,6 +121,8 @@ class TestApiHealthPersistence:
         assert response.meta["execution_result_retention_days"] == _server_api.EXECUTION_RESULT_RETENTION_DAYS
         assert response.meta["execution_result_artifact_retention_days"] == _server_api.EXECUTION_RESULT_ARTIFACT_RETENTION_DAYS
         assert response.meta["debug_snapshot_retention_days"] == _server_api.DEBUG_SNAPSHOTS_RETENTION_DAYS
+        assert response.meta["retention_policy"]["execution_metadata"]["retention_days"] is None
+        assert response.meta["retention_policy"]["result_payload"]["retention_days"] == _server_api.EXECUTION_RESULT_RETENTION_DAYS
 
     def test_api_health_reports_error_when_persistence_not_ready(self):
         with patch.object(_server_api, "check_persistence_health", return_value={
