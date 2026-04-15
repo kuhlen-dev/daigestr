@@ -30,6 +30,24 @@ log = structlog.get_logger()
 
 audit_router = APIRouter(prefix="/v1/audit", tags=["audit"])
 
+_SUMMARY_FIELDS = (
+    "success",
+    "document_type",
+    "document_type_confidence",
+    "template_used",
+    "template_version",
+    "quality_score",
+    "quality_grade",
+    "retry_applied",
+    "retry_reason",
+    "initial_mode",
+    "final_mode",
+    "initial_quality_score",
+    "final_quality_score",
+    "warning_count",
+    "warning_codes",
+)
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -38,6 +56,42 @@ def _check_enabled() -> None:
     """Raise HTTP 404 when the audit API is disabled via AUDIT_API_ENABLED=false."""
     if not AUDIT_API_ENABLED:
         raise HTTPException(status_code=404, detail="Audit API is disabled (AUDIT_API_ENABLED=false)")
+
+
+def _build_history_summary(events: list[dict]) -> dict:
+    summary = {
+        "request_id": events[0].get("request_id") if events else None,
+        "execution_id": next((event.get("execution_id") for event in events if event.get("execution_id")), None),
+        "job_id": next((event.get("job_id") for event in events if event.get("job_id")), None),
+        "event_count": len(events),
+        "warning_event_count": sum(1 for event in events if event.get("level") == "warning" or event.get("event_type") == "warning"),
+        "error_event_count": sum(1 for event in events if event.get("level") == "error"),
+        "final_event_type": events[-1].get("event_type") if events else None,
+        "last_event_at": events[-1].get("created_at") if events else None,
+    }
+    result_event = next(
+        (
+            event for event in reversed(events)
+            if event.get("event_type") == "response" and isinstance(event.get("metadata"), dict)
+        ),
+        None,
+    )
+    metadata = result_event.get("metadata") if result_event else None
+    if isinstance(metadata, dict):
+        for field in _SUMMARY_FIELDS:
+            summary[field] = metadata.get(field)
+    else:
+        for field in _SUMMARY_FIELDS:
+            summary[field] = None
+    return summary
+
+
+def _build_history_summaries(events: list[dict]) -> list[dict]:
+    grouped: dict[str, list[dict]] = {}
+    for event in events:
+        key = str(event.get("request_id") or f"event-{event.get('id')}")
+        grouped.setdefault(key, []).append(event)
+    return [_build_history_summary(grouped[key]) for key in grouped]
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +113,12 @@ async def api_audit_get_by_request(request_id: str) -> dict:
     except Exception as exc:
         log.error("audit_api_get_by_request_failed", request_id=request_id, error=str(exc))
         raise HTTPException(status_code=500, detail=f"Failed to query audit log: {exc}") from exc
-    return {"request_id": request_id, "count": len(events), "events": events}
+    return {
+        "request_id": request_id,
+        "count": len(events),
+        "history_summary": _build_history_summary(events),
+        "events": events,
+    }
 
 
 @audit_router.get("/job/{job_id}", summary="Get audit events by job ID")
@@ -77,7 +136,12 @@ async def api_audit_get_by_job(job_id: str) -> dict:
     except Exception as exc:
         log.error("audit_api_get_by_job_failed", job_id=job_id, error=str(exc))
         raise HTTPException(status_code=500, detail=f"Failed to query audit log: {exc}") from exc
-    return {"job_id": job_id, "count": len(events), "events": events}
+    return {
+        "job_id": job_id,
+        "count": len(events),
+        "history_summary": _build_history_summary(events),
+        "events": events,
+    }
 
 
 @audit_router.get("/execution/{execution_id}", summary="Get audit events by execution ID")
@@ -89,7 +153,12 @@ async def api_audit_get_by_execution(execution_id: str) -> dict:
     except Exception as exc:
         log.error("audit_api_get_by_execution_failed", execution_id=execution_id, error=str(exc))
         raise HTTPException(status_code=500, detail=f"Failed to query audit log: {exc}") from exc
-    return {"execution_id": execution_id, "count": len(events), "events": events}
+    return {
+        "execution_id": execution_id,
+        "count": len(events),
+        "history_summary": _build_history_summary(events),
+        "events": events,
+    }
 
 
 @audit_router.get("", summary="List audit events (filtered)")
@@ -136,7 +205,12 @@ async def api_audit_list(
     except Exception as exc:
         log.error("audit_api_list_failed", error=str(exc))
         raise HTTPException(status_code=500, detail=f"Failed to query audit log: {exc}") from exc
-    return {"count": len(events), "limit": limit, "events": events}
+    return {
+        "count": len(events),
+        "limit": limit,
+        "history_summaries": _build_history_summaries(events),
+        "events": events,
+    }
 
 
 @audit_router.delete("/cleanup", summary="Delete old audit events")

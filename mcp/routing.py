@@ -524,6 +524,7 @@ def _apply_explicit_template_meta(meta: dict[str, Any], template: Optional[str])
 def _build_audit_result_meta_summary(response: ConvertResponse) -> dict[str, Any]:
     """Materialize the compact canonical result metadata persisted into audit response events."""
     meta = response.meta.model_dump() if response.meta else {}
+    warnings = response.warnings or []
     return {
         "success": response.success,
         "markdown_length": len(response.markdown or ""),
@@ -540,6 +541,8 @@ def _build_audit_result_meta_summary(response: ConvertResponse) -> dict[str, Any
         "final_mode": meta.get("final_mode"),
         "initial_quality_score": meta.get("initial_quality_score"),
         "final_quality_score": meta.get("final_quality_score"),
+        "warning_count": len(warnings),
+        "warning_codes": [warning.get("code") for warning in warnings if isinstance(warning, dict) and warning.get("code")],
     }
 
 
