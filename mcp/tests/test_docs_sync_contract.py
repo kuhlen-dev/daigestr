@@ -59,3 +59,23 @@ def test_docs_and_tips_document_polling_modes(monkeypatch):
     assert "Replay endpoints return a new replay execution" in polling["replay"]
     assert "compatibility surfaces for async callers" in operations
     assert "poll /v1/jobs/{id} or /v1/executions/{execution_id}" in polling["async"]
+
+
+def test_docs_and_tips_document_brix_cutover(monkeypatch):
+    monkeypatch.setattr(_routing, "get_all_template_ids", lambda: ["invoice"])
+
+    readme = _read_doc("README.md")
+    operations = _read_doc("OPERATIONS.md")
+    claude = _read_doc("CLAUDE.md")
+    epic = _read_doc("EPIC-16-execution-consistency-batch-governance.md")
+    tips = _server._build_tips_dict()
+    contract = tips["brix_integration_contract"]
+
+    assert "Brix Cutover And Migration" in readme
+    assert "compatibility surfaces only" in readme
+    assert "advisory integration hints only" in operations
+    assert "Brix und andere Integratoren sollen auf canonical execution-/batch-Surfaces cutovern" in claude
+    assert "Brix-Cutover nach Epic 16" in epic
+    assert contract["source_of_truth"]["batch_entry"] == "POST /v1/batches is the canonical batch ingress for explicit document lists."
+    assert "compatibility surfaces" in contract["compatibility_only"]["jobs"]
+    assert any("Do not migrate Brix by scraping logs or database mirrors" in note for note in contract["notes"])

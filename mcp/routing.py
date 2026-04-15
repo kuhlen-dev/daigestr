@@ -3375,6 +3375,18 @@ def _build_tips_dict() -> dict:
         },
         "canonical_meta_fields": {f"meta.{name}": description for name, description in CANONICAL_META_FIELDS.items()},
         "brix_integration_contract": {
+            "source_of_truth": {
+                "execution_status": "GET /v1/executions/{id} is the canonical status surface for direct, async, batch_item, and replay runs.",
+                "execution_result": "GET /v1/executions/{id}/result is the canonical final-result surface once final_result_available=true.",
+                "batch_entry": "POST /v1/batches is the canonical batch ingress for explicit document lists.",
+                "batch_polling": "GET /v1/batches/{id} and GET /v1/batches/{id}/items are the canonical aggregate and per-item polling surfaces.",
+            },
+            "compatibility_only": {
+                "jobs": "GET /v1/jobs/{id} and /v1/jobs/{id}/result remain async compatibility surfaces and are not the canonical execution truth.",
+            },
+            "advisory_only": {
+                "brix_url": "BRIX_URL and _is_brix_available() provide discovery and hints only; they do not define execution truth or result truth.",
+            },
             "read_from_raw_meta": [
                 "meta.document_type",
                 "meta.document_type_confidence",
@@ -3410,6 +3422,8 @@ def _build_tips_dict() -> dict:
                 "Use raw.meta as the only canonical source for template, quality, retry, and attempt metadata.",
                 "Use raw.extracted for template-specific fields and raw.normalized for normalized downstream fields.",
                 "Treat normalized._quality_score and normalized.quality_score as normalizer-specific scores only.",
+                "Do not migrate Brix by scraping logs or database mirrors; consume the canonical execution, batch, and tips contracts instead.",
+                "Do not build Brix workarounds for Daigestr architecture gaps; fix the Daigestr contract at the source.",
             ],
         },
         "v3_meta_fields": {

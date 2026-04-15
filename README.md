@@ -281,6 +281,17 @@ The canonical execution status surface is `GET /v1/executions/{id}`. It includes
 - `result_artifact_refs` for references such as enriched PDFs without inlining heavy payloads
 - `final_result_available` to signal whether `/result` is populated
 
+## Brix Cutover And Migration
+
+Brix integration is now expected to consume the same canonical contract as every other client.
+
+- Use `GET /v1/executions/{id}` and `GET /v1/executions/{id}/result` as the canonical execution status and result surfaces.
+- Use `POST /v1/batches` plus `GET /v1/batches/{id}` and `GET /v1/batches/{id}/items` as the canonical batch ingress and polling surfaces.
+- Treat `GET /v1/jobs/{id}` and `GET /v1/jobs/{id}/result` as async compatibility surfaces only, not as the system of record.
+- Treat `BRIX_URL` and internal Brix availability checks as advisory hints only; they do not override execution, batch, or result truth.
+- Do not migrate Brix by parsing logs or reading database mirrors. Consume `GET /v1/tips`, OpenAPI, and the canonical REST surfaces directly.
+- Do not add Brix-side workarounds for Daigestr architecture gaps. Fix the Daigestr contract instead.
+
 ## Output Model
 
 Successful responses are Markdown-first and can add structured payloads on top.
@@ -385,7 +396,7 @@ Everything important is `.env`-driven. No hardcoded deployment assumptions are r
 | `MAX_FILE_SIZE_MB` | input size limit |
 | `PDF_RENDER_DPI` | render DPI for image-based PDF handling |
 | `WHISPER_MODEL_SIZE` | Whisper model for audio/video transcription |
-| `BRIX_URL` | Brix orchestrator URL for batch-related integration |
+| `BRIX_URL` | advisory Brix orchestrator URL for batch-related hints; not a source of execution truth |
 
 See [.env.example](./.env.example) for the full set.
 

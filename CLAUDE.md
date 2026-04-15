@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Was ist das?
 
-Daigestr — Document Intelligence Service v16.9.3. Konvertiert Dokumente, Bilder, Audio/Video zu Markdown mit LLM-gestützter Analyse. Zwei Schnittstellen:
+Daigestr — Document Intelligence Service v16.11.5. Konvertiert Dokumente, Bilder, Audio/Video zu Markdown mit LLM-gestützter Analyse. Zwei Schnittstellen:
 - **MCP** (Port 8080, extern 18005): Für Claude und MCP-Clients via SSE oder stdio
 - **REST** (Port 8081, extern 18006): Für n8n und HTTP-Clients (FastAPI mit Swagger unter `/docs`)
 
@@ -14,6 +14,8 @@ Canonical runtime note:
 - `/v1/executions/{execution_id}` ist die Source of Truth für Status, Progress, Attempts, Subjobs und leichte Result-Summaries.
 - `/v1/batches/*` bildet persistierte Batchs und Batch-Items auf dieselbe canonical execution-Schicht ab.
 - Replay erzeugt immer eine neue `execution_kind=replay` execution.
+- `GET /v1/jobs/{job_id}` bleibt nur Kompatibilität fuer Async-Caller; Brix und andere Integratoren sollen auf canonical execution-/batch-Surfaces cutovern.
+- `BRIX_URL` und `_is_brix_available()` sind nur advisory Hints und keine Source of Truth.
 - `GET /v1/tips` und MCP `get_tips` sind der normative maschinenlesbare Contract; `README.md` und `OPERATIONS.md` sind die menschlichen Leitdokumente.
 
 ## Architektur

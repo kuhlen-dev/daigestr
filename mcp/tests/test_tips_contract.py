@@ -145,6 +145,10 @@ def test_tips_document_brix_integration_contract(monkeypatch):
     result = _server._build_tips_dict()
 
     contract = result["brix_integration_contract"]
+    assert "GET /v1/executions/{id}" in contract["source_of_truth"]["execution_status"]
+    assert "POST /v1/batches" in contract["source_of_truth"]["batch_entry"]
+    assert "compatibility surfaces" in contract["compatibility_only"]["jobs"]
+    assert "BRIX_URL" in contract["advisory_only"]["brix_url"]
     assert "meta.template_used" in contract["read_from_raw_meta"]
     assert "meta.quality_score" in contract["read_from_raw_meta"]
     assert "normalized._quality_score as document quality" in contract["do_not_use_as_canonical"]

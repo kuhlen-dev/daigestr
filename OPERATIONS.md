@@ -18,6 +18,15 @@ Canonical polling and result retrieval:
 - `GET /v1/batches/{batch_id}/items/{batch_item_id}/result` returns the persisted final payload for one batch item.
 - `GET /v1/jobs/{job_id}` and `/v1/jobs/{job_id}/result` remain compatibility surfaces for async callers.
 
+## Brix Cutover
+
+- Brix must consume `GET /v1/executions/{execution_id}` and `GET /v1/executions/{execution_id}/result` as the canonical execution surfaces.
+- Brix must use `POST /v1/batches` for explicit document-list ingestion and `GET /v1/batches/{batch_id}` plus `GET /v1/batches/{batch_id}/items` for polling.
+- `GET /v1/jobs/{job_id}` and `/result` stay compatibility-only and must not become Brix's source of truth.
+- `BRIX_URL` and `_is_brix_available()` are advisory integration hints only; they do not redefine runtime truth.
+- Brix migration must consume `GET /v1/tips`, OpenAPI, and the canonical REST surfaces instead of logs or DB mirrors.
+- Do not introduce Brix-side workarounds for Daigestr contract gaps.
+
 ## Operator Flags
 
 - `AUDIT_API_ENABLED` gates `/v1/audit/*`.

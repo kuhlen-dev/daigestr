@@ -927,3 +927,14 @@ Nach Abschluss dieses Epics soll Daigestr ein System sein, bei dem:
 - Debugging, Replay und Drift-Erkennung systematisch möglich sind
 - Doku, Tips und API dieselbe Wahrheit sprechen
 - Policies, Retention und Governance nicht nachträglich, sondern architektonisch eingebaut sind
+
+## Brix-Cutover nach Epic 16
+
+Nach Epic 16 gilt fuer Brix und andere Orchestratoren ausdruecklich:
+
+- `execution` ist die kanonische Laufwahrheit; `job` bleibt nur Async-Kompatibilitaet.
+- `POST /v1/batches` ist der kanonische Batch-Einstieg fuer explizite Dokumentlisten.
+- `GET /v1/executions/{id}`, `GET /v1/executions/{id}/result`, `GET /v1/batches/{id}` und `GET /v1/batches/{id}/items` sind die relevanten Konsumenten-Surfaces.
+- `BRIX_URL` und Brix-Verfuegbarkeit sind nur Hints fuer Integration und Routing, nicht fuer Status- oder Result-Truth.
+- Es werden keine Brix-Workarounds fuer Daigestr-Architekturluecken gebaut.
+- Cutover und Migration sollen ueber OpenAPI, `get_tips`, und die kanonischen REST-Surfaces erfolgen, nicht ueber Logs oder DB-Mirrors.
