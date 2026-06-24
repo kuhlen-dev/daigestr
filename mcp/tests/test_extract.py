@@ -281,10 +281,10 @@ class TestExtractStructuredData:
     def test_extract_harmonizes_bank_statement_bundle_output(self):
         """Multi-statement bank PDFs must be aggregated without losing per-statement detail."""
         bundle = {
-            "bank": "Stadtsparkasse Mönchengladbach",
-            "iban": "DE62310500000000019752",
+            "bank": "Musterbank AG",
+            "iban": "DE89370400440532013000",
             "bic": "MGLSDE33",
-            "kontoinhaber": {"name": "Hans und Marlene Kuhlen"},
+            "kontoinhaber": {"name": "Max und Erika Mustermann"},
             "_meta": {
                 "steuerrelevant": True,
                 "mwst_ausgewiesen": False,
@@ -360,10 +360,10 @@ Blatt 2
 Kontostand am 30.09.2024, 20:03 Uhr 12.263,23+
 """
         collapsed = {
-            "bank": "Stadtsparkasse Mönchengladbach",
-            "iban": "DE62310500000000019752",
+            "bank": "Musterbank AG",
+            "iban": "DE89370400440532013000",
             "bic": "MGLSDE33",
-            "kontoinhaber": {"name": "Hans und Marlene Kuhlen"},
+            "kontoinhaber": {"name": "Max und Erika Mustermann"},
             "auszugsnummer": "11",
             "datum": "2024-08-30",
             "anfangssaldo": "14902.01",
@@ -375,10 +375,10 @@ Kontostand am 30.09.2024, 20:03 Uhr 12.263,23+
             "_meta": {"zusammenfassung": "Einzel-Auszug 11", "dokumenten_id": "11"},
         }
         statement_11 = {
-            "bank": "Stadtsparkasse Mönchengladbach",
-            "iban": "DE62310500000000019752",
+            "bank": "Musterbank AG",
+            "iban": "DE89370400440532013000",
             "bic": "MGLSDE33",
-            "kontoinhaber": {"name": "Hans und Marlene Kuhlen"},
+            "kontoinhaber": {"name": "Max und Erika Mustermann"},
             "auszugsnummer": "11",
             "datum": "2024-08-30",
             "anfangssaldo": "14902.01",
@@ -389,10 +389,10 @@ Kontostand am 30.09.2024, 20:03 Uhr 12.263,23+
             ],
         }
         statement_12 = {
-            "bank": "Stadtsparkasse Mönchengladbach",
-            "iban": "DE62310500000000019752",
+            "bank": "Musterbank AG",
+            "iban": "DE89370400440532013000",
             "bic": "MGLSDE33",
-            "kontoinhaber": {"name": "Hans und Marlene Kuhlen"},
+            "kontoinhaber": {"name": "Max und Erika Mustermann"},
             "auszugsnummer": "12",
             "datum": "2024-09-30",
             "anfangssaldo": "15504.16",
@@ -451,10 +451,10 @@ Blatt 2
 Kontostand am 30.09.2024, 20:03 Uhr 12.263,23+
 """
         statement_11 = {
-            "bank": "Stadtsparkasse Mönchengladbach",
-            "iban": "DE62310500000000019752",
+            "bank": "Musterbank AG",
+            "iban": "DE89370400440532013000",
             "bic": "MGLSDE33",
-            "kontoinhaber": {"name": "Hans und Marlene Kuhlen"},
+            "kontoinhaber": {"name": "Max und Erika Mustermann"},
             "auszugsnummer": "11",
             "datum": "2024-08-30",
             "anfangssaldo": "14902.01",
@@ -465,10 +465,10 @@ Kontostand am 30.09.2024, 20:03 Uhr 12.263,23+
             ],
         }
         statement_12 = {
-            "bank": "Stadtsparkasse Mönchengladbach",
-            "iban": "DE62310500000000019752",
+            "bank": "Musterbank AG",
+            "iban": "DE89370400440532013000",
             "bic": "MGLSDE33",
-            "kontoinhaber": {"name": "Hans und Marlene Kuhlen"},
+            "kontoinhaber": {"name": "Max und Erika Mustermann"},
             "auszugsnummer": "12",
             "datum": "2024-09-30",
             "anfangssaldo": "15504.16",
@@ -627,10 +627,10 @@ Kontostand am 30.09.2024, 20:03 Uhr 12.263,23+
                 "success": True,
                 "tokens": 10,
                 "extracted": {
-                    "bank": "Stadtsparkasse Mönchengladbach",
-                    "iban": "DE62310500000000019752",
+                    "bank": "Musterbank AG",
+                    "iban": "DE89370400440532013000",
                     "bic": "MGLSDE33",
-                    "kontoinhaber": {"name": "Hans und Marlene Kuhlen"},
+                    "kontoinhaber": {"name": "Max und Erika Mustermann"},
                     "auszugsnummer": statement_number,
                     "datum": last_date[-4:] + "-" + last_date[3:5] + "-" + last_date[0:2],
                     "anfangssaldo": "1000.00",

@@ -364,7 +364,7 @@ def _looks_like_bank_statement_noise_line(line: str) -> bool:
         return True
     if lowered.startswith("kontostand "):
         return True
-    if lowered == "hans und marlene kuhlen":
+    if lowered == "max und erika mustermann":
         return True
     if re.fullmatch(r"\d+(?:\s+\d+)*", line):
         return True
