@@ -370,7 +370,10 @@ def execution_create(
                 psycopg2.extras.Json(policy_context) if policy_context is not None else None,
             ),
         )
-        row = dict(cur.fetchone())
+        _row = cur.fetchone()
+        if _row is None:
+            raise RuntimeError("INSERT...RETURNING returned no row — unexpected DB state")
+        row = dict(_row)
         conn.commit()
         return row
     finally:
@@ -623,7 +626,10 @@ def execution_attempt_upsert(
                 finished_at_now,
             ),
         )
-        row = dict(cur.fetchone())
+        _row = cur.fetchone()
+        if _row is None:
+            raise RuntimeError("INSERT...RETURNING returned no row — unexpected DB state")
+        row = dict(_row)
         conn.commit()
         return row
     finally:
@@ -709,7 +715,10 @@ def execution_subjob_upsert(
                 finished_at_now,
             ),
         )
-        row = dict(cur.fetchone())
+        _row = cur.fetchone()
+        if _row is None:
+            raise RuntimeError("INSERT...RETURNING returned no row — unexpected DB state")
+        row = dict(_row)
         conn.commit()
         return row
     finally:
@@ -876,7 +885,10 @@ def execution_result_upsert(
                 effective_artifact_retention_days,
             ),
         )
-        row = dict(cur.fetchone())
+        _row = cur.fetchone()
+        if _row is None:
+            raise RuntimeError("INSERT...RETURNING returned no row — unexpected DB state")
+        row = dict(_row)
         conn.commit()
         return row
     finally:
@@ -1057,7 +1069,10 @@ def execution_queue_enqueue(
                 psycopg2.extras.Json(payload),
             ),
         )
-        row = dict(cur.fetchone())
+        _row = cur.fetchone()
+        if _row is None:
+            raise RuntimeError("INSERT...RETURNING returned no row — unexpected DB state")
+        row = dict(_row)
         conn.commit()
         return row
     finally:
@@ -1249,7 +1264,10 @@ def execution_batch_create(
                 psycopg2.extras.Json(metadata) if metadata is not None else None,
             ),
         )
-        row = dict(cur.fetchone())
+        _row = cur.fetchone()
+        if _row is None:
+            raise RuntimeError("INSERT...RETURNING returned no row — unexpected DB state")
+        row = dict(_row)
         conn.commit()
         return row
     finally:
@@ -1337,7 +1355,10 @@ def execution_batch_item_create(
                 psycopg2.extras.Json(input_snapshot) if input_snapshot is not None else None,
             ),
         )
-        row = dict(cur.fetchone())
+        _row = cur.fetchone()
+        if _row is None:
+            raise RuntimeError("INSERT...RETURNING returned no row — unexpected DB state")
+        row = dict(_row)
         conn.commit()
         return row
     finally:
@@ -1551,7 +1572,10 @@ def execution_batch_status_summary(
                 batch_id,
             ),
         )
-        updated_batch = dict(cur.fetchone())
+        _updated_row = cur.fetchone()
+        if _updated_row is None:
+            raise RuntimeError("UPDATE...RETURNING returned no row — unexpected DB state")
+        updated_batch = dict(_updated_row)
         conn.commit()
         return {
             **updated_batch,

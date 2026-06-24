@@ -1051,7 +1051,7 @@ async def dual_pass_validate(
             return markdown
 
     except Exception as exc:
-        log.warning("dual_pass_validate_exception", error=str(exc))
+        log.warning("dual_pass_validate_exception", error=str(exc), exc_info=True)
         return markdown
 
 
@@ -1179,7 +1179,7 @@ async def classify_document(
         log.warning("classify_document_json_error", error=str(exc), request_id=request_id, attempt_number=attempt_number)
         return {"document_type": "other", "document_type_confidence": 0.0}
     except Exception as exc:
-        log.warning("classify_document_api_error", error=str(exc), request_id=request_id, attempt_number=attempt_number)
+        log.warning("classify_document_api_error", error=str(exc), request_id=request_id, attempt_number=attempt_number, exc_info=True)
         return {"document_type": "other", "document_type_confidence": 0.0}
 
 
@@ -1300,7 +1300,7 @@ async def correct_ocr_text(
         }
 
     except Exception as exc:
-        log.warning("correct_ocr_text_api_error", error=str(exc), request_id=request_id, attempt_number=attempt_number)
+        log.warning("correct_ocr_text_api_error", error=str(exc), request_id=request_id, attempt_number=attempt_number, exc_info=True)
         return {
             "success": False,
             "error": str(exc),
@@ -1598,7 +1598,7 @@ async def extract_structured_data(
             )
             if recovery_result is not None:
                 return recovery_result
-        log.error("extract_structured_data_api_error", error=str(exc), request_id=request_id, attempt_number=attempt_number)
+        log.error("extract_structured_data_api_error", error=str(exc), request_id=request_id, attempt_number=attempt_number, exc_info=True)
         return {
             "success": False,
             "error": f"API-Fehler bei Extraktion: {str(exc)}",

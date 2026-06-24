@@ -7,6 +7,7 @@ TTL: NORMALIZE_CACHE_TTL_SECONDS — nach Ablauf wird Hash gegen DB geprüft, be
 """
 
 import hashlib
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Optional
@@ -34,6 +35,8 @@ _meta: dict = {
     "version_hash": None,    # SHA256-Hash der DB-Versionen
     "last_check": 0.0,       # Zeitstempel des letzten Hash-Checks
 }
+
+_cache_lock = threading.Lock()
 
 
 # =============================================================================
@@ -76,21 +79,22 @@ def _check_and_invalidate() -> None:
     """Prüft ob sich der Hash geändert hat. Wenn ja, leert den Cache."""
     if not NORMALIZE_CACHE_ENABLED:
         return
-    if not _is_stale():
-        return
-    try:
-        new_hash = _compute_version_hash()
-        _meta["last_check"] = time.monotonic()
-        if new_hash != _meta["version_hash"]:
-            log.info(
-                "normalizer_cache_invalidated",
-                old_hash=_meta["version_hash"],
-                new_hash=new_hash,
-            )
-            _invalidate_all()
-            _meta["version_hash"] = new_hash
-    except Exception as e:
-        log.warning("normalizer_cache_hash_check_failed", error=str(e))
+    with _cache_lock:
+        if not _is_stale():
+            return
+        try:
+            new_hash = _compute_version_hash()
+            _meta["last_check"] = time.monotonic()
+            if new_hash != _meta["version_hash"]:
+                log.info(
+                    "normalizer_cache_invalidated",
+                    old_hash=_meta["version_hash"],
+                    new_hash=new_hash,
+                )
+                _invalidate_all()
+                _meta["version_hash"] = new_hash
+        except Exception as e:
+            log.warning("normalizer_cache_hash_check_failed", error=str(e))
 
 
 def _invalidate_all() -> None:
